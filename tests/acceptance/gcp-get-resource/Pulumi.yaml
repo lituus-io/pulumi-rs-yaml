@@ -1,0 +1,33 @@
+name: gcp-get-resource-test
+runtime: yaml
+description: Test get option to read existing infrastructure and fn::invoke for data sources
+config:
+  gcp:project:
+    value: spacy-muffin-lab-5a292e
+  gcp:region:
+    value: us-central1
+  phase:
+    type: string
+    default: "1"
+resources:
+  # Phase 1 & 2: Create a bucket with a known static name
+  knownBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: get-resource-test-bucket-rsyaml
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+      labels:
+        created-by: pulumi-rs-yaml
+variables:
+  # fn::invoke works in both phases — reads project info
+  projectInfo:
+    fn::invoke:
+      function: gcp:organizations:getProject
+      arguments: {}
+  projectNumber: ${projectInfo.number}
+outputs:
+  knownBucketName: ${knownBucket.name}
+  projectId: ${projectInfo.projectId}
+  projectNumber: ${projectNumber}

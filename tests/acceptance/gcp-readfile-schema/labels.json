@@ -1,0 +1,6 @@
+{
+  "environment": "test",
+  "managed-by": "pulumi",
+  "team": "platform",
+  "feature": "readfile"
+}

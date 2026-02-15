@@ -1,0 +1,25 @@
+name: gcp-provider-explicit
+runtime: yaml
+description: Test explicit provider binding
+config:
+  gcp:project:
+    default: spacy-muffin-lab-5a292e
+  gcp:region:
+    default: us-central1
+resources:
+  myGcp:
+    type: pulumi:providers:gcp
+    properties:
+      project: spacy-muffin-lab-5a292e
+      region: us-central1
+  providerBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: explicit-provider-test-bucket
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+    options:
+      provider: ${myGcp}
+outputs:
+  bucketName: ${providerBucket.name}

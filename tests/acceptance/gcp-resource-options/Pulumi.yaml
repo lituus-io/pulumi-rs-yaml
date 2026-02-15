@@ -1,0 +1,26 @@
+name: gcp-resource-options
+runtime: yaml
+description: Test resource options wiring (protect, ignoreChanges, retainOnDelete)
+config:
+  gcp:project:
+    default: spacy-muffin-lab-5a292e
+  gcp:region:
+    default: us-central1
+resources:
+  optionsBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: resource-options-test-bucket
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+      labels:
+        env: test
+    options:
+      protect: false
+      ignoreChanges:
+        - labels
+      retainOnDelete: false
+outputs:
+  bucketName: ${optionsBucket.name}
+  bucketUrl: ${optionsBucket.url}

@@ -1,0 +1,34 @@
+name: gcp-assets-test
+runtime: yaml
+description: Test fn::stringAsset and fn::fileAsset with GCS bucket objects
+config:
+  gcp:project:
+    value: spacy-muffin-lab-5a292e
+  gcp:region:
+    value: us-central1
+resources:
+  assetBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: pulumi-rs-yaml-assets-test
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+  stringAssetObject:
+    type: gcp:storage:BucketObject
+    properties:
+      bucket: ${assetBucket.name}
+      name: string-asset.txt
+      source:
+        fn::stringAsset: "Hello from fn::stringAsset! This content was created inline."
+  fileAssetObject:
+    type: gcp:storage:BucketObject
+    properties:
+      bucket: ${assetBucket.name}
+      name: file-asset.txt
+      source:
+        fn::fileAsset: ./test-content.txt
+outputs:
+  bucketName: ${assetBucket.name}
+  stringObjectName: ${stringAssetObject.name}
+  fileObjectName: ${fileAssetObject.name}

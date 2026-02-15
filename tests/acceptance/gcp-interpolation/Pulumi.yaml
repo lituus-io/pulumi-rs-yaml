@@ -1,0 +1,32 @@
+name: gcp-interpolation
+runtime: yaml
+description: Test complex interpolation patterns
+config:
+  gcp:project:
+    default: spacy-muffin-lab-5a292e
+  gcp:region:
+    default: us-central1
+  prefix:
+    type: string
+    default: interp
+  env:
+    type: string
+    default: test
+variables:
+  fullPrefix: "${prefix}-${env}"
+  bucketName: "${fullPrefix}-bucket"
+resources:
+  interpBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: ${bucketName}
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+      labels:
+        prefix: ${prefix}
+        env: ${env}
+        full: ${fullPrefix}
+outputs:
+  bucketName: ${interpBucket.name}
+  fullPrefix: ${fullPrefix}

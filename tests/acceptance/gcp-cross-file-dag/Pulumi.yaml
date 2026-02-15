@@ -1,0 +1,12 @@
+name: gcp-cross-file-dag
+runtime: yaml
+description: Cross-file DAG test - resources in storage.yaml and tables.yaml
+config:
+  gcp:project:
+    default: spacy-muffin-lab-5a292e
+  gcp:region:
+    default: us-central1
+outputs:
+  storageBucketName: ${storageBucket.name}
+  tableBucketName: ${tableBucket.name}
+  storageBucketUrl: ${storageBucket.url}

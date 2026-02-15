@@ -1,0 +1,51 @@
+[package]
+name = "pulumi-rs-yaml-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+pulumi-rs-yaml-core = { path = "../crates/pulumi-rs-yaml-core" }
+pulumi-rs-yaml-converter = { path = "../crates/pulumi-rs-yaml-converter" }
+serde_yaml = "0.9"
+serde_json = "1"
+
+# Prevent this from interfering with workspace
+[workspace]
+
+# ─── Fuzz targets ──────────────────────────────────────────────────────────────
+
+[[bin]]
+name = "fuzz_yaml_parser"
+path = "fuzz_targets/fuzz_yaml_parser.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_interpolation"
+path = "fuzz_targets/fuzz_interpolation.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_jinja"
+path = "fuzz_targets/fuzz_jinja.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_converter"
+path = "fuzz_targets/fuzz_converter.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_builtins"
+path = "fuzz_targets/fuzz_builtins.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_yaml_bomb"
+path = "fuzz_targets/fuzz_yaml_bomb.rs"
+doc = false

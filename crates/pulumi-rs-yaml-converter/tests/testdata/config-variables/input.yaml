@@ -1,0 +1,16 @@
+name: test
+runtime: yaml
+config:
+  name:
+    type: string
+    default: world
+  count:
+    type: int
+  isEnabled:
+    type: bool
+    default: true
+resources:
+  bucket:
+    type: aws:s3:Bucket
+    properties:
+      bucketPrefix: ${name}

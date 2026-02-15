@@ -1,0 +1,33 @@
+name: gcp-config-types
+runtime: yaml
+description: Test config type resolution with string, number, bool types
+config:
+  gcp:project:
+    default: spacy-muffin-lab-5a292e
+  gcp:region:
+    default: us-central1
+  prefix:
+    type: string
+    default: cfg
+  count:
+    type: integer
+    default: 3
+  enabled:
+    type: boolean
+    default: true
+resources:
+  configBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: "${prefix}-config-types-test"
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+      labels:
+        prefix: ${prefix}
+        enabled: "${enabled}"
+outputs:
+  bucketName: ${configBucket.name}
+  prefix: ${prefix}
+  count: ${count}
+  enabled: ${enabled}

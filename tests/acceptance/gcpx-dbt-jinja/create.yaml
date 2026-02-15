@@ -1,0 +1,5 @@
+name: gcpx-dbt-jinja
+runtime: yaml
+outputs:
+  materialization: ${stgModel.materialization}
+  tableRef: ${stgModel.modelOutput.tableRef}

@@ -1,0 +1,21 @@
+name: gcp-exec-jinja-bucket
+runtime:
+  name: yaml
+  options:
+    compiler: "cat"
+description: Jinja exec-mode template test
+config:
+  gcp:project:
+    default: spacy-muffin-lab-5a292e
+  gcp:region:
+    default: us-central1
+resources:
+  execBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: exec-jinja-test-bucket
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+outputs:
+  bucketName: ${execBucket.name}

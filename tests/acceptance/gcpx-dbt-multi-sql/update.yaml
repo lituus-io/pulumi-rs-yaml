@@ -1,0 +1,7 @@
+name: gcpx-dbt-multi-sql
+runtime: yaml
+outputs:
+  stgOrdersTableRef: ${stgOrders.modelOutput.tableRef}
+  stgOrdersSql: ${stgOrders.modelOutput.resolvedSql}
+  stgUsersTableRef: ${stgUsers.modelOutput.tableRef}
+  martRevenueTableRef: ${martRevenue.modelOutput.tableRef}

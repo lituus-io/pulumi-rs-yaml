@@ -1,0 +1,7 @@
+name: test
+runtime: yaml
+resources:
+  bucket:
+    type: aws:s3:Bucket
+outputs:
+  url: https://${bucket.bucketDomainName}/index.html

@@ -1,0 +1,18 @@
+name: gcpx-dbt-model-crud
+runtime: yaml
+resources:
+  dbtProject:
+    type: gcpx:dbt:Project
+    properties:
+      gcpProject: spacy-muffin-lab-5a292e
+      dataset: gcpx_test
+  stgModel:
+    type: gcpx:dbt:Model
+    properties:
+      name: acc_stg___SUFFIX__
+      sql: "SELECT 1 as id, 'hello' as greeting"
+      context: ${dbtProject.context}
+outputs:
+  materialization: ${stgModel.materialization}
+  tableRef: ${stgModel.modelOutput.tableRef}
+  resolvedSql: ${stgModel.modelOutput.resolvedSql}

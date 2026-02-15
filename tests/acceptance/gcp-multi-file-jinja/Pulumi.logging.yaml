@@ -1,0 +1,13 @@
+resources:
+{% if pulumi_stack != "prod" %}
+  logBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: "{{ pulumi_project }}-{{ pulumi_stack }}-logs"
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+    options:
+      dependsOn:
+        - ${storageBucket0}
+{% endif %}

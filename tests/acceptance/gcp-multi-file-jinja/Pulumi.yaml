@@ -1,0 +1,13 @@
+name: gcp-mf-jinja-test
+runtime: yaml
+description: Multi-file Jinja exec wrapper acceptance test
+config:
+  gcp:project:
+    value: spacy-muffin-lab-5a292e
+  gcp:region:
+    value: us-central1
+outputs:
+  storage0Name: ${storageBucket0.name}
+  storage1Name: ${storageBucket1.name}
+  logBucketName: ${logBucket.name}
+  storage0Url: ${storageBucket0.url}

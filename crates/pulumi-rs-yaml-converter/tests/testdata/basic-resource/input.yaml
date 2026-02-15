@@ -1,0 +1,7 @@
+name: test
+runtime: yaml
+resources:
+  myBucket:
+    type: aws:s3:Bucket
+    properties:
+      bucketPrefix: my-bucket

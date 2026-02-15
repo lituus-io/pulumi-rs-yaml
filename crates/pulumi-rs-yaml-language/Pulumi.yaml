@@ -1,0 +1,7 @@
+name: test
+runtime: yaml
+resources:
+{% for i in range(2) %}
+  "bucket{{ i }}":
+    type: aws:s3:Bucket
+{% endfor %}

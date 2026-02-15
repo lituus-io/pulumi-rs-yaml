@@ -1,0 +1,42 @@
+name: gcp-parent-resource-test
+runtime: yaml
+description: Test parent option for resource hierarchy
+config:
+  gcp:project:
+    value: spacy-muffin-lab-5a292e
+  gcp:region:
+    value: us-central1
+resources:
+  parentBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: parent-resource-test-parent
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+      labels:
+        role: parent
+  childObject:
+    type: gcp:storage:BucketObject
+    properties:
+      bucket: ${parentBucket.name}
+      name: child-object.txt
+      content: "I am a child of parentBucket"
+    options:
+      parent: ${parentBucket}
+      dependsOn:
+        - ${parentBucket}
+  siblingObject:
+    type: gcp:storage:BucketObject
+    properties:
+      bucket: ${parentBucket.name}
+      name: sibling-object.txt
+      content: "I am a sibling under the same parent"
+    options:
+      parent: ${parentBucket}
+      dependsOn:
+        - ${parentBucket}
+outputs:
+  parentBucketName: ${parentBucket.name}
+  childObjectName: ${childObject.name}
+  siblingObjectName: ${siblingObject.name}

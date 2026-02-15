@@ -1,0 +1,7 @@
+resources:
+  stgModel:
+    type: gcpx:dbt:Model
+    properties:
+      name: acc_mf___SUFFIX__
+      sql: "SELECT 1 as id, 'updated_multifile' as source, CURRENT_TIMESTAMP() as ts"
+      context: ${dbtProject.context}

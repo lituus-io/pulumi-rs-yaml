@@ -1,0 +1,16 @@
+name: test
+runtime: yaml
+resources:
+  bucket:
+    type: aws:s3:Bucket
+    properties:
+      bucketName: test
+    options:
+      protect: true
+      dependsOn:
+        - ${other}
+variables:
+  secret:
+    fn::secret: password
+outputs:
+  url: ${bucket.websiteEndpoint}

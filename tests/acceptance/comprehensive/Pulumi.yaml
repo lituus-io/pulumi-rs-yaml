@@ -1,0 +1,29 @@
+name: comprehensive
+runtime: yaml
+description: Comprehensive test - multiple features in one project
+config:
+  gcp:project:
+    default: spacy-muffin-lab-5a292e
+  gcp:region:
+    default: us-central1
+resources:
+  mainBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: comprehensive-test-main
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+      labels:
+        env: test
+        managed-by: pulumi-rs-yaml
+variables:
+  bucketNameUpper:
+    fn::invoke:
+      function: std:upper
+      arguments:
+        input: comprehensive
+      return: result
+outputs:
+  mainBucketName: ${mainBucket.name}
+  mainBucketUrl: ${mainBucket.url}

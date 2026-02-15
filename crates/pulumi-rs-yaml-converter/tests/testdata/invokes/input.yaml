@@ -1,0 +1,10 @@
+name: test
+runtime: yaml
+variables:
+  ret:
+    fn::invoke:
+      function: test:mod:Fn
+      return: foo
+  noRet:
+    fn::invoke:
+      function: test:mod:Fn

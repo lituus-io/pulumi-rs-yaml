@@ -1,0 +1,6 @@
+name: test
+runtime: yaml
+outputs:
+  cwd: "${pulumi.cwd}"
+  stack: "${pulumi.stack}"
+  project: "${pulumi.project}"

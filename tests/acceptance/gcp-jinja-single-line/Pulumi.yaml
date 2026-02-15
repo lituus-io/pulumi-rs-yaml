@@ -1,0 +1,23 @@
+name: gcp-jinja-single-line
+runtime: yaml
+description: Single-line Jinja set/expression test
+config:
+  gcp:project:
+    default: spacy-muffin-lab-5a292e
+  gcp:region:
+    default: us-central1
+
+# Jinja single-line expressions
+# {% set bucket_prefix = "jinja-single" %}
+# {% set bucket_suffix = "line-test" %}
+
+resources:
+  singleLineBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: jinja-single-line-test
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+outputs:
+  bucketName: ${singleLineBucket.name}

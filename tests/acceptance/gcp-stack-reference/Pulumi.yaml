@@ -1,0 +1,19 @@
+name: gcp-stack-reference
+runtime: yaml
+description: Test StackReference resolution (self-reference for testing)
+config:
+  gcp:project:
+    default: spacy-muffin-lab-5a292e
+  gcp:region:
+    default: us-central1
+resources:
+  refBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: stack-ref-test-bucket
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+outputs:
+  bucketName: ${refBucket.name}
+  bucketUrl: ${refBucket.url}

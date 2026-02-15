@@ -1,0 +1,34 @@
+name: gcp-multi-resource-deps
+runtime: yaml
+description: Test multi-resource dependencies and output chains
+config:
+  gcp:project:
+    default: spacy-muffin-lab-5a292e
+  gcp:region:
+    default: us-central1
+resources:
+  mainBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: multi-dep-main-bucket
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+  depBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: multi-dep-child-bucket
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+      labels:
+        depends-on: ${mainBucket.name}
+    options:
+      dependsOn:
+        - ${mainBucket}
+variables:
+  combined: "${mainBucket.name}+${depBucket.name}"
+outputs:
+  mainBucketName: ${mainBucket.name}
+  depBucketName: ${depBucket.name}
+  combined: ${combined}

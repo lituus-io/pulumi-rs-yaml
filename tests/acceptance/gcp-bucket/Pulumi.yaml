@@ -1,0 +1,20 @@
+name: gcp-bucket-test
+runtime: yaml
+description: Acceptance test for pulumi-rs-yaml with GCP
+config:
+  gcp:project:
+    value: spacy-muffin-lab-5a292e
+  gcp:region:
+    value: us-central1
+resources:
+  testBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: pulumi-rs-yaml-acceptance-test-bucket
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+outputs:
+  bucketName: ${testBucket.name}
+  bucketUrl: ${testBucket.url}
+  bucketSelfLink: ${testBucket.selfLink}

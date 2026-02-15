@@ -1,0 +1,27 @@
+name: gcp-readfile-bigquery-test
+runtime: yaml
+description: Tests Jinja readFile() with a BigQuery table schema from an external JSON file
+config:
+  gcp:project:
+    value: spacy-muffin-lab-5a292e
+  gcp:region:
+    value: us-central1
+resources:
+  dataset:
+    type: gcp:bigquery:Dataset
+    properties:
+      datasetId: readfile_test_dataset
+      friendlyName: readFile Test Dataset
+      location: US
+      deleteContentsOnDestroy: true
+  usersTable:
+    type: gcp:bigquery:Table
+    properties:
+      datasetId: ${dataset.datasetId}
+      tableId: users
+      deletionProtection: false
+      schema: |
+        {{ readFile("schema.json") }}
+outputs:
+  datasetId: ${dataset.datasetId}
+  tableId: ${usersTable.tableId}

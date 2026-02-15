@@ -1,0 +1,12 @@
+name: test
+runtime: yaml
+resources:
+  site:
+    type: aws:s3:BucketObject
+    properties:
+      content:
+        fn::stringAsset: "<h1>Hello</h1>"
+      source:
+        fn::fileAsset: "./index.html"
+      archive:
+        fn::fileArchive: "./site"

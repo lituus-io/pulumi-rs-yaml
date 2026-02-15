@@ -1,0 +1,55 @@
+name: gcpx-full-pipeline
+runtime: yaml
+resources:
+  rawTable:
+    type: gcpx:bigquery:Table
+    properties:
+      project: spacy-muffin-lab-5a292e
+      dataset: gcpx_test
+      tableId: acc_raw___SUFFIX__
+      description: Raw events table
+      labels:
+        env: test
+        phase: create
+
+  dbtProject:
+    type: gcpx:dbt:Project
+    properties:
+      gcpProject: spacy-muffin-lab-5a292e
+      dataset: gcpx_test
+
+  ctdMacro:
+    type: gcpx:dbt:Macro
+    properties:
+      name: cents_to_dollars
+      sql: "CAST(amount_cents AS FLOAT64) / 100.0"
+      args:
+        - amount_cents
+
+  stgModel:
+    type: gcpx:dbt:Model
+    properties:
+      name: acc_pipeline___SUFFIX__
+      sql: "SELECT 1 as id, 'pipeline' as source"
+      context: ${dbtProject.context}
+
+  refreshJob:
+    type: gcpx:scheduler:SqlJob
+    properties:
+      project: spacy-muffin-lab-5a292e
+      region: northamerica-northeast1
+      name: acc-job-__SUFFIX__
+      sql: "SELECT 1"
+      schedule: "0 5 * * *"
+      serviceAccount: __SA_EMAIL__
+      paused: true
+      description: Acceptance test scheduler job
+
+outputs:
+  tableType: ${rawTable.tableType}
+  rawTableId: ${rawTable.tableId}
+  macroName: ${ctdMacro.macroOutput.name}
+  modelMaterialization: ${stgModel.materialization}
+  modelTableRef: ${stgModel.modelOutput.tableRef}
+  jobState: ${refreshJob.state}
+  jobWorkflowName: ${refreshJob.workflowName}

@@ -1,0 +1,11 @@
+name: test
+runtime: yaml
+resources:
+  a: &base
+    type: pkg:mod:T
+    properties:
+      x: 1
+  b:
+    <<: *base
+    properties:
+      x: 2

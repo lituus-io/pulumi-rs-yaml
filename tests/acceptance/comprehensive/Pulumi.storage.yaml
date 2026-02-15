@@ -1,0 +1,18 @@
+resources:
+  storageBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: comprehensive-test-storage
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+    options:
+      dependsOn:
+        - ${mainBucket}
+variables:
+  # Builtins in additional file (not just main)
+  storageLen:
+    fn::stringLen: "comprehensive-test-storage"
+outputs:
+  storageBucketUrl: ${storageBucket.url}
+  storageNameLen: ${storageLen}

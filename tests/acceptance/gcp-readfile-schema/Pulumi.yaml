@@ -1,0 +1,40 @@
+name: gcp-readfile-schema-test
+runtime: yaml
+description: Tests Jinja readFile() — inline in strings and standalone in block scalars
+config:
+  gcp:project:
+    value: spacy-muffin-lab-5a292e
+  gcp:region:
+    value: us-central1
+resources:
+  readfileBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: "pulumi-rs-yaml-{{ readFile('version.txt') }}"
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+      labels:
+        test: readfile
+        version: "{{ readFile('version.txt') }}"
+  websiteBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: "pulumi-rs-yaml-readfile-website-test"
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+      labels:
+        test: readfile-schema
+        version: "{{ readFile('version.txt') }}"
+  schemaObject:
+    type: gcp:storage:BucketObject
+    properties:
+      bucket: ${websiteBucket.name}
+      name: schema.json
+      content: |
+        {{ readFile("schema.json") }}
+outputs:
+  readfileBucketName: ${readfileBucket.name}
+  websiteBucketName: ${websiteBucket.name}
+  schemaObjectName: ${schemaObject.name}

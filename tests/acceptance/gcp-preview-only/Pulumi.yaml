@@ -1,0 +1,20 @@
+name: gcp-preview-only
+runtime: yaml
+description: Preview-only test - verify preview shows correct plan without deploying
+config:
+  gcp:project:
+    default: spacy-muffin-lab-5a292e
+  gcp:region:
+    default: us-central1
+resources:
+  previewBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: preview-only-test-bucket
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+      labels:
+        env: preview
+outputs:
+  bucketName: ${previewBucket.name}

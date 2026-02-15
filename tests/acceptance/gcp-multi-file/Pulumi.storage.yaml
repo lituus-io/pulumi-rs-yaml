@@ -1,0 +1,8 @@
+resources:
+  storageBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: "gcp-multi-file-test-storage"
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true

@@ -1,0 +1,9 @@
+- action:
+    type: Delete
+  condition:
+    age: 30
+- action:
+    type: SetStorageClass
+    storageClass: NEARLINE
+  condition:
+    age: 10

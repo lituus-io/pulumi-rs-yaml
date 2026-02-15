@@ -1,0 +1,109 @@
+name: gcp-builtins-test
+runtime: yaml
+description: Acceptance test for all builtin functions
+config:
+  gcp:project:
+    value: spacy-muffin-lab-5a292e
+  gcp:region:
+    value: us-central1
+  greeting:
+    default: hello
+  separator:
+    default: "-"
+variables:
+  # fn::join — joins list with delimiter
+  joinedName:
+    fn::join:
+      - "-"
+      - - gcp
+        - builtins
+        - test
+        - bucket
+  # fn::toBase64 — encode a string
+  encodedGreeting:
+    fn::toBase64: ${greeting}
+  # fn::fromBase64 — decode it back
+  decodedGreeting:
+    fn::fromBase64: ${encodedGreeting}
+  # fn::toJSON — convert object to JSON string
+  jsonTags:
+    fn::toJSON:
+      env: test
+      owner: pulumi-rs-yaml
+  # fn::split — split a string
+  nameParts:
+    fn::split:
+      - "-"
+      - "gcp-builtins-test"
+  # fn::select — pick from list
+  firstPart:
+    fn::select:
+      - 0
+      - ${nameParts}
+  # fn::secret — mark as secret
+  secretValue:
+    fn::secret: my-secret-data
+  # fn::readFile — read from disk
+  fileContent:
+    fn::readFile: ./test-data.txt
+  # fn::join with config interpolation
+  configJoined:
+    fn::join:
+      - " "
+      - - ${greeting}
+        - world
+  # fn::invoke — get GCP project info
+  projectInfo:
+    fn::invoke:
+      function: gcp:organizations:getProject
+      arguments: {}
+resources:
+  # Main bucket using joined name
+  builtinsBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: ${joinedName}
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+      labels:
+        env: test
+        owner: pulumi-rs-yaml
+  # Second bucket using a string asset for the label via variable
+  labelBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: "gcp-builtins-test-labels"
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+      labels:
+        first-part: ${firstPart}
+        decoded: ${decodedGreeting}
+    options:
+      dependsOn:
+        - ${builtinsBucket}
+outputs:
+  # Basic resource property access
+  bucketName: ${builtinsBucket.name}
+  bucketUrl: ${builtinsBucket.url}
+  # fn::join result
+  joinedNameOut: ${joinedName}
+  # fn::toBase64 / fn::fromBase64 round-trip
+  encodedOut: ${encodedGreeting}
+  decodedOut: ${decodedGreeting}
+  # fn::toJSON
+  jsonTagsOut: ${jsonTags}
+  # fn::split + fn::select
+  splitPartsOut: ${nameParts}
+  firstPartOut: ${firstPart}
+  # fn::secret
+  secretOut: ${secretValue}
+  # fn::readFile
+  fileContentOut: ${fileContent}
+  # config interpolation + fn::join
+  configJoinedOut: ${configJoined}
+  # fn::invoke result
+  projectId: ${projectInfo.projectId}
+  # Property access on second bucket
+  labelBucketName: ${labelBucket.name}

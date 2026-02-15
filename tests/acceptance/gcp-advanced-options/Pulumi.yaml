@@ -1,0 +1,77 @@
+name: gcp-advanced-options-test
+runtime: yaml
+description: Test advanced resource options - additionalSecretOutputs, customTimeouts, deleteBeforeReplace, replaceOnChanges, aliases
+config:
+  gcp:project:
+    value: spacy-muffin-lab-5a292e
+  gcp:region:
+    value: us-central1
+resources:
+  secretOutputBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: adv-opts-secret-output
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+      labels:
+        test: additional-secret-outputs
+    options:
+      additionalSecretOutputs:
+        - url
+        - selfLink
+  timeoutBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: adv-opts-timeout
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+      labels:
+        test: custom-timeouts
+    options:
+      customTimeouts:
+        create: 5m
+        update: 5m
+        delete: 5m
+  replaceBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: adv-opts-replace
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+      labels:
+        test: delete-before-replace
+    options:
+      deleteBeforeReplace: true
+  replaceOnChangeBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: adv-opts-replace-on-change
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+      labels:
+        test: replace-on-changes
+    options:
+      replaceOnChanges:
+        - labels
+  aliasBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: adv-opts-alias
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+      labels:
+        test: aliases
+    options:
+      aliases:
+        - urn:pulumi:dev::gcp-advanced-options-test::gcp:storage/bucket:Bucket::oldAliasBucket
+outputs:
+  secretOutputBucketName: ${secretOutputBucket.name}
+  timeoutBucketName: ${timeoutBucket.name}
+  replaceBucketName: ${replaceBucket.name}
+  replaceOnChangeBucketName: ${replaceOnChangeBucket.name}
+  aliasBucketName: ${aliasBucket.name}

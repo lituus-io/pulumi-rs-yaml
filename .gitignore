@@ -1,0 +1,35 @@
+# Build artifacts
+/target/
+fuzz/target/
+**/*.rs.bk
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Pulumi local state
+.pulumi/
+
+# Credentials (never commit)
+*.pem
+*.key
+creds/
+terraform.json
+
+# Bundled binaries in Python package (populated at build time)
+crates/pulumi-rs-yaml-python/python/pulumi_yaml_rs/bin/pulumi-*

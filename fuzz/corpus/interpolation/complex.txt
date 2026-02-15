@@ -1,0 +1,1 @@
+prefix-${a.b[0].c}-middle-${d.e}-suffix

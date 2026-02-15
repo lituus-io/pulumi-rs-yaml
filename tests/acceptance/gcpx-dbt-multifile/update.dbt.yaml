@@ -1,0 +1,14 @@
+resources:
+  dbtProject:
+    type: gcpx:dbt:Project
+    properties:
+      gcpProject: spacy-muffin-lab-5a292e
+      dataset: gcpx_test
+
+  ctdMacro:
+    type: gcpx:dbt:Macro
+    properties:
+      name: cents_to_dollars
+      sql: "CAST(amount_cents AS FLOAT64) / 100.0"
+      args:
+        - amount_cents

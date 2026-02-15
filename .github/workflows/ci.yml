@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_INCREMENTAL: 0
+  RUSTFLAGS: "-D warnings"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    needs: fmt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace -- -D warnings
+
+  test-linux-x86:
+    name: Test (Linux x86_64)
+    runs-on: ubuntu-latest
+    needs: fmt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace
+
+  test-linux-arm:
+    name: Test (Linux ARM64)
+    runs-on: ubuntu-24.04-arm
+    needs: fmt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace
+
+  test-macos-arm:
+    name: Test (macOS ARM64)
+    runs-on: macos-15
+    needs: fmt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace
+
+  test-windows:
+    name: Test (Windows x86_64)
+    runs-on: windows-latest
+    needs: fmt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace
+
+  python-test:
+    name: Python Tests
+    runs-on: ubuntu-latest
+    needs: fmt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Create virtualenv and install deps
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install maturin pytest pulumi pulumi-random
+      - name: Build and install Python package
+        working-directory: crates/pulumi-rs-yaml-python
+        run: |
+          source ${{ github.workspace }}/.venv/bin/activate
+          maturin develop --release
+      - name: Run Python tests
+        working-directory: crates/pulumi-rs-yaml-python
+        run: |
+          source ${{ github.workspace }}/.venv/bin/activate
+          pytest tests/ -v --ignore=tests/test_cli_integration.py
+
+  cross-check:
+    name: Cross-compile check
+    runs-on: ubuntu-latest
+    needs: fmt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl, aarch64-unknown-linux-musl
+      - name: Ensure musl targets installed
+        run: rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-zigbuild
+        run: pip install cargo-zigbuild
+      - name: Check musl x86_64
+        run: cargo zigbuild --workspace --exclude pulumi-rs-yaml-python --target x86_64-unknown-linux-musl --release
+      - name: Check musl aarch64
+        run: cargo zigbuild --workspace --exclude pulumi-rs-yaml-python --target aarch64-unknown-linux-musl --release

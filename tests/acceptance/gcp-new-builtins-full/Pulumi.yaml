@@ -1,0 +1,84 @@
+name: gcp-new-builtins-full
+runtime: yaml
+description: Test all new builtins - substring, uuid, randomString, timeUtc, timeUnix, dateFormat — used in real resource properties
+config:
+  gcp:project:
+    value: spacy-muffin-lab-5a292e
+  gcp:region:
+    value: us-central1
+variables:
+  # fn::substring — extract "builtins" from the project name
+  nameSubstr:
+    fn::substring:
+      - "gcp-new-builtins-full"
+      - 8
+      - 8
+  # fn::uuid — generates a unique id
+  uniqueId:
+    fn::uuid
+  # fn::randomString — random 8-char alphanumeric string
+  randomSuffix:
+    fn::randomString: 8
+  # fn::timeUtc — current UTC time
+  currentTime:
+    fn::timeUtc
+  # fn::timeUnix — current unix timestamp
+  unixTime:
+    fn::timeUnix
+  # fn::dateFormat — formatted date
+  formattedDate:
+    fn::dateFormat: "%Y-%m-%d"
+  # Math builtins in resource label context
+  absVal:
+    fn::abs: -99
+  floorVal:
+    fn::floor: 7.8
+  ceilVal:
+    fn::ceil: 2.1
+  maxVal:
+    fn::max:
+      - 3
+      - 1
+      - 4
+      - 1
+      - 5
+  minVal:
+    fn::min:
+      - 3
+      - 1
+      - 4
+      - 1
+      - 5
+  # fn::stringLen
+  nameLen:
+    fn::stringLen: "gcp-new-builtins-full"
+resources:
+  builtinBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: new-builtins-full-test
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+      labels:
+        substr: ${nameSubstr}
+        abs-val: "${absVal}"
+        floor-val: "${floorVal}"
+        ceil-val: "${ceilVal}"
+        max-val: "${maxVal}"
+        min-val: "${minVal}"
+        name-len: "${nameLen}"
+outputs:
+  bucketName: ${builtinBucket.name}
+  nameSubstr: ${nameSubstr}
+  uniqueId: ${uniqueId}
+  randomSuffix: ${randomSuffix}
+  currentTime: ${currentTime}
+  unixTime: ${unixTime}
+  formattedDate: ${formattedDate}
+  absVal: ${absVal}
+  floorVal: ${floorVal}
+  ceilVal: ${ceilVal}
+  maxVal: ${maxVal}
+  minVal: ${minVal}
+  nameLen: ${nameLen}

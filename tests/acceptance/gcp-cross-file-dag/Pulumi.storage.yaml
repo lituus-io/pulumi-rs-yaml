@@ -1,0 +1,10 @@
+resources:
+  storageBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: cross-dag-storage
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+      labels:
+        layer: storage

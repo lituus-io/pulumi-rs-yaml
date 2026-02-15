@@ -1,0 +1,2 @@
+This is test content for the fileAsset acceptance test.
+It verifies that fn::fileAsset reads files from disk correctly.

@@ -1,0 +1,19 @@
+name: gcpx-table-crud
+runtime: yaml
+resources:
+  eventsTable:
+    type: gcpx:bigquery:Table
+    properties:
+      project: spacy-muffin-lab-5a292e
+      dataset: gcpx_test
+      tableId: acc_events___SUFFIX__
+      description: Updated events table description
+      friendlyName: Events Table v2
+      labels:
+        env: test
+        phase: update
+        version: v2
+outputs:
+  tableType: ${eventsTable.tableType}
+  tableId: ${eventsTable.tableId}
+  description: ${eventsTable.description}

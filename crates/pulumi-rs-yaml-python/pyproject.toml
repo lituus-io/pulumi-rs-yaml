@@ -1,0 +1,28 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "pulumi-rs-yaml"
+version = "0.2.0"
+description = "Python bindings for the Rust Pulumi YAML engine"
+license = {text = "AGPL-3.0-or-later"}
+requires-python = ">=3.9"
+dependencies = [
+    "pulumi>=3.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest", "pulumi-random>=4.0"]
+gcp = ["pulumi-gcp>=7.0"]
+
+[project.scripts]
+pulumi-language-yaml = "pulumi_yaml_rs.cli:language_main"
+pulumi-converter-yaml = "pulumi_yaml_rs.cli:converter_main"
+pulumi-rs-yaml = "pulumi_yaml_rs.cli:main"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+python-source = "python"
+module-name = "pulumi_yaml_rs._native"
+strip = true

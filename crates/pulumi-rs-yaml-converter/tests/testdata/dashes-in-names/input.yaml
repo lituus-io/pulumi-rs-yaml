@@ -1,0 +1,9 @@
+name: test
+runtime: yaml
+resources:
+  my-bucket:
+    type: aws:s3:Bucket
+    properties:
+      bucketPrefix: test
+outputs:
+  bucket-name: ${my-bucket.id}

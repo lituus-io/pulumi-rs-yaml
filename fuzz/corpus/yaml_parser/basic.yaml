@@ -1,0 +1,21 @@
+name: test
+runtime: yaml
+config:
+  password:
+    type: string
+    secret: true
+resources:
+  bucket:
+    type: aws:s3:Bucket
+    properties:
+      bucketName: my-bucket
+      tags:
+        env: ${pulumi.stack}
+variables:
+  joined:
+    fn::join:
+      - ","
+      - - a
+        - b
+outputs:
+  url: ${bucket.url}

@@ -1,0 +1,13 @@
+name: test
+runtime: yaml
+resources:
+{% for i in range(3) %}
+  "bucket{{ i }}":
+    type: aws:s3:Bucket
+    properties:
+      name: "test-{{ i }}"
+{% endfor %}
+{% if true %}
+outputs:
+  result: done
+{% endif %}

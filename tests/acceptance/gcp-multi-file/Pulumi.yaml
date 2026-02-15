@@ -1,0 +1,14 @@
+name: gcp-multi-file-test
+runtime: yaml
+description: Multi-file acceptance test — cross-file resource references
+config:
+  gcp:project:
+    value: spacy-muffin-lab-5a292e
+  gcp:region:
+    value: us-central1
+outputs:
+  storageBucketName: ${storageBucket.name}
+  storageBucketUrl: ${storageBucket.url}
+  logBucketName: ${logBucket.name}
+  logBucketUrl: ${logBucket.url}
+  archiveBucketName: ${archiveBucket.name}

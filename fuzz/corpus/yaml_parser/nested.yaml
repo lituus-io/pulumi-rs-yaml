@@ -1,0 +1,15 @@
+name: deep
+runtime: yaml
+resources:
+  a:
+    type: pkg:mod:A
+    properties:
+      x:
+        fn::toJSON:
+          nested:
+            fn::select:
+              - 0
+              - - fn::join:
+                    - ","
+                    - - ${pulumi.cwd}
+                      - ${pulumi.stack}

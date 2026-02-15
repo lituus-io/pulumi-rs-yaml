@@ -1,0 +1,16 @@
+[package]
+name = "pulumi-rs-yaml-python"
+version = "0.2.0"
+edition = "2021"
+description = "Python bindings for pulumi-rs-yaml via PyO3"
+license.workspace = true
+
+[lib]
+name = "pulumi_yaml_rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+pulumi-rs-yaml-core = { path = "../pulumi-rs-yaml-core" }
+pyo3 = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }

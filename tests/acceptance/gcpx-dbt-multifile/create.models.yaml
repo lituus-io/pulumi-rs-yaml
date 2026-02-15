@@ -1,0 +1,7 @@
+resources:
+  stgModel:
+    type: gcpx:dbt:Model
+    properties:
+      name: acc_mf___SUFFIX__
+      sql: "SELECT 1 as id, 'multifile' as source"
+      context: ${dbtProject.context}

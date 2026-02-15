@@ -1,0 +1,14 @@
+resources:
+  tableBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: cross-dag-tables
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+      labels:
+        layer: tables
+        storage-dep: ${storageBucket.name}
+    options:
+      dependsOn:
+        - ${storageBucket}

@@ -1,0 +1,29 @@
+resources:
+  stgOrders:
+    type: gcpx:dbt:Model
+    properties:
+      name: acc_stg_orders___SUFFIX__
+      sql: |
+        {{ readFile("sql/stg_orders.sql") }}
+      context: ${dbtProject.context}
+
+  stgUsers:
+    type: gcpx:dbt:Model
+    properties:
+      name: acc_stg_users___SUFFIX__
+      sql: |
+        {{ readFile("sql/stg_users.sql") }}
+      context: ${dbtProject.context}
+
+  martRevenue:
+    type: gcpx:dbt:Model
+    properties:
+      name: acc_mart_revenue___SUFFIX__
+      sql: |
+        {{ readFile("sql/mart_revenue_v2.sql") }}
+      context: ${dbtProject.context}
+      macros:
+        cents_to_dollars: ${centsToDollars.macroOutput}
+      modelRefs:
+        stg_orders: ${stgOrders.modelOutput}
+        stg_users: ${stgUsers.modelOutput}

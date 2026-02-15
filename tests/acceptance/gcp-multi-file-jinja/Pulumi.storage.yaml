@@ -1,0 +1,10 @@
+resources:
+{% for i in range(2) %}
+  "storageBucket{{ i }}":
+    type: gcp:storage:Bucket
+    properties:
+      name: "{{ pulumi_project }}-{{ pulumi_stack }}-storage-{{ i }}"
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+{% endfor %}

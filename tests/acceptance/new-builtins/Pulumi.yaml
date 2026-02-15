@@ -1,0 +1,47 @@
+name: new-builtins
+runtime: yaml
+description: Test new math and string builtins
+config:
+  gcp:project:
+    default: spacy-muffin-lab-5a292e
+  gcp:region:
+    default: us-central1
+variables:
+  absResult:
+    fn::abs: -42
+  floorResult:
+    fn::floor: 3.7
+  ceilResult:
+    fn::ceil: 3.2
+  maxResult:
+    fn::max:
+      - 10
+      - 20
+      - 5
+  minResult:
+    fn::min:
+      - 10
+      - 20
+      - 5
+  strLen:
+    fn::stringLen: "hello-world"
+resources:
+  builtinBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: new-builtins-test-bucket
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+      labels:
+        abs-result: "${absResult}"
+        floor-result: "${floorResult}"
+        ceil-result: "${ceilResult}"
+outputs:
+  absResult: ${absResult}
+  floorResult: ${floorResult}
+  ceilResult: ${ceilResult}
+  maxResult: ${maxResult}
+  minResult: ${minResult}
+  strLen: ${strLen}
+  bucketName: ${builtinBucket.name}

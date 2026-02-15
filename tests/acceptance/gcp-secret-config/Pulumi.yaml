@@ -1,0 +1,41 @@
+name: gcp-secret-config-test
+runtime: yaml
+description: Test fn::secret for marking values as secrets and additionalSecretOutputs
+config:
+  gcp:project:
+    value: spacy-muffin-lab-5a292e
+  gcp:region:
+    value: us-central1
+  prefix:
+    type: string
+    default: secret-cfg
+variables:
+  # fn::secret wraps a plain value as secret
+  secretPassword:
+    fn::secret: my-secret-password-123
+  secretApiKey:
+    fn::secret: sk-test-api-key-456
+  # fn::toJSON with non-secret data
+  configJson:
+    fn::toJSON:
+      env: test
+      region: us-central1
+resources:
+  secretBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: "${prefix}-test-bucket"
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+      labels:
+        test: secret-config
+    options:
+      additionalSecretOutputs:
+        - selfLink
+        - url
+outputs:
+  bucketName: ${secretBucket.name}
+  secretPassword: ${secretPassword}
+  secretApiKey: ${secretApiKey}
+  configJson: ${configJson}

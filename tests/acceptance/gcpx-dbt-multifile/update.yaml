@@ -1,0 +1,6 @@
+name: gcpx-dbt-multifile
+runtime: yaml
+outputs:
+  materialization: ${stgModel.materialization}
+  tableRef: ${stgModel.modelOutput.tableRef}
+  resolvedSql: ${stgModel.modelOutput.resolvedSql}

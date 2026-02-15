@@ -1,0 +1,30 @@
+[package]
+name = "pulumi-rs-yaml-core"
+version = "0.2.0"
+edition = "2021"
+description = "Core library for pulumi-rs-yaml: parser, AST, evaluator"
+license.workspace = true
+
+[dependencies]
+pulumi-rs-yaml-proto = { path = "../pulumi-rs-yaml-proto" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+prost-types = { workspace = true }
+thiserror = { workspace = true }
+semver = { workspace = true }
+base64 = { workspace = true }
+minijinja = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+rand = { workspace = true }
+hcl-rs = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+tempfile = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "core_bench"
+harness = false

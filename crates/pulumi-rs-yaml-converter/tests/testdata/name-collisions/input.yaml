@@ -1,0 +1,10 @@
+name: test
+runtime: yaml
+config:
+  bucket:
+    type: string
+resources:
+  bucket:
+    type: aws:s3:Bucket
+outputs:
+  bucket: ${bucket.id}

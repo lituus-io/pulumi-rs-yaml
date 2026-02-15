@@ -1,0 +1,49 @@
+name: gcpx-table-advanced
+runtime: yaml
+resources:
+  advTable:
+    type: gcpx:bigquery:Table
+    properties:
+      project: spacy-muffin-lab-5a292e
+      dataset: gcpx_test
+      tableId: acc_adv___SUFFIX__
+      description: Updated advanced table
+      friendlyName: Advanced Events v2
+      labels:
+        env: test
+        phase: update
+        version: v2
+      timePartitioning:
+        type: DAY
+        field: ts
+      clusterings:
+        - category
+
+  advSchema:
+    type: gcpx:bigquery:TableSchema
+    properties:
+      project: spacy-muffin-lab-5a292e
+      dataset: gcpx_test
+      tableId: acc_adv___SUFFIX__
+      schema:
+        - name: id
+          type: INT64
+          mode: REQUIRED
+        - name: ts
+          type: TIMESTAMP
+          mode: REQUIRED
+        - name: category
+          type: STRING
+        - name: amount
+          type: FLOAT64
+        - name: region
+          type: STRING
+          alter: insert
+    options:
+      dependsOn:
+        - ${advTable}
+
+outputs:
+  tableType: ${advTable.tableType}
+  tableId: ${advTable.tableId}
+  schemaFingerprint: ${advSchema.schemaFingerprint}

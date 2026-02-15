@@ -1,0 +1,13 @@
+name: test
+runtime: yaml
+variables:
+  encoded:
+    fn::toBase64: hello
+  decoded:
+    fn::fromBase64: aGVsbG8=
+  joined:
+    fn::join:
+      - ","
+      - - a
+        - b
+        - c

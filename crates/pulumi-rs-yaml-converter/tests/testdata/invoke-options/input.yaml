@@ -1,0 +1,17 @@
+name: test
+runtime: yaml
+resources:
+  provider:
+    type: pulumi:providers:aws
+    properties:
+      region: us-west-2
+variables:
+  cur-region:
+    fn::invoke:
+      arguments: {}
+      function: test:mod:Fn
+      options:
+        version: "1.0.0"
+        parent: ${provider}
+        pluginDownloadURL: http://example.com
+        provider: ${provider}

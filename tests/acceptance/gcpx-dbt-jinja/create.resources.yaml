@@ -1,0 +1,22 @@
+resources:
+  dbtProject:
+    type: gcpx:dbt:Project
+    properties:
+      gcpProject: spacy-muffin-lab-5a292e
+      dataset: gcpx_test
+
+  stgModel:
+    type: gcpx:dbt:Model
+    properties:
+      name: acc_jinja___SUFFIX__
+      sql: "SELECT 1 as id, 'jinja_test' as source"
+      context: ${dbtProject.context}
+
+{% if pulumi_stack != "prod" %}
+  debugModel:
+    type: gcpx:dbt:Model
+    properties:
+      name: acc_jinja_debug___SUFFIX__
+      sql: "SELECT 'debug' as mode, CURRENT_TIMESTAMP() as ts"
+      context: ${dbtProject.context}
+{% endif %}

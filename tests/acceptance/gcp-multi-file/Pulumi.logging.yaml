@@ -1,0 +1,18 @@
+resources:
+  logBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: "gcp-multi-file-test-logs"
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+    options:
+      dependsOn:
+        - ${storageBucket}
+  archiveBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: "gcp-multi-file-test-archive"
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
