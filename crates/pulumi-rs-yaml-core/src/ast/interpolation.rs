@@ -65,9 +65,13 @@ pub fn parse_interpolation<'src>(
                     i += 1;
                 }
             }
+        } else if bytes[i].is_ascii() {
+            current_text.push(bytes[i] as char);
+            i += 1;
         } else {
-            current_text.push(input[i..].chars().next().unwrap());
-            i += input[i..].chars().next().unwrap().len_utf8();
+            let ch = input[i..].chars().next().unwrap();
+            current_text.push(ch);
+            i += ch.len_utf8();
         }
     }
 
@@ -187,7 +191,7 @@ mod tests {
         assert_eq!(parts.len(), 1);
         assert_eq!(parts[0].text.as_ref(), "");
         let access = parts[0].value.as_ref().unwrap();
-        assert_eq!(access.root_name(), "myResource");
+        assert_eq!(access.root_name().unwrap(), "myResource");
     }
 
     #[test]

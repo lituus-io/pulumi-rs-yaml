@@ -3,6 +3,7 @@ use std::path::Path;
 
 use crate::ast::expr::Expr;
 use crate::ast::template::*;
+use crate::ast::visitor::{walk_expr, InvokeInfo, InvokePackageCollector};
 
 /// A package declaration from a lock file or from resource/invoke references.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -282,84 +283,13 @@ fn accept_package(
 
 /// Recursively scans an expression for invoke calls and adds their packages.
 fn scan_expr_for_invokes(expr: &Expr<'_>, map: &mut HashMap<String, PackageDependency>) {
-    match expr {
-        Expr::Invoke(_, invoke) => {
-            let token = invoke.token.as_ref();
-            let pkg_name = resolve_pkg_name(token).to_string();
-            let version = invoke
-                .call_opts
-                .version
-                .as_ref()
-                .map(|v| v.to_string())
-                .unwrap_or_default();
-            let download_url = invoke
-                .call_opts
-                .plugin_download_url
-                .as_ref()
-                .map(|v| v.to_string())
-                .unwrap_or_default();
-            accept_package(map, &pkg_name, &version, &download_url);
-
-            // Also scan invoke arguments
-            if let Some(ref args) = invoke.call_args {
-                scan_expr_for_invokes(args, map);
-            }
-        }
-        Expr::List(_, elements) => {
-            for elem in elements {
-                scan_expr_for_invokes(elem, map);
-            }
-        }
-        Expr::Object(_, entries) => {
-            for entry in entries {
-                scan_expr_for_invokes(&entry.key, map);
-                scan_expr_for_invokes(&entry.value, map);
-            }
-        }
-        Expr::Join(_, a, b) | Expr::Select(_, a, b) | Expr::Split(_, a, b) => {
-            scan_expr_for_invokes(a, map);
-            scan_expr_for_invokes(b, map);
-        }
-        Expr::ToJson(_, inner)
-        | Expr::ToBase64(_, inner)
-        | Expr::FromBase64(_, inner)
-        | Expr::Secret(_, inner)
-        | Expr::ReadFile(_, inner)
-        | Expr::Abs(_, inner)
-        | Expr::Floor(_, inner)
-        | Expr::Ceil(_, inner)
-        | Expr::Max(_, inner)
-        | Expr::Min(_, inner)
-        | Expr::StringLen(_, inner)
-        | Expr::TimeUtc(_, inner)
-        | Expr::TimeUnix(_, inner)
-        | Expr::Uuid(_, inner)
-        | Expr::RandomString(_, inner)
-        | Expr::DateFormat(_, inner)
-        | Expr::StringAsset(_, inner)
-        | Expr::FileAsset(_, inner)
-        | Expr::RemoteAsset(_, inner)
-        | Expr::FileArchive(_, inner)
-        | Expr::RemoteArchive(_, inner) => {
-            scan_expr_for_invokes(inner, map);
-        }
-        Expr::Substring(_, a, b, c) => {
-            scan_expr_for_invokes(a, map);
-            scan_expr_for_invokes(b, map);
-            scan_expr_for_invokes(c, map);
-        }
-        Expr::AssetArchive(_, entries) => {
-            for (_, v) in entries {
-                scan_expr_for_invokes(v, map);
-            }
-        }
-        // Terminals - no invokes
-        Expr::Null(_)
-        | Expr::Bool(_, _)
-        | Expr::Number(_, _)
-        | Expr::String(_, _)
-        | Expr::Interpolate(_, _)
-        | Expr::Symbol(_, _) => {}
+    let mut invokes: Vec<InvokeInfo<'_>> = Vec::new();
+    walk_expr(expr, &InvokePackageCollector, &mut invokes);
+    for info in invokes {
+        let pkg_name = resolve_pkg_name(info.token).to_string();
+        let version = info.version.unwrap_or("").to_string();
+        let download_url = info.plugin_download_url.unwrap_or("").to_string();
+        accept_package(map, &pkg_name, &version, &download_url);
     }
 }
 

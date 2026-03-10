@@ -1261,7 +1261,13 @@ impl<'src, C: ResourceCallback> Evaluator<'src, C> {
         &mut self,
         access: &'src PropertyAccess<'src>,
     ) -> Option<Value<'src>> {
-        let root_name = access.root_name();
+        let root_name = match access.root_name() {
+            Ok(name) => name,
+            Err(e) => {
+                self.diags.error(None, e.to_string(), "");
+                return None;
+            }
+        };
 
         // If the root is poisoned (failed evaluation), silently return None
         // to prevent cascading errors

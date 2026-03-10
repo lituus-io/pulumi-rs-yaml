@@ -160,10 +160,8 @@ impl MergedTemplate {
 
     /// Returns the number of files that contributed to this merged template.
     pub fn file_count(&self) -> usize {
-        let mut files: Vec<&str> = self.source_map.values().map(|s| s.as_str()).collect();
-        files.sort();
-        files.dedup();
-        files.len()
+        let unique: std::collections::HashSet<&str> = self.source_map.values().map(|s| s.as_str()).collect();
+        unique.len()
     }
 }
 
@@ -246,6 +244,37 @@ pub fn discover_project_files(directory: &Path) -> Result<ProjectFiles, String> 
     })
 }
 
+/// Merge items from an additional file into the target collection, detecting name collisions.
+fn merge_section<T, F>(
+    items: &[T],
+    filename: &str,
+    kind: &str,
+    name_fn: F,
+    source_map: &mut HashMap<String, String>,
+    target: &mut Vec<T>,
+    diags: &mut Diagnostics,
+) where
+    T: Clone,
+    F: Fn(&T) -> &str,
+{
+    for item in items {
+        let name = name_fn(item).to_string();
+        if let Some(existing_file) = source_map.get(&name) {
+            diags.error(
+                None,
+                format!(
+                    "{} '{}' defined in both {} and {}",
+                    kind, name, existing_file, filename
+                ),
+                "",
+            );
+        } else {
+            source_map.insert(name, filename.to_string());
+            target.push(item.clone());
+        }
+    }
+}
+
 /// Merges multiple parsed templates into a single `MergedTemplate`.
 ///
 /// `main` is the parsed `Pulumi.yaml`. `additional` is a list of
@@ -261,23 +290,30 @@ pub fn merge_templates(
     let mut diags = Diagnostics::new();
     let mut source_map = HashMap::new();
 
-    // Start with main file's contents
-    let mut resources = main.resources.clone();
-    let mut variables = main.variables.clone();
-    let mut outputs = main.outputs.clone();
-    let mut components = main.components.clone();
+    // Extract metadata from main (before moving collections)
+    let main_name = main.name;
+    let main_namespace = main.namespace;
+    let main_description = main.description;
+    let main_pulumi = main.pulumi;
+    let main_config = main.config;
+
+    // Move collections (main is consumed by value, no need to clone)
+    let mut resources = main.resources;
+    let mut variables = main.variables;
+    let mut outputs = main.outputs;
+    let mut components = main.components;
 
     // Track names from main file
-    for r in &main.resources {
+    for r in &resources {
         source_map.insert(r.logical_name.to_string(), main_path.to_string());
     }
-    for v in &main.variables {
+    for v in &variables {
         source_map.insert(v.key.to_string(), main_path.to_string());
     }
-    for o in &main.outputs {
+    for o in &outputs {
         source_map.insert(o.key.to_string(), main_path.to_string());
     }
-    for c in &main.components {
+    for c in &components {
         source_map.insert(c.key.to_string(), main_path.to_string());
     }
 
@@ -327,85 +363,23 @@ pub fn merge_templates(
             );
         }
 
-        // Merge resources with collision detection
-        for r in &template.resources {
-            let name = r.logical_name.to_string();
-            if let Some(existing_file) = source_map.get(&name) {
-                diags.error(
-                    None,
-                    format!(
-                        "resource '{}' defined in both {} and {}",
-                        name, existing_file, filename
-                    ),
-                    "",
-                );
-            } else {
-                source_map.insert(name, filename.clone());
-                resources.push(r.clone());
-            }
-        }
-
-        // Merge variables with collision detection
-        for v in &template.variables {
-            let name = v.key.to_string();
-            if let Some(existing_file) = source_map.get(&name) {
-                diags.error(
-                    None,
-                    format!(
-                        "variable '{}' defined in both {} and {}",
-                        name, existing_file, filename
-                    ),
-                    "",
-                );
-            } else {
-                source_map.insert(name, filename.clone());
-                variables.push(v.clone());
-            }
-        }
-
-        // Merge outputs with collision detection
-        for o in &template.outputs {
-            let name = o.key.to_string();
-            if let Some(existing_file) = source_map.get(&name) {
-                diags.error(
-                    None,
-                    format!(
-                        "output '{}' defined in both {} and {}",
-                        name, existing_file, filename
-                    ),
-                    "",
-                );
-            } else {
-                source_map.insert(name, filename.clone());
-                outputs.push(o.clone());
-            }
-        }
-
-        // Merge components with collision detection
-        for c in &template.components {
-            let name = c.key.to_string();
-            if let Some(existing_file) = source_map.get(&name) {
-                diags.error(
-                    None,
-                    format!(
-                        "component '{}' defined in both {} and {}",
-                        name, existing_file, filename
-                    ),
-                    "",
-                );
-            } else {
-                source_map.insert(name, filename.clone());
-                components.push(c.clone());
-            }
-        }
+        // Merge all sections with collision detection
+        merge_section(&template.resources, filename, "resource",
+            |r| r.logical_name.as_ref(), &mut source_map, &mut resources, &mut diags);
+        merge_section(&template.variables, filename, "variable",
+            |v| v.key.as_ref(), &mut source_map, &mut variables, &mut diags);
+        merge_section(&template.outputs, filename, "output",
+            |o| o.key.as_ref(), &mut source_map, &mut outputs, &mut diags);
+        merge_section(&template.components, filename, "component",
+            |c| c.key.as_ref(), &mut source_map, &mut components, &mut diags);
     }
 
     let merged = MergedTemplate {
-        main_name: main.name.clone(),
-        main_namespace: main.namespace.clone(),
-        main_description: main.description.clone(),
-        main_pulumi: main.pulumi.clone(),
-        config: main.config.clone(),
+        main_name,
+        main_namespace,
+        main_description,
+        main_pulumi,
+        config: main_config,
         resources,
         variables,
         outputs,
@@ -553,7 +527,7 @@ fn load_and_parse_file(
     // Apply Jinja preprocessing if context is available
     let effective_source = if let Some(ctx) = jinja_ctx {
         let preprocessor = JinjaPreprocessor::new(ctx);
-        match preprocessor.preprocess(&source, filename) {
+        let rendered = match preprocessor.preprocess(&source, filename) {
             Ok(cow) => cow.into_owned(),
             Err(diag) => {
                 return Err(format!(
@@ -562,21 +536,21 @@ fn load_and_parse_file(
                     diag.format_rich(filename)
                 ));
             }
-        }
-    } else {
-        source.clone()
-    };
+        };
 
-    // Validate rendered YAML
-    if jinja_ctx.is_some() {
-        if let Err(diag) = validate_rendered_yaml(&effective_source, &source, filename) {
+        // Validate rendered YAML (only when Jinja was applied)
+        if let Err(diag) = validate_rendered_yaml(&rendered, &source, filename) {
             return Err(format!(
                 "YAML validation failed for {}: {}",
                 filename,
                 diag.format_rich(filename)
             ));
         }
-    }
+
+        rendered
+    } else {
+        source
+    };
 
     // Parse
     let (template, parse_diags) = parse_template(&effective_source, None);
