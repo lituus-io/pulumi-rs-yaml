@@ -508,6 +508,14 @@ fn create_execution_plan(
     plan.set_item("diagnostics", py_diags)?;
     plan.set_item("levels", pyo3::types::PyList::new(py, &py_levels)?)?;
 
+    // Add dependency graph
+    let deps_dict = PyDict::new(py);
+    for (name, dep_set) in &sort_result.deps {
+        let dep_list: Vec<&str> = dep_set.iter().map(|s| s.as_str()).collect();
+        deps_dict.set_item(name.as_str(), dep_list)?;
+    }
+    plan.set_item("dependencies", deps_dict)?;
+
     Ok(plan.into_any().unbind())
 }
 
@@ -518,12 +526,227 @@ fn diags_to_py(py: Python<'_>, diags: &Diagnostics) -> PyResult<PyObject> {
         .map(|entry| {
             let dict = PyDict::new(py);
             dict.set_item("message", entry.summary.as_str()).ok();
+            dict.set_item("detail", entry.detail.as_str()).ok();
             dict.set_item("is_error", entry.is_error()).ok();
+            dict.set_item("severity", if entry.is_error() { "error" } else { "warning" }).ok();
             dict.into_any().unbind()
         })
         .collect();
     let py_list = pyo3::types::PyList::new(py, &list)?;
     Ok(py_list.into_any().unbind())
+}
+
+/// Convert classified diagnostics to a Python list of dicts.
+fn classified_to_py(
+    py: Python<'_>,
+    classified: &[pulumi_rs_yaml_core::classify::ClassifiedDiagnostic],
+) -> PyResult<PyObject> {
+    let results: Vec<PyObject> = classified
+        .iter()
+        .map(|c| {
+            let dict = PyDict::new(py);
+            dict.set_item("category", c.category.as_str()).ok();
+            dict.set_item("message", &c.message).ok();
+            dict.set_item("detail", &c.detail).ok();
+            dict.set_item("suggestions", &c.suggestions).ok();
+            dict.set_item("bad_ref", c.bad_ref.as_deref()).ok();
+            dict.set_item("best_match", c.best_match.as_deref()).ok();
+            if let Some(ref cycle) = c.cycle_path {
+                dict.set_item("cycle_path", cycle).ok();
+            } else {
+                dict.set_item("cycle_path", py.None()).ok();
+            }
+            dict.into_any().unbind()
+        })
+        .collect();
+
+    let py_list = pyo3::types::PyList::new(py, &results)?;
+    Ok(py_list.into_any().unbind())
+}
+
+/// Validate a project and return classified diagnostics with structured data.
+#[pyfunction]
+fn validate_and_classify(py: Python<'_>, project_dir: &str) -> PyResult<PyObject> {
+    let path = std::path::Path::new(project_dir);
+    let (merged, load_diags) = pulumi_rs_yaml_core::multi_file::load_project(path, None);
+
+    // Also run DAG validation
+    let template = merged.as_template_decl();
+    let (_, sort_diags) = pulumi_rs_yaml_core::eval::graph::topological_sort(&template);
+
+    let mut all_diags = Diagnostics::new();
+    all_diags.extend(load_diags);
+    all_diags.extend(sort_diags);
+
+    let classified = pulumi_rs_yaml_core::classify::classify_all(&all_diags);
+    classified_to_py(py, &classified)
+}
+
+/// Run type checking on a project and return classified diagnostics.
+///
+/// If `schema_dir` is provided, loads a `SchemaStore` from that JSON file
+/// and runs full type checking (property validation, required inputs, etc.).
+/// Without a schema, only parse/merge diagnostics are returned.
+#[pyfunction]
+#[pyo3(signature = (project_dir, schema_dir=None))]
+fn type_check_project(
+    py: Python<'_>,
+    project_dir: &str,
+    schema_dir: Option<&str>,
+) -> PyResult<PyObject> {
+    let path = std::path::Path::new(project_dir);
+    let (merged, load_diags) = pulumi_rs_yaml_core::multi_file::load_project(path, None);
+
+    if load_diags.has_errors() {
+        // Return load errors as classified diagnostics
+        let classified = pulumi_rs_yaml_core::classify::classify_all(&load_diags);
+        return classified_to_py(py, &classified);
+    }
+
+    let template = merged.as_template_decl();
+
+    // Try to load schema store from JSON file
+    let schema_store = if let Some(sd) = schema_dir {
+        let schema_path = std::path::Path::new(sd);
+        pulumi_rs_yaml_core::schema::SchemaStore::load(schema_path).ok()
+    } else {
+        None
+    };
+
+    let mut all_diags = Diagnostics::new();
+
+    if let Some(store) = &schema_store {
+        let tc_result = pulumi_rs_yaml_core::type_check::type_check(
+            &template,
+            store,
+            Some(merged.source_map()),
+        );
+        all_diags.extend(tc_result.diagnostics);
+    }
+
+    let classified = pulumi_rs_yaml_core::classify::classify_all(&all_diags);
+    classified_to_py(py, &classified)
+}
+
+/// Get completion items for a resource type's properties.
+///
+/// Returns a list of dicts with keys: name, type, required, secret.
+/// Requires `schema_dir` pointing to a SchemaStore JSON file.
+/// Returns an empty list if no schema is provided.
+#[pyfunction]
+#[pyo3(signature = (resource_type, schema_dir=None))]
+fn complete_properties(
+    py: Python<'_>,
+    resource_type: &str,
+    schema_dir: Option<&str>,
+) -> PyResult<PyObject> {
+    let schema_store = if let Some(sd) = schema_dir {
+        let schema_path = std::path::Path::new(sd);
+        pulumi_rs_yaml_core::schema::SchemaStore::load(schema_path)
+            .map_err(|e| PyValueError::new_err(format!("Failed to load schema: {}", e)))?
+    } else {
+        return Ok(pyo3::types::PyList::empty(py).into_any().unbind());
+    };
+
+    // Resolve the token via schema (handles aliases and canonicalization)
+    let canonical = schema_store
+        .resolve_resource_token(resource_type)
+        .unwrap_or_else(|| {
+            pulumi_rs_yaml_core::packages::canonicalize_type_token(resource_type)
+        });
+
+    let items =
+        pulumi_rs_yaml_core::completion::complete_resource_properties(&schema_store, &canonical);
+
+    let results: Vec<PyObject> = items
+        .iter()
+        .map(|item| {
+            let dict = PyDict::new(py);
+            dict.set_item("name", item.name).ok();
+            dict.set_item("type", item.type_label).ok();
+            dict.set_item("required", item.required).ok();
+            dict.set_item("secret", item.secret).ok();
+            dict.into_any().unbind()
+        })
+        .collect();
+
+    let py_list = pyo3::types::PyList::new(py, &results)?;
+    Ok(py_list.into_any().unbind())
+}
+
+/// Get schema metadata for a resource type.
+///
+/// Returns a dict with keys: required, secret, aliases, is_component, properties.
+/// Requires `schema_dir` pointing to a SchemaStore JSON file.
+/// Returns None if the resource type is not found or no schema is provided.
+#[pyfunction]
+#[pyo3(signature = (resource_type, schema_dir=None))]
+fn get_resource_schema(
+    py: Python<'_>,
+    resource_type: &str,
+    schema_dir: Option<&str>,
+) -> PyResult<PyObject> {
+    let schema_store = if let Some(sd) = schema_dir {
+        let schema_path = std::path::Path::new(sd);
+        pulumi_rs_yaml_core::schema::SchemaStore::load(schema_path)
+            .map_err(|e| PyValueError::new_err(format!("Failed to load schema: {}", e)))?
+    } else {
+        return Ok(py.None());
+    };
+
+    // Resolve the token via schema (handles aliases and canonicalization)
+    let canonical = schema_store
+        .resolve_resource_token(resource_type)
+        .unwrap_or_else(|| {
+            pulumi_rs_yaml_core::packages::canonicalize_type_token(resource_type)
+        });
+
+    let info = schema_store.lookup_resource(&canonical);
+
+    match info {
+        Some(info) => {
+            let dict = PyDict::new(py);
+
+            let required: Vec<&str> = info.required_inputs.iter().map(|s| s.as_str()).collect();
+            dict.set_item("required", required)?;
+
+            let secret: Vec<&str> = info.secret_properties.iter().map(|s| s.as_str()).collect();
+            dict.set_item("secret", secret)?;
+
+            let aliases: Vec<&str> = info.aliases.iter().map(|s| s.as_str()).collect();
+            dict.set_item("aliases", aliases)?;
+
+            dict.set_item("is_component", info.is_component)?;
+
+            let props_dict = PyDict::new(py);
+            for (name, prop_info) in &info.property_types {
+                let prop_d = PyDict::new(py);
+                prop_d.set_item("type", prop_info.type_.label())?;
+                prop_d.set_item("required", prop_info.required)?;
+                prop_d.set_item("secret", prop_info.secret)?;
+                props_dict.set_item(name.as_str(), prop_d)?;
+            }
+            dict.set_item("properties", props_dict)?;
+
+            // Also include input_property_types for input-specific metadata
+            let input_props_dict = PyDict::new(py);
+            for (name, prop_info) in &info.input_property_types {
+                let prop_d = PyDict::new(py);
+                prop_d.set_item("type", prop_info.type_.label())?;
+                prop_d.set_item("required", prop_info.required)?;
+                prop_d.set_item("secret", prop_info.secret)?;
+                input_props_dict.set_item(name.as_str(), prop_d)?;
+            }
+            dict.set_item("input_properties", input_props_dict)?;
+
+            let output_props: Vec<&str> =
+                info.output_properties.iter().map(|s| s.as_str()).collect();
+            dict.set_item("output_properties", output_props)?;
+
+            Ok(dict.into_any().unbind())
+        }
+        None => Ok(py.None()),
+    }
 }
 
 /// The native Python module.
@@ -538,5 +761,9 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(preprocess_jinja, m)?)?;
     m.add_function(wrap_pyfunction!(evaluate_builtin, m)?)?;
     m.add_function(wrap_pyfunction!(create_execution_plan, m)?)?;
+    m.add_function(wrap_pyfunction!(validate_and_classify, m)?)?;
+    m.add_function(wrap_pyfunction!(type_check_project, m)?)?;
+    m.add_function(wrap_pyfunction!(complete_properties, m)?)?;
+    m.add_function(wrap_pyfunction!(get_resource_schema, m)?)?;
     Ok(())
 }

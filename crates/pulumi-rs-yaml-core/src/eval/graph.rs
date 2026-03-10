@@ -1,5 +1,6 @@
 use crate::ast::expr::Expr;
 use crate::ast::template::*;
+use crate::ast::visitor::{walk_expr, walk_resource, AllRefsCollector, DepCollector};
 use crate::diag::{self, Diagnostics};
 use std::collections::{HashMap, HashSet};
 
@@ -48,23 +49,15 @@ pub struct SortResultWithDeps {
     pub deps: HashMap<String, HashSet<String>>,
 }
 
-/// Performs a topological sort of all nodes in a template.
+/// Internal implementation: builds name registry, validates references,
+/// builds adjacency, and runs DFS topological sort.
 ///
-/// Returns the nodes in dependency order (dependencies come first).
-/// Reports errors for cycles and duplicate node names.
-pub fn topological_sort<'a>(template: &'a TemplateDecl<'a>) -> (Vec<String>, Diagnostics) {
-    topological_sort_with_sources(template, None)
-}
-
-/// Performs a topological sort with optional source file map for rich error messages.
-///
-/// When `source_map` is provided (mapping logical name → filename), error messages
-/// include the source file where each node is defined. This is used for multi-file
-/// projects where resources/variables span multiple `Pulumi.*.yaml` files.
-pub fn topological_sort_with_sources<'a>(
+/// Returns `(order, deps_borrowed, diagnostics)`. The borrowed deps can be
+/// converted to owned strings by the caller if needed.
+fn topological_sort_inner<'a>(
     template: &'a TemplateDecl<'a>,
     source_map: Option<&HashMap<String, String>>,
-) -> (Vec<String>, Diagnostics) {
+) -> (Vec<String>, HashMap<&'a str, HashSet<&'a str>>, Diagnostics) {
     let mut diags = Diagnostics::new();
     let mut names: HashMap<&str, &str> = HashMap::new(); // name -> kind
 
@@ -126,17 +119,18 @@ pub fn topological_sort_with_sources<'a>(
     }
 
     if diags.has_errors() {
-        return (Vec::new(), diags);
+        return (Vec::new(), HashMap::new(), diags);
     }
 
     // Validate all references exist before building the dependency graph
     validate_references(template, &names, source_map, &mut diags);
     if diags.has_errors() {
-        return (Vec::new(), diags);
+        return (Vec::new(), HashMap::new(), diags);
     }
 
     // Build adjacency: for each node, collect the set of nodes it depends on
     let mut deps: HashMap<&str, HashSet<&str>> = HashMap::new();
+    let dep_collector = DepCollector { known_names: &names };
 
     // Config entries have no dependencies (they come from external config)
     for entry in &template.config {
@@ -146,14 +140,14 @@ pub fn topological_sort_with_sources<'a>(
     // Variables depend on whatever their expression references
     for entry in &template.variables {
         let mut node_deps = HashSet::new();
-        collect_expr_deps(&entry.value, &names, &mut node_deps);
+        walk_expr(&entry.value, &dep_collector, &mut node_deps);
         deps.insert(entry.key.as_ref(), node_deps);
     }
 
     // Resources depend on whatever their properties, options, etc. reference
     for entry in &template.resources {
         let mut node_deps = HashSet::new();
-        collect_resource_deps(&entry.resource, &names, &mut node_deps);
+        walk_resource(&entry.resource, &dep_collector, &mut node_deps);
 
         // Default provider dependencies: resources without an explicit provider
         // depend on any resource marked as defaultProvider
@@ -198,6 +192,27 @@ pub fn topological_sort_with_sources<'a>(
         }
     }
 
+    (order, deps, diags)
+}
+
+/// Performs a topological sort of all nodes in a template.
+///
+/// Returns the nodes in dependency order (dependencies come first).
+/// Reports errors for cycles and duplicate node names.
+pub fn topological_sort<'a>(template: &'a TemplateDecl<'a>) -> (Vec<String>, Diagnostics) {
+    topological_sort_with_sources(template, None)
+}
+
+/// Performs a topological sort with optional source file map for rich error messages.
+///
+/// When `source_map` is provided (mapping logical name → filename), error messages
+/// include the source file where each node is defined. This is used for multi-file
+/// projects where resources/variables span multiple `Pulumi.*.yaml` files.
+pub fn topological_sort_with_sources<'a>(
+    template: &'a TemplateDecl<'a>,
+    source_map: Option<&HashMap<String, String>>,
+) -> (Vec<String>, Diagnostics) {
+    let (order, _deps, diags) = topological_sort_inner(template, source_map);
     (order, diags)
 }
 
@@ -208,146 +223,13 @@ pub fn topological_sort_with_deps<'a>(
     template: &'a TemplateDecl<'a>,
     source_map: Option<&HashMap<String, String>>,
 ) -> (SortResultWithDeps, Diagnostics) {
-    let mut diags = Diagnostics::new();
-    let mut names: HashMap<&str, &str> = HashMap::new();
-
-    // Always insert "pulumi" as a node — Go always does this regardless of settings
-    names.insert("pulumi", "pulumi");
-    for entry in &template.config {
-        let key = entry.key.as_ref();
-        if key == "pulumi" {
-            diags.error(None, "\"pulumi\" is a reserved name", "");
-            continue;
-        }
-        if let Some(existing_kind) = names.insert(key, "config") {
-            diags.error(
-                None,
-                format!(
-                    "duplicate node name \"{}\": already defined as {}",
-                    key, existing_kind
-                ),
-                "",
-            );
-        }
-    }
-    for entry in &template.variables {
-        let key = entry.key.as_ref();
-        if key == "pulumi" {
-            diags.error(None, "\"pulumi\" is a reserved name", "");
-            continue;
-        }
-        if let Some(existing_kind) = names.insert(key, "variable") {
-            diags.error(
-                None,
-                format!(
-                    "duplicate node name \"{}\": already defined as {}",
-                    key, existing_kind
-                ),
-                "",
-            );
-        }
-    }
-    for entry in &template.resources {
-        let key = entry.logical_name.as_ref();
-        if key == "pulumi" {
-            diags.error(None, "\"pulumi\" is a reserved name", "");
-            continue;
-        }
-        if let Some(existing_kind) = names.insert(key, "resource") {
-            diags.error(
-                None,
-                format!(
-                    "duplicate node name \"{}\": already defined as {}",
-                    key, existing_kind
-                ),
-                "",
-            );
-        }
-    }
-
-    if diags.has_errors() {
-        return (
-            SortResultWithDeps {
-                order: Vec::new(),
-                deps: HashMap::new(),
-            },
-            diags,
-        );
-    }
-
-    validate_references(template, &names, source_map, &mut diags);
-    if diags.has_errors() {
-        return (
-            SortResultWithDeps {
-                order: Vec::new(),
-                deps: HashMap::new(),
-            },
-            diags,
-        );
-    }
-
-    // Build adjacency
-    let mut deps: HashMap<&str, HashSet<&str>> = HashMap::new();
-    for entry in &template.config {
-        deps.entry(entry.key.as_ref()).or_default();
-    }
-    for entry in &template.variables {
-        let mut node_deps = HashSet::new();
-        collect_expr_deps(&entry.value, &names, &mut node_deps);
-        deps.insert(entry.key.as_ref(), node_deps);
-    }
-    for entry in &template.resources {
-        let mut node_deps = HashSet::new();
-        collect_resource_deps(&entry.resource, &names, &mut node_deps);
-        if entry.resource.options.provider.is_none() {
-            for other_entry in &template.resources {
-                if other_entry.resource.default_provider == Some(true)
-                    && other_entry.logical_name != entry.logical_name
-                {
-                    node_deps.insert(other_entry.logical_name.as_ref());
-                }
-            }
-        }
-        deps.insert(entry.logical_name.as_ref(), node_deps);
-    }
-    // "pulumi" node has no dependencies — always present
-    deps.entry("pulumi").or_default();
-
-    // DFS topological sort
-    let mut visited: HashSet<&str> = HashSet::new();
-    let mut order: Vec<String> = Vec::new();
-    let mut path: Vec<&str> = Vec::new();
-    let mut path_set: HashSet<&str> = HashSet::new();
-    let mut all_nodes: Vec<&str> = deps.keys().copied().collect();
-    all_nodes.sort();
-    for node in &all_nodes {
-        if !visited.contains(node) {
-            dfs_with_path(
-                node,
-                &deps,
-                &mut visited,
-                &mut path,
-                &mut path_set,
-                &mut order,
-                source_map,
-                &mut diags,
-            );
-        }
-    }
-
-    // Convert deps to owned strings
+    let (order, deps, diags) = topological_sort_inner(template, source_map);
+    // Convert borrowed deps to owned strings
     let owned_deps: HashMap<String, HashSet<String>> = deps
         .iter()
         .map(|(k, v)| (k.to_string(), v.iter().map(|s| s.to_string()).collect()))
         .collect();
-
-    (
-        SortResultWithDeps {
-            order,
-            deps: owned_deps,
-        },
-        diags,
-    )
+    (SortResultWithDeps { order, deps: owned_deps }, diags)
 }
 
 /// Groups topologically sorted nodes into levels by dependency depth.
@@ -568,129 +450,12 @@ fn dfs_with_path<'a>(
 
 /// Collects ALL `${ref}` root names from an expression, without filtering by known names.
 fn collect_all_expr_refs<'a>(expr: &'a Expr<'a>, refs: &mut HashSet<&'a str>) {
-    match expr {
-        Expr::Symbol(_, access) => {
-            let root = access.root_name();
-            refs.insert(root);
-        }
-        Expr::Interpolate(_, parts) => {
-            for part in parts {
-                if let Some(ref access) = part.value {
-                    let root = access.root_name();
-                    refs.insert(root);
-                }
-            }
-        }
-        Expr::List(_, elements) => {
-            for elem in elements {
-                collect_all_expr_refs(elem, refs);
-            }
-        }
-        Expr::Object(_, entries) => {
-            for entry in entries {
-                collect_all_expr_refs(&entry.key, refs);
-                collect_all_expr_refs(&entry.value, refs);
-            }
-        }
-        Expr::Invoke(_, invoke) => {
-            if let Some(ref args) = invoke.call_args {
-                collect_all_expr_refs(args, refs);
-            }
-            if let Some(ref parent) = invoke.call_opts.parent {
-                collect_all_expr_refs(parent, refs);
-            }
-            if let Some(ref provider) = invoke.call_opts.provider {
-                collect_all_expr_refs(provider, refs);
-            }
-            if let Some(ref depends_on) = invoke.call_opts.depends_on {
-                collect_all_expr_refs(depends_on, refs);
-            }
-        }
-        Expr::Join(_, a, b) | Expr::Select(_, a, b) | Expr::Split(_, a, b) => {
-            collect_all_expr_refs(a, refs);
-            collect_all_expr_refs(b, refs);
-        }
-        Expr::ToJson(_, inner)
-        | Expr::ToBase64(_, inner)
-        | Expr::FromBase64(_, inner)
-        | Expr::Secret(_, inner)
-        | Expr::ReadFile(_, inner)
-        | Expr::Abs(_, inner)
-        | Expr::Floor(_, inner)
-        | Expr::Ceil(_, inner)
-        | Expr::Max(_, inner)
-        | Expr::Min(_, inner)
-        | Expr::StringLen(_, inner)
-        | Expr::TimeUtc(_, inner)
-        | Expr::TimeUnix(_, inner)
-        | Expr::Uuid(_, inner)
-        | Expr::RandomString(_, inner)
-        | Expr::DateFormat(_, inner)
-        | Expr::StringAsset(_, inner)
-        | Expr::FileAsset(_, inner)
-        | Expr::RemoteAsset(_, inner)
-        | Expr::FileArchive(_, inner)
-        | Expr::RemoteArchive(_, inner) => {
-            collect_all_expr_refs(inner, refs);
-        }
-        Expr::Substring(_, a, b, c) => {
-            collect_all_expr_refs(a, refs);
-            collect_all_expr_refs(b, refs);
-            collect_all_expr_refs(c, refs);
-        }
-        Expr::AssetArchive(_, entries) => {
-            for (_, v) in entries {
-                collect_all_expr_refs(v, refs);
-            }
-        }
-        Expr::Null(_) | Expr::Bool(_, _) | Expr::Number(_, _) | Expr::String(_, _) => {}
-    }
+    walk_expr(expr, &AllRefsCollector, refs);
 }
 
 /// Collects ALL `${ref}` root names from a resource declaration, without filtering.
 fn collect_all_resource_refs<'a>(resource: &'a ResourceDecl<'a>, refs: &mut HashSet<&'a str>) {
-    match &resource.properties {
-        ResourceProperties::Map(props) => {
-            for prop in props {
-                collect_all_expr_refs(&prop.value, refs);
-            }
-        }
-        ResourceProperties::Expr(expr) => {
-            collect_all_expr_refs(expr, refs);
-        }
-    }
-
-    let opts = &resource.options;
-    if let Some(ref expr) = opts.depends_on {
-        collect_all_expr_refs(expr, refs);
-    }
-    if let Some(ref expr) = opts.parent {
-        collect_all_expr_refs(expr, refs);
-    }
-    if let Some(ref expr) = opts.provider {
-        collect_all_expr_refs(expr, refs);
-    }
-    if let Some(ref expr) = opts.providers {
-        collect_all_expr_refs(expr, refs);
-    }
-    if let Some(ref expr) = opts.protect {
-        collect_all_expr_refs(expr, refs);
-    }
-    if let Some(ref expr) = opts.aliases {
-        collect_all_expr_refs(expr, refs);
-    }
-    if let Some(ref expr) = opts.replace_with {
-        collect_all_expr_refs(expr, refs);
-    }
-    if let Some(ref expr) = opts.deleted_with {
-        collect_all_expr_refs(expr, refs);
-    }
-    if let Some(ref get) = resource.get {
-        collect_all_expr_refs(&get.id, refs);
-        for prop in &get.state {
-            collect_all_expr_refs(&prop.value, refs);
-        }
-    }
+    walk_resource(resource, &AllRefsCollector, refs);
 }
 
 /// Extracts dependency names from an expression.
@@ -699,142 +464,9 @@ pub fn collect_expr_deps<'a>(
     known_names: &HashMap<&str, &str>,
     deps: &mut HashSet<&'a str>,
 ) {
-    match expr {
-        Expr::Symbol(_, access) => {
-            let root = access.root_name();
-            if known_names.contains_key(root) {
-                deps.insert(root);
-            }
-        }
-        Expr::Interpolate(_, parts) => {
-            for part in parts {
-                if let Some(ref access) = part.value {
-                    let root = access.root_name();
-                    if known_names.contains_key(root) {
-                        deps.insert(root);
-                    }
-                }
-            }
-        }
-        Expr::List(_, elements) => {
-            for elem in elements {
-                collect_expr_deps(elem, known_names, deps);
-            }
-        }
-        Expr::Object(_, entries) => {
-            for entry in entries {
-                collect_expr_deps(&entry.key, known_names, deps);
-                collect_expr_deps(&entry.value, known_names, deps);
-            }
-        }
-        Expr::Invoke(_, invoke) => {
-            if let Some(ref args) = invoke.call_args {
-                collect_expr_deps(args, known_names, deps);
-            }
-            if let Some(ref parent) = invoke.call_opts.parent {
-                collect_expr_deps(parent, known_names, deps);
-            }
-            if let Some(ref provider) = invoke.call_opts.provider {
-                collect_expr_deps(provider, known_names, deps);
-            }
-            if let Some(ref depends_on) = invoke.call_opts.depends_on {
-                collect_expr_deps(depends_on, known_names, deps);
-            }
-        }
-        Expr::Join(_, a, b) | Expr::Select(_, a, b) | Expr::Split(_, a, b) => {
-            collect_expr_deps(a, known_names, deps);
-            collect_expr_deps(b, known_names, deps);
-        }
-        Expr::ToJson(_, inner)
-        | Expr::ToBase64(_, inner)
-        | Expr::FromBase64(_, inner)
-        | Expr::Secret(_, inner)
-        | Expr::ReadFile(_, inner)
-        | Expr::Abs(_, inner)
-        | Expr::Floor(_, inner)
-        | Expr::Ceil(_, inner)
-        | Expr::Max(_, inner)
-        | Expr::Min(_, inner)
-        | Expr::StringLen(_, inner)
-        | Expr::TimeUtc(_, inner)
-        | Expr::TimeUnix(_, inner)
-        | Expr::Uuid(_, inner)
-        | Expr::RandomString(_, inner)
-        | Expr::DateFormat(_, inner)
-        | Expr::StringAsset(_, inner)
-        | Expr::FileAsset(_, inner)
-        | Expr::RemoteAsset(_, inner)
-        | Expr::FileArchive(_, inner)
-        | Expr::RemoteArchive(_, inner) => {
-            collect_expr_deps(inner, known_names, deps);
-        }
-        Expr::Substring(_, a, b, c) => {
-            collect_expr_deps(a, known_names, deps);
-            collect_expr_deps(b, known_names, deps);
-            collect_expr_deps(c, known_names, deps);
-        }
-        Expr::AssetArchive(_, entries) => {
-            for (_, v) in entries {
-                collect_expr_deps(v, known_names, deps);
-            }
-        }
-        Expr::Null(_) | Expr::Bool(_, _) | Expr::Number(_, _) | Expr::String(_, _) => {}
-    }
+    walk_expr(expr, &DepCollector { known_names }, deps);
 }
 
-/// Extracts dependency names from a resource declaration.
-fn collect_resource_deps<'a>(
-    resource: &'a ResourceDecl<'a>,
-    known_names: &HashMap<&str, &str>,
-    deps: &mut HashSet<&'a str>,
-) {
-    // Properties
-    match &resource.properties {
-        ResourceProperties::Map(props) => {
-            for prop in props {
-                collect_expr_deps(&prop.value, known_names, deps);
-            }
-        }
-        ResourceProperties::Expr(expr) => {
-            collect_expr_deps(expr, known_names, deps);
-        }
-    }
-
-    // Options
-    let opts = &resource.options;
-    if let Some(ref expr) = opts.depends_on {
-        collect_expr_deps(expr, known_names, deps);
-    }
-    if let Some(ref expr) = opts.parent {
-        collect_expr_deps(expr, known_names, deps);
-    }
-    if let Some(ref expr) = opts.provider {
-        collect_expr_deps(expr, known_names, deps);
-    }
-    if let Some(ref expr) = opts.providers {
-        collect_expr_deps(expr, known_names, deps);
-    }
-    if let Some(ref expr) = opts.protect {
-        collect_expr_deps(expr, known_names, deps);
-    }
-    if let Some(ref expr) = opts.aliases {
-        collect_expr_deps(expr, known_names, deps);
-    }
-    if let Some(ref expr) = opts.replace_with {
-        collect_expr_deps(expr, known_names, deps);
-    }
-    if let Some(ref expr) = opts.deleted_with {
-        collect_expr_deps(expr, known_names, deps);
-    }
-
-    // Get resource
-    if let Some(ref get) = resource.get {
-        collect_expr_deps(&get.id, known_names, deps);
-        for prop in &get.state {
-            collect_expr_deps(&prop.value, known_names, deps);
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {

@@ -22,11 +22,11 @@ pub enum PropertyAccessor<'src> {
 
 impl PropertyAccess<'_> {
     /// Returns the root name of the access chain.
-    pub fn root_name(&self) -> &str {
+    pub fn root_name(&self) -> Result<&str, &'static str> {
         match &self.accessors[0] {
-            PropertyAccessor::Name(n) => n.as_ref(),
-            PropertyAccessor::StringSubscript(n) => n.as_ref(),
-            PropertyAccessor::IntSubscript(_) => panic!("root cannot be integer subscript"),
+            PropertyAccessor::Name(n) => Ok(n.as_ref()),
+            PropertyAccessor::StringSubscript(n) => Ok(n.as_ref()),
+            PropertyAccessor::IntSubscript(_) => Err("root cannot be integer subscript"),
         }
     }
 }
@@ -174,7 +174,7 @@ mod tests {
     fn test_simple_name() {
         let (rest, access) = parse_ok("root}");
         assert_eq!(rest, "");
-        assert_eq!(access.root_name(), "root");
+        assert_eq!(access.root_name().unwrap(), "root");
         assert_eq!(access.to_string(), "root");
     }
 

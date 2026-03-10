@@ -1,4 +1,5 @@
 pub mod ast;
+pub mod classify;
 pub mod completion;
 pub mod config_types;
 pub mod diag;
