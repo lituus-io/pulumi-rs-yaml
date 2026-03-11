@@ -1,9 +1,24 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::LazyLock;
 
 use crate::ast::expr::Expr;
 use crate::ast::template::*;
 use crate::ast::visitor::{walk_expr, InvokeInfo, InvokePackageCollector};
+
+// Static YAML keys allocated once, used for package lock parsing.
+static KEY_PKG_DECL_VERSION: LazyLock<serde_yaml::Value> =
+    LazyLock::new(|| serde_yaml::Value::String("packageDeclarationVersion".into()));
+static KEY_NAME: LazyLock<serde_yaml::Value> =
+    LazyLock::new(|| serde_yaml::Value::String("name".into()));
+static KEY_VERSION: LazyLock<serde_yaml::Value> =
+    LazyLock::new(|| serde_yaml::Value::String("version".into()));
+static KEY_DOWNLOAD_URL: LazyLock<serde_yaml::Value> =
+    LazyLock::new(|| serde_yaml::Value::String("downloadUrl".into()));
+static KEY_PARAMETERIZATION: LazyLock<serde_yaml::Value> =
+    LazyLock::new(|| serde_yaml::Value::String("parameterization".into()));
+static KEY_VALUE: LazyLock<serde_yaml::Value> =
+    LazyLock::new(|| serde_yaml::Value::String("value".into()));
 
 /// A package declaration from a lock file or from resource/invoke references.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -80,46 +95,38 @@ fn try_parse_package_lock(path: &Path) -> Option<PackageDecl> {
     let map = value.as_mapping()?;
 
     // Must have packageDeclarationVersion
-    let version_key = serde_yaml::Value::String("packageDeclarationVersion".to_string());
-    let decl_version = map.get(&version_key)?.as_u64()?;
+    let decl_version = map.get(&*KEY_PKG_DECL_VERSION)?.as_u64()?;
     if decl_version != 1 {
         return None;
     }
 
-    let name_key = serde_yaml::Value::String("name".to_string());
-    let name = map.get(&name_key)?.as_str()?.to_string();
+    let name = map.get(&*KEY_NAME)?.as_str()?.to_string();
     if name.is_empty() {
         return None;
     }
 
-    let version_val_key = serde_yaml::Value::String("version".to_string());
     let version = map
-        .get(&version_val_key)
+        .get(&*KEY_VERSION)
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
 
-    let url_key = serde_yaml::Value::String("downloadUrl".to_string());
     let download_url = map
-        .get(&url_key)
+        .get(&*KEY_DOWNLOAD_URL)
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
 
-    let param_key = serde_yaml::Value::String("parameterization".to_string());
-    let parameterization = map.get(&param_key).and_then(|v| {
+    let parameterization = map.get(&*KEY_PARAMETERIZATION).and_then(|v| {
         let pm = v.as_mapping()?;
-        let p_name = pm
-            .get(serde_yaml::Value::String("name".to_string()))?
-            .as_str()?
-            .to_string();
+        let p_name = pm.get(&*KEY_NAME)?.as_str()?.to_string();
         let p_version = pm
-            .get(serde_yaml::Value::String("version".to_string()))
+            .get(&*KEY_VERSION)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
         let p_value = pm
-            .get(serde_yaml::Value::String("value".to_string()))
+            .get(&*KEY_VALUE)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
@@ -146,14 +153,21 @@ fn try_parse_package_lock(path: &Path) -> Option<PackageDecl> {
 /// - `"kubernetes:core:Service"` → `"kubernetes"`
 /// - `"pulumi:providers:aws"` → `"aws"`
 pub fn resolve_pkg_name(type_string: &str) -> &str {
-    let parts: Vec<&str> = type_string.split(':').collect();
+    let mut iter = type_string.splitn(3, ':');
+    let first = iter.next().unwrap_or(type_string);
 
     // pulumi:providers:aws → package is "aws"
-    if parts.len() == 3 && parts[0] == "pulumi" && parts[1] == "providers" {
-        return parts[2];
+    if first == "pulumi" {
+        if let Some(second) = iter.next() {
+            if second == "providers" {
+                if let Some(third) = iter.next() {
+                    return third;
+                }
+            }
+        }
     }
 
-    parts[0]
+    first
 }
 
 /// Gets all referenced packages from a template by scanning resource types and invoke tokens.
@@ -178,22 +192,24 @@ pub fn get_referenced_packages(
             pkg.version.clone()
         };
 
-        package_map
-            .entry(effective_name.clone())
-            .and_modify(|existing| {
-                if existing.version.is_empty() {
-                    existing.version = effective_version.clone();
-                }
-                if existing.download_url.is_empty() {
-                    existing.download_url = pkg.download_url.clone();
-                }
-            })
-            .or_insert_with(|| PackageDependency {
-                name: pkg.name.clone(),
-                version: effective_version,
-                download_url: pkg.download_url.clone(),
-                parameterization: pkg.parameterization.clone(),
-            });
+        if let Some(existing) = package_map.get_mut(&effective_name) {
+            if existing.version.is_empty() {
+                existing.version = effective_version.clone();
+            }
+            if existing.download_url.is_empty() {
+                existing.download_url = pkg.download_url.clone();
+            }
+        } else {
+            package_map.insert(
+                effective_name,
+                PackageDependency {
+                    name: pkg.name.clone(),
+                    version: effective_version,
+                    download_url: pkg.download_url.clone(),
+                    parameterization: pkg.parameterization.clone(),
+                },
+            );
+        }
     }
 
     // Scan resources
@@ -264,21 +280,24 @@ fn accept_package(
     version: &str,
     download_url: &str,
 ) {
-    map.entry(name.to_string())
-        .and_modify(|existing| {
-            if !version.is_empty() && existing.version.is_empty() {
-                existing.version = version.to_string();
-            }
-            if !download_url.is_empty() && existing.download_url.is_empty() {
-                existing.download_url = download_url.to_string();
-            }
-        })
-        .or_insert_with(|| PackageDependency {
-            name: name.to_string(),
-            version: version.to_string(),
-            download_url: download_url.to_string(),
-            parameterization: None,
-        });
+    if let Some(existing) = map.get_mut(name) {
+        if !version.is_empty() && existing.version.is_empty() {
+            existing.version = version.to_string();
+        }
+        if !download_url.is_empty() && existing.download_url.is_empty() {
+            existing.download_url = download_url.to_string();
+        }
+    } else {
+        map.insert(
+            name.to_string(),
+            PackageDependency {
+                name: name.to_string(),
+                version: version.to_string(),
+                download_url: download_url.to_string(),
+                parameterization: None,
+            },
+        );
+    }
 }
 
 /// Recursively scans an expression for invoke calls and adds their packages.
