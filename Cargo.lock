@@ -964,7 +964,7 @@ dependencies = [
 
 [[package]]
 name = "pulumi-rs-yaml-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "base64",
  "criterion",
@@ -974,6 +974,7 @@ dependencies = [
  "prost-types",
  "pulumi-rs-yaml-proto",
  "rand",
+ "rayon",
  "semver",
  "serde",
  "serde_json",
@@ -1015,7 +1016,7 @@ dependencies = [
 
 [[package]]
 name = "pulumi-rs-yaml-python"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "pulumi-rs-yaml-core",
  "pyo3",

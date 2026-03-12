@@ -100,7 +100,7 @@ pub async fn run(
                     bail: true,
                 };
             }
-            let sm = merged.source_map().clone();
+            let sm = merged.source_map_arc();
             (merged.as_template_decl(), sm)
         };
 
@@ -174,17 +174,17 @@ pub async fn run(
     );
     eval.organization = organization.to_string();
     eval.root_directory = program_directory.to_string();
-    eval.schema_store = schema_store;
+    eval.schema_store = schema_store.as_ref();
     eval.package_refs = package_refs;
     eval.parallel = parallel;
     if !source_map.is_empty() {
-        eval.source_map = Some(source_map.clone());
+        eval.source_map = Some(std::sync::Arc::clone(&source_map));
     }
 
     // 8b. Type-check template against schemas (warnings only, non-blocking)
-    if let Some(ref store) = eval.schema_store {
+    if let Some(store) = eval.schema_store {
         let tc_result =
-            pulumi_rs_yaml_core::type_check::type_check(template, store, eval.source_map.as_ref());
+            pulumi_rs_yaml_core::type_check::type_check(template, store, eval.source_map.as_deref());
         for d in tc_result.diagnostics.iter() {
             eprintln!(
                 "type-check: {}: {}",
@@ -296,7 +296,7 @@ fn load_from_jinja_source(
 ) -> Result<
     (
         pulumi_rs_yaml_core::ast::template::TemplateDecl<'static>,
-        std::collections::HashMap<String, String>,
+        std::sync::Arc<std::collections::HashMap<String, String>>,
     ),
     String,
 > {
@@ -388,7 +388,7 @@ fn load_from_jinja_source(
             return Err(errors.join("; "));
         }
 
-        let sm = merged.source_map().clone();
+        let sm = merged.source_map_arc();
         Ok((merged.as_template_decl(), sm))
     } else {
         // Single-file mode (backward compat): temp file is the original source
@@ -409,7 +409,7 @@ fn load_from_jinja_source(
             return Err("failed to parse template".to_string());
         }
 
-        Ok((template, std::collections::HashMap::new()))
+        Ok((template, std::sync::Arc::new(std::collections::HashMap::new())))
     }
 }
 

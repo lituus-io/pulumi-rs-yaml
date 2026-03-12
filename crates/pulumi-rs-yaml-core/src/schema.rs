@@ -8,6 +8,7 @@
 //! - Auto-add `additional_secret_outputs` from schema
 //! - Auto-add `aliases` from schema
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::Path;
@@ -130,24 +131,27 @@ impl SchemaStore {
     }
 
     /// Get output-only property names for a resource type.
-    pub fn output_properties(&self, canonical_token: &str) -> HashSet<String> {
+    pub fn output_properties(&self, canonical_token: &str) -> &HashSet<String> {
+        static EMPTY: std::sync::LazyLock<HashSet<String>> = std::sync::LazyLock::new(HashSet::new);
         self.lookup_resource(canonical_token)
-            .map(|info| info.output_properties.clone())
-            .unwrap_or_default()
+            .map(|info| &info.output_properties)
+            .unwrap_or(&EMPTY)
     }
 
     /// Get secret property names for a resource type.
-    pub fn secret_properties(&self, canonical_token: &str) -> HashSet<String> {
+    pub fn secret_properties(&self, canonical_token: &str) -> &HashSet<String> {
+        static EMPTY: std::sync::LazyLock<HashSet<String>> = std::sync::LazyLock::new(HashSet::new);
         self.lookup_resource(canonical_token)
-            .map(|info| info.secret_properties.clone())
-            .unwrap_or_default()
+            .map(|info| &info.secret_properties)
+            .unwrap_or(&EMPTY)
     }
 
     /// Get secret input property names for a resource type.
-    pub fn secret_input_properties(&self, canonical_token: &str) -> HashSet<String> {
+    pub fn secret_input_properties(&self, canonical_token: &str) -> &HashSet<String> {
+        static EMPTY: std::sync::LazyLock<HashSet<String>> = std::sync::LazyLock::new(HashSet::new);
         self.lookup_resource(canonical_token)
-            .map(|info| info.secret_input_properties.clone())
-            .unwrap_or_default()
+            .map(|info| &info.secret_input_properties)
+            .unwrap_or(&EMPTY)
     }
 
     /// Check whether a resource type is a component (remote) resource.
@@ -158,10 +162,11 @@ impl SchemaStore {
     }
 
     /// Get required input property names for a resource type.
-    pub fn required_inputs(&self, canonical_token: &str) -> HashSet<String> {
+    pub fn required_inputs(&self, canonical_token: &str) -> &HashSet<String> {
+        static EMPTY: std::sync::LazyLock<HashSet<String>> = std::sync::LazyLock::new(HashSet::new);
         self.lookup_resource(canonical_token)
-            .map(|info| info.required_inputs.clone())
-            .unwrap_or_default()
+            .map(|info| &info.required_inputs)
+            .unwrap_or(&EMPTY)
     }
 
     /// Look up function type info by canonical token.
@@ -176,23 +181,23 @@ impl SchemaStore {
     /// 1. Direct lookup (already canonical)
     /// 2. Try heuristic canonicalization
     /// 3. Search aliases in matching package
-    pub fn resolve_resource_token(&self, token: &str) -> Option<String> {
+    pub fn resolve_resource_token<'a>(&'a self, token: &'a str) -> Option<Cow<'a, str>> {
         // 1. Direct lookup
         if self.lookup_resource(token).is_some() {
-            return Some(token.to_string());
+            return Some(Cow::Borrowed(token));
         }
 
         // 2. Try heuristic canonicalization
         let canonical = crate::packages::canonicalize_type_token(token);
         if self.lookup_resource(&canonical).is_some() {
-            return Some(canonical);
+            return Some(Cow::Owned(canonical));
         }
 
         // 3. Try all expansions
         let expansions = crate::packages::expand_type_token(token);
-        for candidate in &expansions {
-            if self.lookup_resource(candidate).is_some() {
-                return Some(candidate.clone());
+        for candidate in expansions {
+            if self.lookup_resource(&candidate).is_some() {
+                return Some(Cow::Owned(candidate));
             }
         }
 
@@ -202,12 +207,12 @@ impl SchemaStore {
             for (canonical_token, info) in &schema.resources {
                 for alias in &info.aliases {
                     if alias == token {
-                        return Some(canonical_token.clone());
+                        return Some(Cow::Borrowed(canonical_token.as_str()));
                     }
                     // Also try canonical form of alias
                     let canonical_alias = crate::packages::canonicalize_type_token(alias);
                     if canonical_alias == canonical {
-                        return Some(canonical_token.clone());
+                        return Some(Cow::Borrowed(canonical_token.as_str()));
                     }
                 }
             }
@@ -217,23 +222,23 @@ impl SchemaStore {
     }
 
     /// Resolve a function token to its canonical form using schema knowledge.
-    pub fn resolve_function_token(&self, token: &str) -> Option<String> {
+    pub fn resolve_function_token<'a>(&'a self, token: &'a str) -> Option<Cow<'a, str>> {
         // 1. Direct lookup
         if self.lookup_function(token).is_some() {
-            return Some(token.to_string());
+            return Some(Cow::Borrowed(token));
         }
 
         // 2. Try heuristic canonicalization
         let canonical = crate::packages::canonicalize_type_token(token);
         if self.lookup_function(&canonical).is_some() {
-            return Some(canonical);
+            return Some(Cow::Owned(canonical));
         }
 
         // 3. Try all expansions
         let expansions = crate::packages::expand_type_token(token);
-        for candidate in &expansions {
-            if self.lookup_function(candidate).is_some() {
-                return Some(candidate.clone());
+        for candidate in expansions {
+            if self.lookup_function(&candidate).is_some() {
+                return Some(Cow::Owned(candidate));
             }
         }
 
@@ -1160,8 +1165,8 @@ mod tests {
 
         // Direct canonical lookup
         assert_eq!(
-            store.resolve_resource_token("aws:s3/bucket:Bucket"),
-            Some("aws:s3/bucket:Bucket".to_string())
+            store.resolve_resource_token("aws:s3/bucket:Bucket").as_deref(),
+            Some("aws:s3/bucket:Bucket")
         );
     }
 
@@ -1182,8 +1187,8 @@ mod tests {
 
         // Heuristic canonicalization: aws:s3:Bucket → aws:s3/bucket:Bucket
         assert_eq!(
-            store.resolve_resource_token("aws:s3:Bucket"),
-            Some("aws:s3/bucket:Bucket".to_string())
+            store.resolve_resource_token("aws:s3:Bucket").as_deref(),
+            Some("aws:s3/bucket:Bucket")
         );
     }
 
@@ -1207,8 +1212,8 @@ mod tests {
 
         // Alias resolution: aws:s3:Bucket is an alias for aws:s3/bucketV2:BucketV2
         assert_eq!(
-            store.resolve_resource_token("aws:s3:Bucket"),
-            Some("aws:s3/bucketV2:BucketV2".to_string())
+            store.resolve_resource_token("aws:s3:Bucket").as_deref(),
+            Some("aws:s3/bucketV2:BucketV2")
         );
     }
 
@@ -1236,8 +1241,8 @@ mod tests {
 
         // Heuristic: aws:ec2:getAmi → aws:ec2/getAmi:getAmi
         assert_eq!(
-            store.resolve_function_token("aws:ec2:getAmi"),
-            Some("aws:ec2/getAmi:getAmi".to_string())
+            store.resolve_function_token("aws:ec2:getAmi").as_deref(),
+            Some("aws:ec2/getAmi:getAmi")
         );
     }
 

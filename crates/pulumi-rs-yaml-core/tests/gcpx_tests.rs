@@ -17,7 +17,7 @@ use pulumi_rs_yaml_core::eval::value::Value;
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn eval_with_mock(source: &str, mock: MockCallback) -> (Evaluator<'static, MockCallback>, bool) {
+fn eval_with_mock(source: &str, mock: MockCallback) -> (Evaluator<'static, 'static, MockCallback>, bool) {
     eval_with_mock_and_config(source, mock, HashMap::new(), &[])
 }
 
@@ -26,7 +26,7 @@ fn eval_with_mock_and_config(
     mock: MockCallback,
     raw_config: HashMap<String, String>,
     secret_keys: &[String],
-) -> (Evaluator<'static, MockCallback>, bool) {
+) -> (Evaluator<'static, 'static, MockCallback>, bool) {
     let (template, parse_diags) = parse_template(source, None);
     if parse_diags.has_errors() {
         panic!("parse errors: {}", parse_diags);
@@ -48,7 +48,7 @@ fn eval_multifile(
     main_src: &str,
     extras: Vec<(&str, &str)>,
     mock: MockCallback,
-) -> (Evaluator<'static, MockCallback>, bool) {
+) -> (Evaluator<'static, 'static, MockCallback>, bool) {
     use pulumi_rs_yaml_core::multi_file::merge_templates;
 
     let (main_template, main_diags) = parse_template(main_src, None);

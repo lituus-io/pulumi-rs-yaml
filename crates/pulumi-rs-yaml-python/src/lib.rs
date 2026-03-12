@@ -651,6 +651,7 @@ fn complete_properties(
     // Resolve the token via schema (handles aliases and canonicalization)
     let canonical = schema_store
         .resolve_resource_token(resource_type)
+        .map(|c| c.into_owned())
         .unwrap_or_else(|| {
             pulumi_rs_yaml_core::packages::canonicalize_type_token(resource_type)
         });
@@ -697,6 +698,7 @@ fn get_resource_schema(
     // Resolve the token via schema (handles aliases and canonicalization)
     let canonical = schema_store
         .resolve_resource_token(resource_type)
+        .map(|c| c.into_owned())
         .unwrap_or_else(|| {
             pulumi_rs_yaml_core::packages::canonicalize_type_token(resource_type)
         });

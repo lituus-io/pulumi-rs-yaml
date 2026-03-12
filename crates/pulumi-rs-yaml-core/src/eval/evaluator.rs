@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
+use std::sync::Arc;
 
 use crate::ast::expr::{Expr, InvokeExpr};
 use crate::ast::property::PropertyAccess;
@@ -45,7 +46,7 @@ impl ProgressSink for NoopProgress {
 /// - `NoopCallback`: unit tests (no actual registration)
 /// - `MockCallback`: integration tests (record & replay)
 /// - `GrpcCallback`: real deployment (wraps tonic gRPC clients)
-pub struct Evaluator<'src, C: ResourceCallback = NoopCallback> {
+pub struct Evaluator<'src, 'schema, C: ResourceCallback = NoopCallback> {
     /// Resolved config values, keyed by config variable name.
     pub config: HashMap<String, Value<'src>>,
     /// Resolved variable values, keyed by variable name.
@@ -78,9 +79,9 @@ pub struct Evaluator<'src, C: ResourceCallback = NoopCallback> {
     pub stack_urn: Option<String>,
     /// Optional source file map for multi-file rich error messages.
     /// Maps logical name → source filename.
-    pub source_map: Option<HashMap<String, String>>,
+    pub source_map: Option<Arc<HashMap<String, String>>>,
     /// Optional schema store for provider metadata (output properties, secrets, aliases).
-    pub schema_store: Option<SchemaStore>,
+    pub schema_store: Option<&'schema SchemaStore>,
     /// Package references: package name → package ref UUID.
     /// Populated by runner.rs via RegisterPackage RPC before evaluation.
     pub package_refs: HashMap<String, String>,
@@ -101,14 +102,14 @@ pub struct Evaluator<'src, C: ResourceCallback = NoopCallback> {
     pub component_parent_urn: Option<String>,
 }
 
-impl Evaluator<'_, NoopCallback> {
+impl Evaluator<'_, '_, NoopCallback> {
     /// Creates a new evaluator with the given project settings and a no-op callback.
     pub fn new(project_name: String, stack_name: String, cwd: String, dry_run: bool) -> Self {
         Self::with_callback(project_name, stack_name, cwd, dry_run, NoopCallback)
     }
 }
 
-impl<'src, C: ResourceCallback> Evaluator<'src, C> {
+impl<'src, C: ResourceCallback> Evaluator<'src, '_, C> {
     /// Creates a new evaluator with the given project settings and callback.
     pub fn with_callback(
         project_name: String,
@@ -196,7 +197,7 @@ impl<'src, C: ResourceCallback> Evaluator<'src, C> {
         self.variables.insert("pulumi".to_string(), pulumi_obj);
 
         // Topological sort with dependency graph
-        let (result, sort_diags) = topological_sort_with_deps(template, self.source_map.as_ref());
+        let (result, sort_diags) = topological_sort_with_deps(template, self.source_map.as_deref());
         self.diags.extend(sort_diags);
         if self.diags.has_errors() {
             return &self.diags;
@@ -449,7 +450,7 @@ impl<'src, C: ResourceCallback> Evaluator<'src, C> {
         // Wrap secret input properties with Value::Secret (matching Go behavior:
         // pkg/pulumiyaml/run.go:1489 — IsResourcePropertySecret + ToSecret)
         let mut inputs = inputs;
-        if let Some(ref store) = self.schema_store {
+        if let Some(store) = self.schema_store {
             if let Some(info) = store.lookup_resource(type_token) {
                 for prop_name in &info.secret_input_properties {
                     if let Some(val) = inputs.get_mut(prop_name) {
@@ -463,7 +464,7 @@ impl<'src, C: ResourceCallback> Evaluator<'src, C> {
         }
 
         // Inject constant values from schema if user didn't provide the property
-        if let Some(ref store) = self.schema_store {
+        if let Some(store) = self.schema_store {
             if let Some(info) = store.lookup_resource(type_token) {
                 for (prop_name, prop_info) in &info.property_types {
                     if let Some(ref const_val) = prop_info.const_value {
@@ -505,7 +506,7 @@ impl<'src, C: ResourceCallback> Evaluator<'src, C> {
         options.property_dependencies = property_deps;
 
         // Enrich resource options from schema (secrets, aliases)
-        if let Some(ref store) = self.schema_store {
+        if let Some(store) = self.schema_store {
             if let Some(info) = store.lookup_resource(type_token) {
                 for prop in &info.secret_properties {
                     if !options.additional_secret_outputs.contains(prop) {
@@ -663,9 +664,9 @@ impl<'src, C: ResourceCallback> Evaluator<'src, C> {
                 // In preview mode, fill output-only properties with Unknown
                 // so downstream references don't fail
                 if self.dry_run {
-                    if let Some(ref store) = self.schema_store {
+                    if let Some(store) = self.schema_store {
                         for prop_name in store.output_properties(type_token) {
-                            resp.outputs.entry(prop_name).or_insert(Value::Unknown);
+                            resp.outputs.entry(prop_name.clone()).or_insert(Value::Unknown);
                         }
                     }
                 }
@@ -1521,7 +1522,7 @@ mod tests {
     use super::*;
     use crate::ast::parse::parse_template;
 
-    fn new_evaluator() -> Evaluator<'static> {
+    fn new_evaluator() -> Evaluator<'static, 'static> {
         Evaluator::new(
             "test".to_string(),
             "dev".to_string(),

@@ -74,6 +74,7 @@ impl TypeChecker<'_> {
             let canonical = self
                 .schema_store
                 .resolve_resource_token(&entry.resource.type_)
+                .map(|c| c.into_owned())
                 .unwrap_or_else(|| canonicalize_type_token(&entry.resource.type_));
             self.resource_types
                 .insert(entry.logical_name.to_string(), canonical);
@@ -263,6 +264,7 @@ impl TypeChecker<'_> {
         let canonical = self
             .schema_store
             .resolve_function_token(&invoke.token)
+            .map(|c| c.into_owned())
             .unwrap_or_else(|| canonicalize_type_token(&invoke.token));
 
         let func_info = match self.schema_store.lookup_function(&canonical) {

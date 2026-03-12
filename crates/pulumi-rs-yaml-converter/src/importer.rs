@@ -165,7 +165,7 @@ impl Importer {
     fn resolve_type_token(&self, token: &str) -> String {
         if let Some(ref store) = self.schema_store {
             if let Some(resolved) = store.resolve_resource_token(token) {
-                return resolved;
+                return resolved.into_owned();
             }
         }
         canonicalize_type_token(token)
@@ -175,7 +175,7 @@ impl Importer {
     fn resolve_function_token(&self, token: &str) -> String {
         if let Some(ref store) = self.schema_store {
             if let Some(resolved) = store.resolve_function_token(token) {
-                return resolved;
+                return resolved.into_owned();
             }
         }
         canonicalize_type_token(token)
