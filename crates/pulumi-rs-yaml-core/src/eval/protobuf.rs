@@ -219,8 +219,7 @@ pub fn protobuf_to_value(pv: prost_types::Value) -> Value<'static> {
                                     .push((Cow::Owned("urn".into()), protobuf_to_value(urn_val)));
                             }
                             if let Some(id_val) = obj.fields.remove("id") {
-                                entries
-                                    .push((Cow::Owned("id".into()), protobuf_to_value(id_val)));
+                                entries.push((Cow::Owned("id".into()), protobuf_to_value(id_val)));
                             }
                             return if entries.is_empty() {
                                 Value::Unknown

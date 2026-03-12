@@ -1165,7 +1165,9 @@ mod tests {
 
         // Direct canonical lookup
         assert_eq!(
-            store.resolve_resource_token("aws:s3/bucket:Bucket").as_deref(),
+            store
+                .resolve_resource_token("aws:s3/bucket:Bucket")
+                .as_deref(),
             Some("aws:s3/bucket:Bucket")
         );
     }

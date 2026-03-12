@@ -166,7 +166,8 @@ impl MergedTemplate {
 
     /// Returns the number of files that contributed to this merged template.
     pub fn file_count(&self) -> usize {
-        let unique: std::collections::HashSet<&str> = self.source_map.values().map(|s| s.as_str()).collect();
+        let unique: std::collections::HashSet<&str> =
+            self.source_map.values().map(|s| s.as_str()).collect();
         unique.len()
     }
 }
@@ -370,14 +371,42 @@ pub fn merge_templates(
         }
 
         // Merge all sections with collision detection
-        merge_section(&template.resources, filename, "resource",
-            |r| r.logical_name.as_ref(), &mut source_map, &mut resources, &mut diags);
-        merge_section(&template.variables, filename, "variable",
-            |v| v.key.as_ref(), &mut source_map, &mut variables, &mut diags);
-        merge_section(&template.outputs, filename, "output",
-            |o| o.key.as_ref(), &mut source_map, &mut outputs, &mut diags);
-        merge_section(&template.components, filename, "component",
-            |c| c.key.as_ref(), &mut source_map, &mut components, &mut diags);
+        merge_section(
+            &template.resources,
+            filename,
+            "resource",
+            |r| r.logical_name.as_ref(),
+            &mut source_map,
+            &mut resources,
+            &mut diags,
+        );
+        merge_section(
+            &template.variables,
+            filename,
+            "variable",
+            |v| v.key.as_ref(),
+            &mut source_map,
+            &mut variables,
+            &mut diags,
+        );
+        merge_section(
+            &template.outputs,
+            filename,
+            "output",
+            |o| o.key.as_ref(),
+            &mut source_map,
+            &mut outputs,
+            &mut diags,
+        );
+        merge_section(
+            &template.components,
+            filename,
+            "component",
+            |c| c.key.as_ref(),
+            &mut source_map,
+            &mut components,
+            &mut diags,
+        );
     }
 
     let merged = MergedTemplate {

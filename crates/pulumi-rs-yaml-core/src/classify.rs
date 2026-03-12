@@ -57,64 +57,69 @@ pub struct ClassifiedDiagnostic {
 pub fn classify_diagnostic(summary: &str, detail: &str) -> ClassifiedDiagnostic {
     let msg_lower = summary.to_lowercase();
 
-    let (category, suggestions, bad_ref, best_match, cycle_path) =
-        if msg_lower.contains("circular dependency") {
-            // Extract cycle path from "circular dependency: a -> b -> a"
-            let cycle = extract_cycle_path(summary);
-            (ErrorCategory::CircularDep, Vec::new(), None, None, Some(cycle))
-        } else if msg_lower.contains("is not defined") {
-            // "resource or variable 'X' ... is not defined; did you mean 'Y'?"
-            let bad = extract_quoted_name(summary, "referenced");
-            let suggestion = extract_did_you_mean(summary);
-            let suggestions = suggestion.clone().into_iter().collect();
-            (
-                ErrorCategory::InvalidReference,
-                suggestions,
-                bad,
-                suggestion,
-                None,
-            )
-        } else if msg_lower.contains("duplicate node name")
-            || msg_lower.contains("defined in both")
-        {
-            let name = extract_quoted_name(summary, "'");
-            (ErrorCategory::DuplicateName, Vec::new(), name, None, None)
-        } else if msg_lower.contains("reserved name") {
-            (ErrorCategory::ReservedName, Vec::new(), None, None, None)
-        } else if msg_lower.contains("runtime")
-            && (msg_lower.contains("missing") || msg_lower.contains("required"))
-        {
-            (ErrorCategory::MissingField, Vec::new(), None, None, None)
-        } else if msg_lower.contains("type")
-            && (msg_lower.contains("mismatch") || msg_lower.contains("expected"))
-        {
-            (ErrorCategory::TypeMismatch, Vec::new(), None, None, None)
-        } else if msg_lower.contains("jinja") || msg_lower.contains("template") {
-            (ErrorCategory::JinjaError, Vec::new(), None, None, None)
-        } else if msg_lower.contains("syntax")
-            || msg_lower.contains("indent")
-            || msg_lower.contains("mapping")
-        {
-            (ErrorCategory::SyntaxError, Vec::new(), None, None, None)
-        } else if msg_lower.contains("config")
-            && (msg_lower.contains("missing") || msg_lower.contains("undeclared"))
-        {
-            (ErrorCategory::MissingConfig, Vec::new(), None, None, None)
-        } else if msg_lower.contains("unknown property") || msg_lower.contains("did you mean") {
-            let suggestion = extract_did_you_mean(summary);
-            let suggestions = suggestion.clone().into_iter().collect();
-            (
-                ErrorCategory::UnknownProperty,
-                suggestions,
-                None,
-                suggestion,
-                None,
-            )
-        } else if msg_lower.contains("required") && msg_lower.contains("missing") {
-            (ErrorCategory::MissingRequired, Vec::new(), None, None, None)
-        } else {
-            (ErrorCategory::Unknown, Vec::new(), None, None, None)
-        };
+    let (category, suggestions, bad_ref, best_match, cycle_path) = if msg_lower
+        .contains("circular dependency")
+    {
+        // Extract cycle path from "circular dependency: a -> b -> a"
+        let cycle = extract_cycle_path(summary);
+        (
+            ErrorCategory::CircularDep,
+            Vec::new(),
+            None,
+            None,
+            Some(cycle),
+        )
+    } else if msg_lower.contains("is not defined") {
+        // "resource or variable 'X' ... is not defined; did you mean 'Y'?"
+        let bad = extract_quoted_name(summary, "referenced");
+        let suggestion = extract_did_you_mean(summary);
+        let suggestions = suggestion.clone().into_iter().collect();
+        (
+            ErrorCategory::InvalidReference,
+            suggestions,
+            bad,
+            suggestion,
+            None,
+        )
+    } else if msg_lower.contains("duplicate node name") || msg_lower.contains("defined in both") {
+        let name = extract_quoted_name(summary, "'");
+        (ErrorCategory::DuplicateName, Vec::new(), name, None, None)
+    } else if msg_lower.contains("reserved name") {
+        (ErrorCategory::ReservedName, Vec::new(), None, None, None)
+    } else if msg_lower.contains("runtime")
+        && (msg_lower.contains("missing") || msg_lower.contains("required"))
+    {
+        (ErrorCategory::MissingField, Vec::new(), None, None, None)
+    } else if msg_lower.contains("type")
+        && (msg_lower.contains("mismatch") || msg_lower.contains("expected"))
+    {
+        (ErrorCategory::TypeMismatch, Vec::new(), None, None, None)
+    } else if msg_lower.contains("jinja") || msg_lower.contains("template") {
+        (ErrorCategory::JinjaError, Vec::new(), None, None, None)
+    } else if msg_lower.contains("syntax")
+        || msg_lower.contains("indent")
+        || msg_lower.contains("mapping")
+    {
+        (ErrorCategory::SyntaxError, Vec::new(), None, None, None)
+    } else if msg_lower.contains("config")
+        && (msg_lower.contains("missing") || msg_lower.contains("undeclared"))
+    {
+        (ErrorCategory::MissingConfig, Vec::new(), None, None, None)
+    } else if msg_lower.contains("unknown property") || msg_lower.contains("did you mean") {
+        let suggestion = extract_did_you_mean(summary);
+        let suggestions = suggestion.clone().into_iter().collect();
+        (
+            ErrorCategory::UnknownProperty,
+            suggestions,
+            None,
+            suggestion,
+            None,
+        )
+    } else if msg_lower.contains("required") && msg_lower.contains("missing") {
+        (ErrorCategory::MissingRequired, Vec::new(), None, None, None)
+    } else {
+        (ErrorCategory::Unknown, Vec::new(), None, None, None)
+    };
 
     ClassifiedDiagnostic {
         category,
@@ -225,7 +230,9 @@ mod tests {
 
     #[test]
     fn test_extract_cycle_path_with_files() {
-        let path = extract_cycle_path("circular dependency: a (main.yaml) -> b (net.yaml) -> a (main.yaml)");
+        let path = extract_cycle_path(
+            "circular dependency: a (main.yaml) -> b (net.yaml) -> a (main.yaml)",
+        );
         assert_eq!(path, vec!["a", "b", "a"]);
     }
 

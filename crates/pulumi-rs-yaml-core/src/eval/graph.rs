@@ -130,7 +130,9 @@ fn topological_sort_inner<'a>(
 
     // Build adjacency: for each node, collect the set of nodes it depends on
     let mut deps: HashMap<&str, HashSet<&str>> = HashMap::new();
-    let dep_collector = DepCollector { known_names: &names };
+    let dep_collector = DepCollector {
+        known_names: &names,
+    };
 
     // Config entries have no dependencies (they come from external config)
     for entry in &template.config {
@@ -229,7 +231,13 @@ pub fn topological_sort_with_deps<'a>(
         .iter()
         .map(|(k, v)| (k.to_string(), v.iter().map(|s| s.to_string()).collect()))
         .collect();
-    (SortResultWithDeps { order, deps: owned_deps }, diags)
+    (
+        SortResultWithDeps {
+            order,
+            deps: owned_deps,
+        },
+        diags,
+    )
 }
 
 /// Groups topologically sorted nodes into levels by dependency depth.
@@ -466,7 +474,6 @@ pub fn collect_expr_deps<'a>(
 ) {
     walk_expr(expr, &DepCollector { known_names }, deps);
 }
-
 
 #[cfg(test)]
 mod tests {

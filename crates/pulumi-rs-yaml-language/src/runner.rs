@@ -183,8 +183,11 @@ pub async fn run(
 
     // 8b. Type-check template against schemas (warnings only, non-blocking)
     if let Some(store) = eval.schema_store {
-        let tc_result =
-            pulumi_rs_yaml_core::type_check::type_check(template, store, eval.source_map.as_deref());
+        let tc_result = pulumi_rs_yaml_core::type_check::type_check(
+            template,
+            store,
+            eval.source_map.as_deref(),
+        );
         for d in tc_result.diagnostics.iter() {
             eprintln!(
                 "type-check: {}: {}",
@@ -409,7 +412,10 @@ fn load_from_jinja_source(
             return Err("failed to parse template".to_string());
         }
 
-        Ok((template, std::sync::Arc::new(std::collections::HashMap::new())))
+        Ok((
+            template,
+            std::sync::Arc::new(std::collections::HashMap::new()),
+        ))
     }
 }
 
