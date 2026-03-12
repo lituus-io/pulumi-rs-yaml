@@ -528,7 +528,11 @@ fn diags_to_py(py: Python<'_>, diags: &Diagnostics) -> PyResult<PyObject> {
             dict.set_item("message", entry.summary.as_str()).ok();
             dict.set_item("detail", entry.detail.as_str()).ok();
             dict.set_item("is_error", entry.is_error()).ok();
-            dict.set_item("severity", if entry.is_error() { "error" } else { "warning" }).ok();
+            dict.set_item(
+                "severity",
+                if entry.is_error() { "error" } else { "warning" },
+            )
+            .ok();
             dict.into_any().unbind()
         })
         .collect();
@@ -652,9 +656,7 @@ fn complete_properties(
     let canonical = schema_store
         .resolve_resource_token(resource_type)
         .map(|c| c.into_owned())
-        .unwrap_or_else(|| {
-            pulumi_rs_yaml_core::packages::canonicalize_type_token(resource_type)
-        });
+        .unwrap_or_else(|| pulumi_rs_yaml_core::packages::canonicalize_type_token(resource_type));
 
     let items =
         pulumi_rs_yaml_core::completion::complete_resource_properties(&schema_store, &canonical);
@@ -699,9 +701,7 @@ fn get_resource_schema(
     let canonical = schema_store
         .resolve_resource_token(resource_type)
         .map(|c| c.into_owned())
-        .unwrap_or_else(|| {
-            pulumi_rs_yaml_core::packages::canonicalize_type_token(resource_type)
-        });
+        .unwrap_or_else(|| pulumi_rs_yaml_core::packages::canonicalize_type_token(resource_type));
 
     let info = schema_store.lookup_resource(&canonical);
 

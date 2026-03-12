@@ -39,10 +39,7 @@ mod classify_security {
             "",
         );
         assert_eq!(c.category, ErrorCategory::InvalidReference);
-        assert_eq!(
-            c.bad_ref.as_deref(),
-            Some("<script>alert(1)</script>")
-        );
+        assert_eq!(c.bad_ref.as_deref(), Some("<script>alert(1)</script>"));
         // Downstream consumers must escape this when rendering in HTML.
     }
 
@@ -60,20 +57,14 @@ mod classify_security {
 
     #[test]
     fn newlines_in_diagnostic_message() {
-        let c = classify_diagnostic(
-            "resource or variable 'multi\nline' is not defined",
-            "",
-        );
+        let c = classify_diagnostic("resource or variable 'multi\nline' is not defined", "");
         assert_eq!(c.category, ErrorCategory::InvalidReference);
         assert_eq!(c.bad_ref.as_deref(), Some("multi\nline"));
     }
 
     #[test]
     fn null_bytes_in_message() {
-        let c = classify_diagnostic(
-            "resource or variable 'null\0byte' is not defined",
-            "",
-        );
+        let c = classify_diagnostic("resource or variable 'null\0byte' is not defined", "");
         assert_eq!(c.category, ErrorCategory::InvalidReference);
         assert_eq!(c.bad_ref.as_deref(), Some("null\0byte"));
     }
@@ -89,10 +80,7 @@ mod classify_security {
     #[test]
     fn cycle_path_with_arrow_in_name() {
         // Names containing " -> " could confuse the cycle path parser.
-        let c = classify_diagnostic(
-            "circular dependency: a -> b -> c -> a",
-            "",
-        );
+        let c = classify_diagnostic("circular dependency: a -> b -> c -> a", "");
         assert_eq!(c.category, ErrorCategory::CircularDep);
         let path = c.cycle_path.unwrap();
         assert_eq!(path, vec!["a", "b", "c", "a"]);
@@ -218,7 +206,10 @@ mod packages_security {
 
     #[test]
     fn path_traversal_in_token() {
-        assert_eq!(resolve_pkg_name("../../../etc/passwd:s3:Bucket"), "../../../etc/passwd");
+        assert_eq!(
+            resolve_pkg_name("../../../etc/passwd:s3:Bucket"),
+            "../../../etc/passwd"
+        );
     }
 
     #[test]
@@ -296,8 +287,8 @@ mod packages_security {
 mod protobuf_security {
     use prost_types::value::Kind;
     use pulumi_rs_yaml_core::eval::protobuf::{
-        protobuf_to_value, value_to_protobuf, ASSET_SIG, OUTPUT_SIG, RESOURCE_SIG,
-        SECRET_SIG, UNKNOWN_VALUE,
+        protobuf_to_value, value_to_protobuf, ASSET_SIG, OUTPUT_SIG, RESOURCE_SIG, SECRET_SIG,
+        UNKNOWN_VALUE,
     };
     use pulumi_rs_yaml_core::eval::value::Value;
     use std::borrow::Cow;
@@ -633,7 +624,8 @@ resources:
     #[test]
     fn many_resources_with_shared_deps() {
         // 100 resources all depending on one root resource.
-        let mut yaml = "name: test\nruntime: yaml\nresources:\n  root:\n    type: test:Resource\n".to_string();
+        let mut yaml =
+            "name: test\nruntime: yaml\nresources:\n  root:\n    type: test:Resource\n".to_string();
         for i in 0..100 {
             yaml.push_str(&format!(
                 "  child{}:\n    type: test:Resource\n    properties:\n      dep: ${{root.id}}\n",
@@ -760,10 +752,7 @@ resources:
 
         let extras: Vec<(String, _)> = (1..50)
             .map(|i| {
-                let src = format!(
-                    "resources:\n  r{}:\n    type: test:Resource\n",
-                    i
-                );
+                let src = format!("resources:\n  r{}:\n    type: test:Resource\n", i);
                 let (t, _) = parse_template(&src, None);
                 (format!("Pulumi.extra{}.yaml", i), t)
             })
@@ -861,10 +850,7 @@ mod visitor_security {
         for _ in 0..50 {
             expr = format!("[{}]", expr);
         }
-        let source = format!(
-            "name: test\nruntime: yaml\nvariables:\n  deep: {}\n",
-            expr
-        );
+        let source = format!("name: test\nruntime: yaml\nvariables:\n  deep: {}\n", expr);
         let (template, _) = parse_template(&source, None);
         let (_, diags) = topological_sort(&template);
         // Should handle deep nesting without stack overflow.
@@ -937,9 +923,9 @@ resources:
         let (template, _) = parse_template(source, None);
         let (_, diags) = topological_sort(&template);
         let classified = classify_all(&diags);
-        let has_invalid = classified.iter().any(|c| {
-            c.category == pulumi_rs_yaml_core::classify::ErrorCategory::InvalidReference
-        });
+        let has_invalid = classified
+            .iter()
+            .any(|c| c.category == pulumi_rs_yaml_core::classify::ErrorCategory::InvalidReference);
         assert!(
             has_invalid,
             "undefined reference should be classified as InvalidReference"

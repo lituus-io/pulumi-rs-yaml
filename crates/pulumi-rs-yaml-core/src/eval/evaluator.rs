@@ -666,7 +666,9 @@ impl<'src, C: ResourceCallback> Evaluator<'src, '_, C> {
                 if self.dry_run {
                     if let Some(store) = self.schema_store {
                         for prop_name in store.output_properties(type_token) {
-                            resp.outputs.entry(prop_name.clone()).or_insert(Value::Unknown);
+                            resp.outputs
+                                .entry(prop_name.clone())
+                                .or_insert(Value::Unknown);
                         }
                     }
                 }

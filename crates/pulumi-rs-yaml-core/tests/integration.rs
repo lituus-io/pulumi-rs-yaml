@@ -15,7 +15,10 @@ use pulumi_rs_yaml_core::eval::value::{Archive, Asset, Value};
 ///
 /// Uses `Box::leak` to give the template a `'static` lifetime, which is fine
 /// for tests since the process exits after each test anyway.
-fn eval_with_mock(source: &str, mock: MockCallback) -> (Evaluator<'static, 'static, MockCallback>, bool) {
+fn eval_with_mock(
+    source: &str,
+    mock: MockCallback,
+) -> (Evaluator<'static, 'static, MockCallback>, bool) {
     let (template, parse_diags) = parse_template(source, None);
     if parse_diags.has_errors() {
         panic!("parse errors: {}", parse_diags);
@@ -1959,8 +1962,7 @@ fn eval_with_schema(
         dry_run,
         mock,
     );
-    eval.schema_store = schema_store
-        .map(|s| &*Box::leak(Box::new(s)) as &'static SchemaStore);
+    eval.schema_store = schema_store.map(|s| &*Box::leak(Box::new(s)) as &'static SchemaStore);
     let raw_config = HashMap::new();
     eval.evaluate_template(template, &raw_config, &[]);
     let has_errors = eval.diags.has_errors();

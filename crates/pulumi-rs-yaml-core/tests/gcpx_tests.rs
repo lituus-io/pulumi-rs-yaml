@@ -17,7 +17,10 @@ use pulumi_rs_yaml_core::eval::value::Value;
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn eval_with_mock(source: &str, mock: MockCallback) -> (Evaluator<'static, 'static, MockCallback>, bool) {
+fn eval_with_mock(
+    source: &str,
+    mock: MockCallback,
+) -> (Evaluator<'static, 'static, MockCallback>, bool) {
     eval_with_mock_and_config(source, mock, HashMap::new(), &[])
 }
 
