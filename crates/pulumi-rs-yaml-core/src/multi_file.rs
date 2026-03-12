@@ -26,6 +26,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::ast::parse::parse_template;
 use crate::ast::template::*;
@@ -72,7 +73,7 @@ pub struct MergedTemplate {
     /// Merged components from all files.
     components: Vec<ComponentDecl<'static>>,
     /// Maps logical name → source filename for error reporting.
-    source_map: HashMap<String, String>,
+    source_map: Arc<HashMap<String, String>>,
 }
 
 impl MergedTemplate {
@@ -156,6 +157,11 @@ impl MergedTemplate {
     /// Returns the source map (logical_name → filename).
     pub fn source_map(&self) -> &HashMap<String, String> {
         &self.source_map
+    }
+
+    /// Returns a cheap `Arc` clone of the source map.
+    pub fn source_map_arc(&self) -> Arc<HashMap<String, String>> {
+        Arc::clone(&self.source_map)
     }
 
     /// Returns the number of files that contributed to this merged template.
@@ -384,7 +390,7 @@ pub fn merge_templates(
         variables,
         outputs,
         components,
-        source_map,
+        source_map: Arc::new(source_map),
     };
 
     (merged, diags)
@@ -416,7 +422,7 @@ pub fn load_project(
                 variables: Vec::new(),
                 outputs: Vec::new(),
                 components: Vec::new(),
-                source_map: HashMap::new(),
+                source_map: Arc::new(HashMap::new()),
             };
             return (empty, diags);
         }
@@ -444,7 +450,7 @@ pub fn load_project(
                         variables: Vec::new(),
                         outputs: Vec::new(),
                         components: Vec::new(),
-                        source_map: HashMap::new(),
+                        source_map: Arc::new(HashMap::new()),
                     };
                     return (empty, diags);
                 }
@@ -462,7 +468,7 @@ pub fn load_project(
                     variables: Vec::new(),
                     outputs: Vec::new(),
                     components: Vec::new(),
-                    source_map: HashMap::new(),
+                    source_map: Arc::new(HashMap::new()),
                 };
                 return (empty, diags);
             }
@@ -501,7 +507,7 @@ pub fn load_project(
             variables: Vec::new(),
             outputs: Vec::new(),
             components: Vec::new(),
-            source_map: HashMap::new(),
+            source_map: Arc::new(HashMap::new()),
         };
         return (empty, diags);
     }

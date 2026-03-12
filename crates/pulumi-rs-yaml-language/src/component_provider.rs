@@ -323,7 +323,7 @@ fn convert_construct_inputs(req: &pulumirpc::ConstructRequest) -> HashMap<String
     let mut config = HashMap::new();
     if let Some(ref inputs) = req.inputs {
         for (k, v) in &inputs.fields {
-            let eval_val = protobuf_to_value(v);
+            let eval_val = protobuf_to_value(v.clone());
             match &eval_val {
                 Value::String(s) => {
                     config.insert(k.clone(), s.to_string());

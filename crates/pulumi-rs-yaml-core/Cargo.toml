@@ -19,6 +19,7 @@ tokio = { workspace = true }
 uuid = { workspace = true }
 rand = { workspace = true }
 hcl-rs = { workspace = true }
+rayon = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

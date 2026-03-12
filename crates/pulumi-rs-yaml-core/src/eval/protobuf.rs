@@ -11,6 +11,9 @@ pub const OUTPUT_SIG: &str = "d0e6a833031e9bbcd3f4e8bde6ca49a4";
 pub const ASSET_SIG: &str = "c44067f5952c0a294b673a41bacd8c17";
 pub const ARCHIVE_SIG: &str = "0def7320c3a5731c473e5ecbe6d01bc7";
 
+/// The special key used in protobuf structs to hold the type signature marker.
+const SIG_KEY: &str = "4dabf18193072939515e22adb298388d";
+
 /// Converts a `Value` into a `prost_types::Value` for gRPC transmission.
 pub fn value_to_protobuf(val: &Value<'_>) -> prost_types::Value {
     use prost_types::value::Kind;
@@ -35,7 +38,7 @@ pub fn value_to_protobuf(val: &Value<'_>) -> prost_types::Value {
             // Encode as a special struct with the secret signature
             let mut fields = BTreeMap::new();
             fields.insert(
-                "4dabf18193072939515e22adb298388d".to_string(),
+                SIG_KEY.to_string(),
                 prost_types::Value {
                     kind: Some(Kind::StringValue(SECRET_SIG.to_string())),
                 },
@@ -48,7 +51,7 @@ pub fn value_to_protobuf(val: &Value<'_>) -> prost_types::Value {
         Value::Asset(asset) => {
             let mut fields = BTreeMap::new();
             fields.insert(
-                "4dabf18193072939515e22adb298388d".to_string(),
+                SIG_KEY.to_string(),
                 prost_types::Value {
                     kind: Some(Kind::StringValue(ASSET_SIG.to_string())),
                 },
@@ -84,7 +87,7 @@ pub fn value_to_protobuf(val: &Value<'_>) -> prost_types::Value {
         Value::Archive(archive) => {
             let mut fields = BTreeMap::new();
             fields.insert(
-                "4dabf18193072939515e22adb298388d".to_string(),
+                SIG_KEY.to_string(),
                 prost_types::Value {
                     kind: Some(Kind::StringValue(ARCHIVE_SIG.to_string())),
                 },
@@ -127,59 +130,63 @@ pub fn value_to_protobuf(val: &Value<'_>) -> prost_types::Value {
 }
 
 /// Converts a `prost_types::Value` back into a `Value<'static>`.
-pub fn protobuf_to_value(pv: &prost_types::Value) -> Value<'static> {
+///
+/// Consumes the protobuf value by value to avoid unnecessary clones —
+/// strings and nested structures are moved rather than copied.
+pub fn protobuf_to_value(pv: prost_types::Value) -> Value<'static> {
     use prost_types::value::Kind;
 
-    let kind = match &pv.kind {
+    let kind = match pv.kind {
         Some(k) => k,
         None => return Value::Null,
     };
 
     match kind {
         Kind::NullValue(_) => Value::Null,
-        Kind::BoolValue(b) => Value::Bool(*b),
-        Kind::NumberValue(n) => Value::Number(*n),
+        Kind::BoolValue(b) => Value::Bool(b),
+        Kind::NumberValue(n) => Value::Number(n),
         Kind::StringValue(s) => {
             if s == UNKNOWN_VALUE {
                 Value::Unknown
             } else {
-                Value::String(Cow::Owned(s.clone()))
+                Value::String(Cow::Owned(s))
             }
         }
         Kind::ListValue(list) => {
-            let values: Vec<Value<'static>> = list.values.iter().map(protobuf_to_value).collect();
+            let values: Vec<Value<'static>> =
+                list.values.into_iter().map(protobuf_to_value).collect();
             Value::List(values)
         }
-        Kind::StructValue(obj) => {
+        Kind::StructValue(mut obj) => {
             // Check for special Pulumi signatures
-            if let Some(sig_val) = obj.fields.get("4dabf18193072939515e22adb298388d") {
+            if let Some(sig_val) = obj.fields.get(SIG_KEY) {
                 if let Some(Kind::StringValue(sig)) = &sig_val.kind {
                     match sig.as_str() {
                         SECRET_SIG => {
-                            if let Some(inner) = obj.fields.get("value") {
+                            if let Some(inner) = obj.fields.remove("value") {
                                 return Value::Secret(Box::new(protobuf_to_value(inner)));
                             }
                             return Value::Secret(Box::new(Value::Null));
                         }
                         ASSET_SIG => {
-                            if let Some(text_val) = obj.fields.get("text") {
-                                if let Some(Kind::StringValue(s)) = &text_val.kind {
+                            if let Some(text_val) = obj.fields.remove("text") {
+                                if let Some(Kind::StringValue(s)) = text_val.kind {
                                     return Value::Asset(crate::eval::value::Asset::String(
-                                        Cow::Owned(s.clone()),
+                                        Cow::Owned(s),
                                     ));
                                 }
                             }
-                            if let Some(path_val) = obj.fields.get("path") {
-                                if let Some(Kind::StringValue(s)) = &path_val.kind {
+                            if let Some(path_val) = obj.fields.remove("path") {
+                                if let Some(Kind::StringValue(s)) = path_val.kind {
                                     return Value::Asset(crate::eval::value::Asset::File(
-                                        Cow::Owned(s.clone()),
+                                        Cow::Owned(s),
                                     ));
                                 }
                             }
-                            if let Some(uri_val) = obj.fields.get("uri") {
-                                if let Some(Kind::StringValue(s)) = &uri_val.kind {
+                            if let Some(uri_val) = obj.fields.remove("uri") {
+                                if let Some(Kind::StringValue(s)) = uri_val.kind {
                                     return Value::Asset(crate::eval::value::Asset::Remote(
-                                        Cow::Owned(s.clone()),
+                                        Cow::Owned(s),
                                     ));
                                 }
                             }
@@ -196,7 +203,7 @@ pub fn protobuf_to_value(pv: &prost_types::Value) -> Value<'static> {
                                 .unwrap_or(false);
                             let inner = obj
                                 .fields
-                                .get("value")
+                                .remove("value")
                                 .map(protobuf_to_value)
                                 .unwrap_or(Value::Unknown);
                             if is_secret {
@@ -207,12 +214,13 @@ pub fn protobuf_to_value(pv: &prost_types::Value) -> Value<'static> {
                         RESOURCE_SIG => {
                             // Build object with urn + id fields
                             let mut entries = Vec::new();
-                            if let Some(urn_val) = obj.fields.get("urn") {
+                            if let Some(urn_val) = obj.fields.remove("urn") {
                                 entries
                                     .push((Cow::Owned("urn".into()), protobuf_to_value(urn_val)));
                             }
-                            if let Some(id_val) = obj.fields.get("id") {
-                                entries.push((Cow::Owned("id".into()), protobuf_to_value(id_val)));
+                            if let Some(id_val) = obj.fields.remove("id") {
+                                entries
+                                    .push((Cow::Owned("id".into()), protobuf_to_value(id_val)));
                             }
                             return if entries.is_empty() {
                                 Value::Unknown
@@ -221,26 +229,26 @@ pub fn protobuf_to_value(pv: &prost_types::Value) -> Value<'static> {
                             };
                         }
                         ARCHIVE_SIG => {
-                            if let Some(path_val) = obj.fields.get("path") {
-                                if let Some(Kind::StringValue(s)) = &path_val.kind {
+                            if let Some(path_val) = obj.fields.remove("path") {
+                                if let Some(Kind::StringValue(s)) = path_val.kind {
                                     return Value::Archive(crate::eval::value::Archive::File(
-                                        Cow::Owned(s.clone()),
+                                        Cow::Owned(s),
                                     ));
                                 }
                             }
-                            if let Some(uri_val) = obj.fields.get("uri") {
-                                if let Some(Kind::StringValue(s)) = &uri_val.kind {
+                            if let Some(uri_val) = obj.fields.remove("uri") {
+                                if let Some(Kind::StringValue(s)) = uri_val.kind {
                                     return Value::Archive(crate::eval::value::Archive::Remote(
-                                        Cow::Owned(s.clone()),
+                                        Cow::Owned(s),
                                     ));
                                 }
                             }
-                            if let Some(assets_val) = obj.fields.get("assets") {
-                                if let Some(Kind::StructValue(assets_obj)) = &assets_val.kind {
+                            if let Some(assets_val) = obj.fields.remove("assets") {
+                                if let Some(Kind::StructValue(assets_obj)) = assets_val.kind {
                                     let entries: Vec<_> = assets_obj
                                         .fields
-                                        .iter()
-                                        .map(|(k, v)| (Cow::Owned(k.clone()), protobuf_to_value(v)))
+                                        .into_iter()
+                                        .map(|(k, v)| (Cow::Owned(k), protobuf_to_value(v)))
                                         .collect();
                                     return Value::Archive(crate::eval::value::Archive::Assets(
                                         entries,
@@ -256,8 +264,8 @@ pub fn protobuf_to_value(pv: &prost_types::Value) -> Value<'static> {
             // Regular object
             let entries: Vec<(Cow<'static, str>, Value<'static>)> = obj
                 .fields
-                .iter()
-                .map(|(k, v)| (Cow::Owned(k.clone()), protobuf_to_value(v)))
+                .into_iter()
+                .map(|(k, v)| (Cow::Owned(k), protobuf_to_value(v)))
                 .collect();
             Value::Object(entries)
         }
@@ -270,7 +278,7 @@ mod tests {
 
     fn round_trip(val: Value<'static>) -> Value<'static> {
         let pb = value_to_protobuf(&val);
-        protobuf_to_value(&pb)
+        protobuf_to_value(pb)
     }
 
     #[test]
@@ -414,10 +422,10 @@ mod tests {
         // Verify Unknown survives multiple round trips
         let v = Value::Unknown;
         let pb1 = value_to_protobuf(&v);
-        let v2 = protobuf_to_value(&pb1);
+        let v2 = protobuf_to_value(pb1);
         assert_eq!(v2, Value::Unknown);
         let pb2 = value_to_protobuf(&v2);
-        let v3 = protobuf_to_value(&pb2);
+        let v3 = protobuf_to_value(pb2);
         assert_eq!(v3, Value::Unknown);
     }
 

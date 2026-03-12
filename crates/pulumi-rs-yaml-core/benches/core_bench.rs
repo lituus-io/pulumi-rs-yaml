@@ -122,7 +122,7 @@ fn bench_protobuf_round_trip(c: &mut Criterion) {
     c.bench_function("protobuf_round_trip", |b| {
         b.iter(|| {
             let proto = value_to_protobuf(black_box(&value));
-            let back = protobuf_to_value(black_box(&proto));
+            let back = protobuf_to_value(black_box(proto));
             black_box(back);
         })
     });

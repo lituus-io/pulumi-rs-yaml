@@ -236,7 +236,7 @@ impl ResourceCallback for GrpcCallback {
                     })?
                     .into_inner();
 
-                let outputs = struct_to_values(resp.object.as_ref());
+                let outputs = struct_to_values(resp.object);
 
                 Ok(RegisterResponse {
                     urn: resp.urn,
@@ -289,7 +289,7 @@ impl ResourceCallback for GrpcCallback {
                     .map_err(|e| EngineError::Grpc(format!("read resource failed: {}", e)))?
                     .into_inner();
 
-                let outputs = struct_to_values(resp.properties.as_ref());
+                let outputs = struct_to_values(resp.properties);
 
                 Ok(RegisterResponse {
                     urn: resp.urn,
@@ -335,7 +335,7 @@ impl ResourceCallback for GrpcCallback {
                     .map_err(|e| EngineError::Invoke(format!("invoke {} failed: {}", token, e)))?
                     .into_inner();
 
-                let return_values = struct_to_values(resp.r#return.as_ref());
+                let return_values = struct_to_values(resp.r#return);
                 let failures = resp
                     .failures
                     .iter()
@@ -388,12 +388,15 @@ fn values_to_struct(values: &HashMap<String, Value<'static>>) -> prost_types::St
 }
 
 /// Converts a protobuf Struct to a HashMap of Values.
-fn struct_to_values(s: Option<&prost_types::Struct>) -> HashMap<String, Value<'static>> {
+///
+/// Consumes the struct by value so that strings and nested values are
+/// moved rather than cloned.
+fn struct_to_values(s: Option<prost_types::Struct>) -> HashMap<String, Value<'static>> {
     match s {
         Some(obj) => obj
             .fields
-            .iter()
-            .map(|(k, v)| (k.clone(), protobuf_to_value(v)))
+            .into_iter()
+            .map(|(k, v)| (k, protobuf_to_value(v)))
             .collect(),
         None => HashMap::new(),
     }
