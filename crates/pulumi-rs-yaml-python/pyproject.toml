@@ -25,4 +25,4 @@ pulumi-rs-yaml = "pulumi_yaml_rs.cli:main"
 features = ["pyo3/extension-module"]
 python-source = "python"
 module-name = "pulumi_yaml_rs._native"
-strip = true
+# strip handled by Cargo profile.release (strip = "symbols")
