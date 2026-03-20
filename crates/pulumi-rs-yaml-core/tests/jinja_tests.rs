@@ -1798,3 +1798,98 @@ fn test_import_rejects_non_template_extension() {
     let result = preprocessor.preprocess(main_source, "Pulumi.yaml");
     assert!(result.is_err(), ".txt imports should be rejected");
 }
+
+#[test]
+fn test_bilayer_exact_reproduction() {
+    // Exact reproduction of the bilayer-test project structure
+    let root = tempfile::tempdir().unwrap();
+    let sub = root.path().join("stacks").join("bucket1");
+    std::fs::create_dir_all(&sub).unwrap();
+
+    // Root environment.j2 — matches bilayer-test/environment.j2
+    std::fs::write(
+        root.path().join("environment.j2"),
+        r#"{% set location = 'northamerica-northeast1' %}
+{% set stack_name = 'cheese-discovery' %}
+
+{% set account_list = [
+{
+"label": "list_cheese",
+"member": "group:dlcheesedatareader@telus.com",
+"role": "roles/storage.objectViewer"
+}
+]
+%}
+"#,
+    )
+    .unwrap();
+
+    // Local environment.j2 — matches bilayer-test/stacks/bucket1/environment.j2
+    std::fs::write(
+        sub.join("environment.j2"),
+        r#"{% set bucket_list = [
+{ "project_source": "wb-cheese-discovery-pr-8602ba", "name": "sfdc-telus-international-dump-20260309", }
+]%}"#,
+    )
+    .unwrap();
+
+    // Pulumi.yaml — matches bilayer-test/stacks/bucket1/Pulumi.yaml
+    let main_source = r#"{% import '../environment.j2' as environment %}
+{% import 'environment.j2' as stack %}
+
+name: cheese-storage-buckets-1
+runtime: yaml
+
+config:
+  builder:
+    type: string
+  project:
+    type: string
+
+variables:
+  location: {{ environment.location }}
+
+resources:
+
+  {% for b in stack.bucket_list %}
+  cheese_bucket_name_{{ b.name }}:
+    type: gcp:storage:Bucket
+    properties:
+      name: {{ b.name }}
+      location: ${location}
+  {% endfor %}
+"#;
+
+    let project_dir: &'static str = Box::leak(sub.to_str().unwrap().to_string().into_boxed_str());
+    let root_dir: &'static str =
+        Box::leak(root.path().to_str().unwrap().to_string().into_boxed_str());
+    let config = HashMap::new();
+    let ctx = JinjaContext {
+        project_name: "cheese-storage-buckets-1",
+        stack_name: "dev",
+        cwd: project_dir,
+        organization: "",
+        root_directory: root_dir,
+        config: &config,
+        project_dir,
+        undefined: UndefinedMode::Strict,
+        extra: &EMPTY_EXTRA,
+    };
+    let preprocessor = JinjaPreprocessor::new(&ctx);
+    let result = preprocessor.preprocess(main_source, "Pulumi.yaml").unwrap();
+    assert!(
+        result.contains("location: northamerica-northeast1"),
+        "environment.location should resolve, got:\n{}",
+        result
+    );
+    assert!(
+        result.contains("sfdc-telus-international-dump-20260309"),
+        "stack.bucket_list should iterate, got:\n{}",
+        result
+    );
+    assert!(
+        result.contains("cheese_bucket_name_sfdc-telus-international-dump-20260309"),
+        "for loop should generate resource names, got:\n{}",
+        result
+    );
+}
