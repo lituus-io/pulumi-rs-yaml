@@ -23,7 +23,7 @@ serde_yaml = "0.9"
 thiserror = "2"
 semver = "1"
 base64 = "0.22"
-minijinja = { version = "2", features = ["debug", "loader"] }
+minijinja = { version = "2", features = ["debug", "loader", "multi_template"] }
 uuid = { version = "1", features = ["v4"] }
 rand = "0.8"
 pyo3 = { version = "0.24", features = ["extension-module", "abi3-py39"] }
