@@ -574,6 +574,14 @@ impl TemplatePreprocessor for JinjaPreprocessor<'_> {
         let cache = Arc::new(Mutex::new(ReadFileCache::new()));
         register_readfile_function(&mut env, self.context.project_dir, Arc::clone(&cache));
 
+        // Register filesystem template loader for {% import %} / {% include %}
+        // Resolves paths relative to project_dir with path traversal protection.
+        register_template_loader(
+            &mut env,
+            self.context.project_dir,
+            self.context.root_directory,
+        );
+
         env.add_template(filename, effective_source.as_ref())
             .map_err(|e| build_render_diagnostic(source, &e))?;
 
@@ -919,6 +927,77 @@ fn register_readfile_function(
             Ok(readfile_marker(id))
         },
     );
+}
+
+/// Registers a filesystem template loader for `{% import %}` and `{% include %}`.
+///
+/// Resolves template paths relative to `project_dir` (the directory containing
+/// the Pulumi.yaml being processed). Paths with `..` components are resolved
+/// naturally — `../environment.j2` from `stacks/bucket1/` finds
+/// `stacks/environment.j2` or walks further up the tree.
+///
+/// The `root_directory` acts as an additional search base: if a template is not
+/// found relative to `project_dir`, it is tried relative to `root_directory`.
+/// This supports the common pattern where shared templates live at the repo root.
+///
+/// Only `.j2`, `.jinja`, `.jinja2`, `.yaml`, and `.yml` extensions are loaded
+/// to prevent arbitrary file reads. Absolute paths are rejected.
+fn register_template_loader(
+    env: &mut minijinja::Environment<'_>,
+    project_dir: &str,
+    root_directory: &str,
+) {
+    let base_dir = project_dir.to_string();
+    let root_dir = if root_directory.is_empty() {
+        project_dir.to_string()
+    } else {
+        root_directory.to_string()
+    };
+    env.set_loader(move |name: &str| {
+        // Only allow template-like extensions
+        let allowed_extensions = [".j2", ".jinja", ".jinja2", ".yaml", ".yml"];
+        if !allowed_extensions.iter().any(|ext| name.ends_with(ext)) {
+            return Ok(None);
+        }
+
+        // Reject absolute paths
+        if Path::new(name).is_absolute() {
+            return Ok(None);
+        }
+
+        // Try relative to project_dir first (handles local and .. paths)
+        let resolved = Path::new(&base_dir).join(name);
+        if let Ok(canonical) = resolved.canonicalize() {
+            if let Ok(content) = std::fs::read_to_string(&canonical) {
+                return Ok(Some(content));
+            }
+        }
+
+        // Fall back to root_directory (handles shared templates at repo root)
+        if root_dir != base_dir {
+            let resolved = Path::new(&root_dir).join(name);
+            if let Ok(canonical) = resolved.canonicalize() {
+                if let Ok(content) = std::fs::read_to_string(&canonical) {
+                    return Ok(Some(content));
+                }
+            }
+        }
+
+        // Also try the template name stripped of leading ../ against root_directory.
+        // This handles the pattern where '../environment.j2' from a subdirectory
+        // should find 'environment.j2' at the project root.
+        let stripped = name.trim_start_matches("../").trim_start_matches("..\\");
+        if stripped != name {
+            let resolved = Path::new(&root_dir).join(stripped);
+            if let Ok(canonical) = resolved.canonicalize() {
+                if let Ok(content) = std::fs::read_to_string(&canonical) {
+                    return Ok(Some(content));
+                }
+            }
+        }
+
+        Ok(None) // not found → let minijinja report the error
+    });
 }
 
 // ---------------------------------------------------------------------------

@@ -1612,3 +1612,189 @@ fn test_strict_mode_unchanged() {
         "strict mode should error on unknown variables"
     );
 }
+
+// ---- Template import/include tests ----
+
+#[test]
+fn test_import_local_template() {
+    // Create temp dir with a main template that imports a sibling .j2 file
+    let dir = tempfile::tempdir().unwrap();
+    let main_source = "{% import 'vars.j2' as v %}\nname: {{ v.app_name }}\n";
+    std::fs::write(dir.path().join("vars.j2"), "{% set app_name = 'myapp' %}\n").unwrap();
+
+    let project_dir: &'static str =
+        Box::leak(dir.path().to_str().unwrap().to_string().into_boxed_str());
+    let config = HashMap::new();
+    let ctx = JinjaContext {
+        project_name: "test",
+        stack_name: "dev",
+        cwd: project_dir,
+        organization: "",
+        root_directory: project_dir,
+        config: &config,
+        project_dir,
+        undefined: UndefinedMode::Strict,
+        extra: &EMPTY_EXTRA,
+    };
+    let preprocessor = JinjaPreprocessor::new(&ctx);
+    let result = preprocessor.preprocess(main_source, "Pulumi.yaml").unwrap();
+    assert!(
+        result.contains("name: myapp"),
+        "import should resolve vars.j2, got: {}",
+        result
+    );
+}
+
+#[test]
+fn test_import_parent_relative_template() {
+    // Simulate bilayer-test structure:
+    //   root/environment.j2
+    //   root/stacks/bucket1/Pulumi.yaml  (imports ../environment.j2)
+    // The '../environment.j2' resolves against root_directory (the project root)
+    let root = tempfile::tempdir().unwrap();
+    let sub = root.path().join("stacks").join("bucket1");
+    std::fs::create_dir_all(&sub).unwrap();
+    std::fs::write(
+        root.path().join("environment.j2"),
+        "{% set location = 'us-east1' %}\n",
+    )
+    .unwrap();
+
+    let main_source = "{% import '../environment.j2' as env %}\nlocation: {{ env.location }}\n";
+
+    let project_dir: &'static str = Box::leak(sub.to_str().unwrap().to_string().into_boxed_str());
+    let root_dir: &'static str =
+        Box::leak(root.path().to_str().unwrap().to_string().into_boxed_str());
+    let config = HashMap::new();
+    let ctx = JinjaContext {
+        project_name: "test",
+        stack_name: "dev",
+        cwd: project_dir,
+        organization: "",
+        root_directory: root_dir,
+        config: &config,
+        project_dir,
+        undefined: UndefinedMode::Strict,
+        extra: &EMPTY_EXTRA,
+    };
+    let preprocessor = JinjaPreprocessor::new(&ctx);
+    let result = preprocessor.preprocess(main_source, "Pulumi.yaml").unwrap();
+    assert!(
+        result.contains("location: us-east1"),
+        "parent-relative import should work, got: {}",
+        result
+    );
+}
+
+#[test]
+fn test_import_and_local_import_combined() {
+    // Two imports: parent and local (bilayer-test pattern)
+    //   root/environment.j2                  ← ../environment.j2 from stacks/bucket1
+    //   root/stacks/bucket1/environment.j2   ← environment.j2 (local)
+    let root = tempfile::tempdir().unwrap();
+    let sub = root.path().join("stacks").join("bucket1");
+    std::fs::create_dir_all(&sub).unwrap();
+    std::fs::write(
+        root.path().join("environment.j2"),
+        "{% set location = 'northamerica-northeast1' %}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        sub.join("environment.j2"),
+        "{% set bucket_list = [{ \"name\": \"test-bucket\" }] %}\n",
+    )
+    .unwrap();
+
+    let main_source = "\
+{% import '../environment.j2' as environment %}
+{% import 'environment.j2' as stack %}
+location: {{ environment.location }}
+{% for b in stack.bucket_list %}
+bucket: {{ b.name }}
+{% endfor %}
+";
+
+    let project_dir: &'static str = Box::leak(sub.to_str().unwrap().to_string().into_boxed_str());
+    let root_dir: &'static str =
+        Box::leak(root.path().to_str().unwrap().to_string().into_boxed_str());
+    let config = HashMap::new();
+    let ctx = JinjaContext {
+        project_name: "test",
+        stack_name: "dev",
+        cwd: project_dir,
+        organization: "",
+        root_directory: root_dir,
+        config: &config,
+        project_dir,
+        undefined: UndefinedMode::Strict,
+        extra: &EMPTY_EXTRA,
+    };
+    let preprocessor = JinjaPreprocessor::new(&ctx);
+    let result = preprocessor.preprocess(main_source, "Pulumi.yaml").unwrap();
+    assert!(
+        result.contains("location: northamerica-northeast1"),
+        "parent import should set location, got: {}",
+        result
+    );
+    assert!(
+        result.contains("bucket: test-bucket"),
+        "local import should provide bucket_list, got: {}",
+        result
+    );
+}
+
+#[test]
+fn test_import_rejects_absolute_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let abs_template = dir.path().join("secret.j2");
+    std::fs::write(&abs_template, "{% set x = 1 %}").unwrap();
+
+    let main_source = format!(
+        "{{% import '{}' as s %}}\nval: {{{{ s.x }}}}\n",
+        abs_template.display()
+    );
+
+    let project_dir: &'static str =
+        Box::leak(dir.path().to_str().unwrap().to_string().into_boxed_str());
+    let config = HashMap::new();
+    let ctx = JinjaContext {
+        project_name: "test",
+        stack_name: "dev",
+        cwd: project_dir,
+        organization: "",
+        root_directory: project_dir,
+        config: &config,
+        project_dir,
+        undefined: UndefinedMode::Strict,
+        extra: &EMPTY_EXTRA,
+    };
+    let preprocessor = JinjaPreprocessor::new(&ctx);
+    let result = preprocessor.preprocess(&main_source, "Pulumi.yaml");
+    assert!(result.is_err(), "absolute path import should fail");
+}
+
+#[test]
+fn test_import_rejects_non_template_extension() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("secret.txt"), "sensitive data").unwrap();
+
+    let main_source = "{% include 'secret.txt' %}\n";
+
+    let project_dir: &'static str =
+        Box::leak(dir.path().to_str().unwrap().to_string().into_boxed_str());
+    let config = HashMap::new();
+    let ctx = JinjaContext {
+        project_name: "test",
+        stack_name: "dev",
+        cwd: project_dir,
+        organization: "",
+        root_directory: project_dir,
+        config: &config,
+        project_dir,
+        undefined: UndefinedMode::Strict,
+        extra: &EMPTY_EXTRA,
+    };
+    let preprocessor = JinjaPreprocessor::new(&ctx);
+    let result = preprocessor.preprocess(main_source, "Pulumi.yaml");
+    assert!(result.is_err(), ".txt imports should be rejected");
+}
