@@ -952,7 +952,7 @@ dependencies = [
 
 [[package]]
 name = "pulumi-rs-yaml-converter"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "base64",
  "heck",
@@ -972,7 +972,7 @@ dependencies = [
 
 [[package]]
 name = "pulumi-rs-yaml-core"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "base64",
  "criterion",
@@ -995,7 +995,7 @@ dependencies = [
 
 [[package]]
 name = "pulumi-rs-yaml-language"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "base64",
  "ctrlc",
@@ -1015,7 +1015,7 @@ dependencies = [
 
 [[package]]
 name = "pulumi-rs-yaml-proto"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "prost",
  "prost-types",
@@ -1024,7 +1024,7 @@ dependencies = [
 
 [[package]]
 name = "pulumi-rs-yaml-python"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "pulumi-rs-yaml-core",
  "pyo3",
