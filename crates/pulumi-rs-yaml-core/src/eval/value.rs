@@ -163,6 +163,25 @@ impl<'src> Value<'src> {
         }
     }
 
+    /// Converts a `serde_json::Value` to a `Value<'static>`, consuming the input.
+    /// Avoids cloning strings and map keys by moving them directly.
+    pub fn from_json_owned(v: serde_json::Value) -> Value<'static> {
+        match v {
+            serde_json::Value::Null => Value::Null,
+            serde_json::Value::Bool(b) => Value::Bool(b),
+            serde_json::Value::Number(n) => Value::Number(n.as_f64().unwrap_or(0.0)),
+            serde_json::Value::String(s) => Value::String(Cow::Owned(s)),
+            serde_json::Value::Array(arr) => {
+                Value::List(arr.into_iter().map(Value::from_json_owned).collect())
+            }
+            serde_json::Value::Object(obj) => Value::Object(
+                obj.into_iter()
+                    .map(|(k, v)| (Cow::Owned(k), Value::from_json_owned(v)))
+                    .collect(),
+            ),
+        }
+    }
+
     /// Converts this value to a `serde_json::Value`.
     pub fn to_json(&self) -> serde_json::Value {
         match self {

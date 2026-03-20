@@ -461,8 +461,8 @@ pub fn load_project(
     let main_filename = project_files
         .main_file
         .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Pulumi.yaml")
         .to_string();
     let main_template =
         match load_and_parse_file(&project_files.main_file, &main_filename, jinja_ctx) {
@@ -508,8 +508,8 @@ pub fn load_project(
     for path in &project_files.additional_files {
         let filename = path
             .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Pulumi.yaml")
             .to_string();
         match load_and_parse_file(path, &filename, jinja_ctx) {
             Ok((template, file_diags)) => {
@@ -604,8 +604,8 @@ pub fn load_project_sources(directory: &Path) -> Result<Vec<(String, String)>, S
     for path in project_files.all_files() {
         let filename = path
             .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Pulumi.yaml")
             .to_string();
         let content = std::fs::read_to_string(path)
             .map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
@@ -961,6 +961,7 @@ mod tests {
             config: &config,
             project_dir: dir.path().to_str().unwrap(),
             undefined: UndefinedMode::Strict,
+            extra: &HashMap::new(),
         };
         let (merged, diags) = load_project(dir.path(), Some(&ctx));
         assert!(!diags.has_errors(), "errors: {}", diags);

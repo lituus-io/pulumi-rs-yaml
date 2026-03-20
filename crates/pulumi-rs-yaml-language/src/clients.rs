@@ -19,6 +19,15 @@ pub struct GrpcCallback {
     handle: Handle,
 }
 
+/// Runs a future to completion using `block_in_place`, allowing synchronous
+/// callers to drive async gRPC calls without nesting async contexts.
+///
+/// Using a free function rather than a method avoids borrow-checker conflicts
+/// when the future also borrows other fields of the same struct.
+fn block_on<F: std::future::Future>(handle: &Handle, f: F) -> F::Output {
+    tokio::task::block_in_place(|| handle.block_on(f))
+}
+
 impl GrpcCallback {
     /// Creates a new GrpcCallback by connecting to the given addresses.
     pub async fn connect(monitor_address: &str, engine_address: &str) -> Result<Self, EngineError> {
@@ -63,21 +72,19 @@ impl GrpcCallback {
             parameterization: param,
         };
 
-        tokio::task::block_in_place(|| {
-            self.handle.block_on(async {
-                let resp = self
-                    .monitor
-                    .register_package(req)
-                    .await
-                    .map_err(|e| {
-                        EngineError::Grpc(format!(
-                            "register package {}@{} failed: {}",
-                            name, version, e
-                        ))
-                    })?
-                    .into_inner();
-                Ok(resp.r#ref)
-            })
+        block_on(&self.handle, async {
+            let resp = self
+                .monitor
+                .register_package(req)
+                .await
+                .map_err(|e| {
+                    EngineError::Grpc(format!(
+                        "register package {}@{} failed: {}",
+                        name, version, e
+                    ))
+                })?
+                .into_inner();
+            Ok(resp.r#ref)
         })
     }
 
@@ -97,14 +104,12 @@ impl GrpcCallback {
             stream_id,
             ephemeral,
         };
-        tokio::task::block_in_place(|| {
-            self.handle.block_on(async {
-                self.engine
-                    .log(req)
-                    .await
-                    .map_err(|e| EngineError::Grpc(format!("log failed: {}", e)))?;
-                Ok(())
-            })
+        block_on(&self.handle, async {
+            self.engine
+                .log(req)
+                .await
+                .map_err(|e| EngineError::Grpc(format!("log failed: {}", e)))?;
+            Ok(())
         })
     }
 }
@@ -225,25 +230,21 @@ impl ResourceCallback for GrpcCallback {
             hide_diffs: options.hide_diffs.clone(),
         };
 
-        tokio::task::block_in_place(|| {
-            self.handle.block_on(async {
-                let resp = self
-                    .monitor
-                    .register_resource(req)
-                    .await
-                    .map_err(|e| {
-                        EngineError::Registration(format!("register {} failed: {}", name, e))
-                    })?
-                    .into_inner();
+        block_on(&self.handle, async {
+            let resp = self
+                .monitor
+                .register_resource(req)
+                .await
+                .map_err(|e| EngineError::Registration(format!("register {} failed: {}", name, e)))?
+                .into_inner();
 
-                let outputs = struct_to_values(resp.object);
+            let outputs = struct_to_values(resp.object);
 
-                Ok(RegisterResponse {
-                    urn: resp.urn,
-                    id: resp.id,
-                    outputs,
-                    stables: resp.stables,
-                })
+            Ok(RegisterResponse {
+                urn: resp.urn,
+                id: resp.id,
+                outputs,
+                stables: resp.stables,
             })
         })
     }
@@ -280,23 +281,21 @@ impl ResourceCallback for GrpcCallback {
             package_ref: String::new(),
         };
 
-        tokio::task::block_in_place(|| {
-            self.handle.block_on(async {
-                let resp = self
-                    .monitor
-                    .read_resource(req)
-                    .await
-                    .map_err(|e| EngineError::Grpc(format!("read resource failed: {}", e)))?
-                    .into_inner();
+        block_on(&self.handle, async {
+            let resp = self
+                .monitor
+                .read_resource(req)
+                .await
+                .map_err(|e| EngineError::Grpc(format!("read resource failed: {}", e)))?
+                .into_inner();
 
-                let outputs = struct_to_values(resp.properties);
+            let outputs = struct_to_values(resp.properties);
 
-                Ok(RegisterResponse {
-                    urn: resp.urn,
-                    id: id.to_string(),
-                    outputs,
-                    stables: Vec::new(),
-                })
+            Ok(RegisterResponse {
+                urn: resp.urn,
+                id: id.to_string(),
+                outputs,
+                stables: Vec::new(),
             })
         })
     }
@@ -326,26 +325,24 @@ impl ResourceCallback for GrpcCallback {
             parent_stack_trace_handle: String::new(),
         };
 
-        tokio::task::block_in_place(|| {
-            self.handle.block_on(async {
-                let resp = self
-                    .monitor
-                    .invoke(req)
-                    .await
-                    .map_err(|e| EngineError::Invoke(format!("invoke {} failed: {}", token, e)))?
-                    .into_inner();
+        block_on(&self.handle, async {
+            let resp = self
+                .monitor
+                .invoke(req)
+                .await
+                .map_err(|e| EngineError::Invoke(format!("invoke {} failed: {}", token, e)))?
+                .into_inner();
 
-                let return_values = struct_to_values(resp.r#return);
-                let failures = resp
-                    .failures
-                    .iter()
-                    .map(|f| (f.property.clone(), f.reason.clone()))
-                    .collect();
+            let return_values = struct_to_values(resp.r#return);
+            let failures = resp
+                .failures
+                .iter()
+                .map(|f| (f.property.clone(), f.reason.clone()))
+                .collect();
 
-                Ok(InvokeResponse {
-                    return_values,
-                    failures,
-                })
+            Ok(InvokeResponse {
+                return_values,
+                failures,
             })
         })
     }
@@ -362,14 +359,12 @@ impl ResourceCallback for GrpcCallback {
             outputs: Some(outputs_struct),
         };
 
-        tokio::task::block_in_place(|| {
-            self.handle.block_on(async {
-                self.monitor
-                    .register_resource_outputs(req)
-                    .await
-                    .map_err(|e| EngineError::Grpc(format!("register outputs failed: {}", e)))?;
-                Ok(())
-            })
+        block_on(&self.handle, async {
+            self.monitor
+                .register_resource_outputs(req)
+                .await
+                .map_err(|e| EngineError::Grpc(format!("register outputs failed: {}", e)))?;
+            Ok(())
         })
     }
 

@@ -134,10 +134,10 @@ pub fn eval_join<'src>(
         }
     };
 
-    let mut strs = Vec::with_capacity(items.len());
+    let mut strs: Vec<&str> = Vec::with_capacity(items.len());
     for (i, item) in items.iter().enumerate() {
         match item {
-            Value::String(s) => strs.push(s.as_ref().to_string()),
+            Value::String(s) => strs.push(s.as_ref()),
             _ => {
                 diags.error(
                     None,

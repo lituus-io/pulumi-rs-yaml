@@ -26,35 +26,15 @@ impl SchemaLoader {
         let mut store = SchemaStore::new();
 
         for pkg in packages {
-            let parameterization = pkg.parameterization.as_ref().map(|p| {
-                use base64::Engine;
-                let value = base64::engine::general_purpose::STANDARD
-                    .decode(&p.value)
-                    .unwrap_or_default();
-                codegen::Parameterization {
-                    name: p.name.clone(),
-                    version: p.version.clone(),
-                    value,
-                }
-            });
-
-            let request = codegen::GetSchemaRequest {
-                package: pkg.name.clone(),
-                version: pkg.version.clone(),
-                download_url: pkg.download_url.clone(),
-                parameterization,
-            };
+            let request = schema::build_schema_request(pkg);
 
             match self.client.get_schema(request).await {
                 Ok(resp) => {
                     let schema_bytes = resp.into_inner().schema;
-                    match schema::parse_schema_json(&schema_bytes) {
-                        Ok(pkg_schema) => {
-                            store.insert(pkg_schema);
-                        }
-                        Err(e) => {
-                            eprintln!("warning: failed to parse schema for {}: {}", pkg.name, e);
-                        }
+                    if let Err(e) =
+                        schema::process_schema_response(&mut store, &pkg.name, &schema_bytes)
+                    {
+                        eprintln!("warning: {}", e);
                     }
                 }
                 Err(e) => {

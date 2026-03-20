@@ -381,6 +381,7 @@ fn test_jinja_expressions_in_multi_file() {
         config: &config,
         project_dir: dir.path().to_str().unwrap(),
         undefined: UndefinedMode::Strict,
+        extra: &HashMap::new(),
     };
 
     let (merged, diags) = load_project(dir.path(), Some(&ctx));
@@ -409,6 +410,7 @@ fn test_jinja_per_file_isolation() {
         config: &config,
         project_dir: dir.path().to_str().unwrap(),
         undefined: UndefinedMode::Strict,
+        extra: &HashMap::new(),
     };
 
     let (merged, diags) = load_project(dir.path(), Some(&ctx));
@@ -437,6 +439,7 @@ fn test_jinja_error_in_one_file_reports_correct_filename() {
         config: &config,
         project_dir: dir.path().to_str().unwrap(),
         undefined: UndefinedMode::Strict,
+        extra: &HashMap::new(),
     };
 
     let (_, diags) = load_project(dir.path(), Some(&ctx));
@@ -461,6 +464,7 @@ fn test_jinja_for_loop_generates_resources_cross_file_deps() {
         config: &config,
         project_dir: "/tmp",
         undefined: UndefinedMode::Strict,
+        extra: &HashMap::new(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
 
@@ -528,6 +532,7 @@ fn test_jinja_filters_in_multi_file_properties() {
         config: &config,
         project_dir: dir.path().to_str().unwrap(),
         undefined: UndefinedMode::Strict,
+        extra: &HashMap::new(),
     };
 
     let (merged, diags) = load_project(dir.path(), Some(&ctx));
@@ -547,6 +552,7 @@ fn test_multi_file_jinja_full_pipeline() {
         config: &config,
         project_dir: "/tmp",
         undefined: UndefinedMode::Strict,
+        extra: &HashMap::new(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
 
@@ -1004,6 +1010,7 @@ fn test_readfile_in_main_yaml() {
         config: &config,
         project_dir: dir.path().to_str().unwrap(),
         undefined: UndefinedMode::Strict,
+        extra: &HashMap::new(),
     };
 
     let (merged, diags) = load_project(dir.path(), Some(&ctx));
@@ -1029,6 +1036,7 @@ fn test_readfile_in_satellite_yaml() {
         config: &config,
         project_dir: dir.path().to_str().unwrap(),
         undefined: UndefinedMode::Strict,
+        extra: &HashMap::new(),
     };
 
     let (merged, diags) = load_project(dir.path(), Some(&ctx));
@@ -1055,6 +1063,7 @@ fn test_readfile_in_multiple_files() {
         config: &config,
         project_dir: dir.path().to_str().unwrap(),
         undefined: UndefinedMode::Strict,
+        extra: &HashMap::new(),
     };
 
     let (merged, diags) = load_project(dir.path(), Some(&ctx));
@@ -1080,6 +1089,7 @@ fn test_readfile_cross_file_with_evaluation() {
         config: &config,
         project_dir: dir.path().to_str().unwrap(),
         undefined: UndefinedMode::Strict,
+        extra: &HashMap::new(),
     };
 
     let (merged, diags) = load_project(dir.path(), Some(&ctx));

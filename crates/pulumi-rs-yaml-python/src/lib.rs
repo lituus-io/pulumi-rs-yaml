@@ -105,10 +105,10 @@ fn discover_project_files(py: Python<'_>, dir: &str) -> PyResult<PyObject> {
     Ok(dict.into_any().unbind())
 }
 
-/// Check if a YAML source contains Jinja block syntax ({% %}).
+/// Check if a YAML source contains any Jinja block syntax ({% %}), including inline.
 #[pyfunction]
 fn has_jinja_blocks(source: &str) -> bool {
-    pulumi_rs_yaml_core::jinja::has_jinja_block_syntax(source)
+    pulumi_rs_yaml_core::jinja::has_any_jinja_block_syntax(source)
 }
 
 /// Strip Jinja block lines from YAML source.
@@ -143,6 +143,19 @@ fn preprocess_jinja(source: &str, filename: &str, context: &Bound<'_, PyDict>) -
         .filter(|(k, _)| k.starts_with("config."))
         .map(|(k, v)| (k.trim_start_matches("config.").to_string(), v.clone()))
         .collect();
+    let special_keys = [
+        "project_name",
+        "stack_name",
+        "cwd",
+        "organization",
+        "root_directory",
+        "project_dir",
+    ];
+    let extra: HashMap<String, String> = ctx_map
+        .iter()
+        .filter(|(k, _)| !special_keys.contains(&k.as_str()) && !k.starts_with("config."))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
 
     let jinja_ctx = pulumi_rs_yaml_core::jinja::JinjaContext {
         project_name: &project_name,
@@ -153,6 +166,7 @@ fn preprocess_jinja(source: &str, filename: &str, context: &Bound<'_, PyDict>) -
         config: &config,
         project_dir: &project_dir,
         undefined: pulumi_rs_yaml_core::jinja::UndefinedMode::Strict,
+        extra: &extra,
     };
 
     let preprocessor = pulumi_rs_yaml_core::jinja::JinjaPreprocessor::new(&jinja_ctx);
@@ -288,6 +302,19 @@ fn create_execution_plan(
         .filter(|(k, _)| k.starts_with("config."))
         .map(|(k, v)| (k.trim_start_matches("config.").to_string(), v.clone()))
         .collect();
+    let special_keys = [
+        "project_name",
+        "stack_name",
+        "cwd",
+        "organization",
+        "root_directory",
+        "project_dir",
+    ];
+    let extra_map: HashMap<String, String> = ctx_map
+        .iter()
+        .filter(|(k, _)| !special_keys.contains(&k.as_str()) && !k.starts_with("config."))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
 
     // Extract project name from main file (strip {% %} blocks first so it parses as valid YAML).
     let project_name_owned = {
@@ -312,6 +339,7 @@ fn create_execution_plan(
         config: &config_map,
         project_dir,
         undefined: pulumi_rs_yaml_core::jinja::UndefinedMode::Strict,
+        extra: &extra_map,
     };
 
     // Reload with Jinja preprocessing (handles both {{ }} and {% %} via full rendering)

@@ -2008,6 +2008,7 @@ outputs:
         config: &config,
         project_dir: dir.path().to_str().unwrap(),
         undefined: UndefinedMode::Strict,
+        extra: &HashMap::new(),
     };
 
     let (merged, diags) = load_project(dir.path(), Some(&ctx));

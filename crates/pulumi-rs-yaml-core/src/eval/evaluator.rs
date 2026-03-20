@@ -291,8 +291,11 @@ impl<'src, C: ResourceCallback> Evaluator<'src, '_, C> {
             .as_ref()
             .and_then(|expr| self.eval_expr(expr));
 
-        let is_secret_in_config = secret_keys.contains(&format!("{}:{}", self.project_name, key))
-            || secret_keys.contains(&key.to_string());
+        let is_secret_in_config = secret_keys.iter().any(|sk| {
+            sk.strip_prefix(&*self.project_name)
+                .and_then(|rest| rest.strip_prefix(':'))
+                == Some(key)
+        }) || secret_keys.iter().any(|sk| sk == key);
 
         let is_secret_in_schema = entry.param.secret.unwrap_or(false);
 
@@ -447,31 +450,32 @@ impl<'src, C: ResourceCallback> Evaluator<'src, '_, C> {
         };
         let custom = !is_component;
 
+        // Cache schema lookup — used for secret wrapping, constant injection, and option enrichment
+        let schema_resource_info = self
+            .schema_store
+            .and_then(|s| s.lookup_resource(type_token));
+
         // Wrap secret input properties with Value::Secret (matching Go behavior:
         // pkg/pulumiyaml/run.go:1489 — IsResourcePropertySecret + ToSecret)
         let mut inputs = inputs;
-        if let Some(store) = self.schema_store {
-            if let Some(info) = store.lookup_resource(type_token) {
-                for prop_name in &info.secret_input_properties {
-                    if let Some(val) = inputs.get_mut(prop_name) {
-                        if !val.is_secret() {
-                            let taken = std::mem::replace(val, Value::Null);
-                            *val = Value::Secret(Box::new(taken));
-                        }
+        if let Some(info) = schema_resource_info {
+            for prop_name in &info.secret_input_properties {
+                if let Some(val) = inputs.get_mut(prop_name) {
+                    if !val.is_secret() {
+                        let taken = std::mem::replace(val, Value::Null);
+                        *val = Value::Secret(Box::new(taken));
                     }
                 }
             }
         }
 
         // Inject constant values from schema if user didn't provide the property
-        if let Some(store) = self.schema_store {
-            if let Some(info) = store.lookup_resource(type_token) {
-                for (prop_name, prop_info) in &info.property_types {
-                    if let Some(ref const_val) = prop_info.const_value {
-                        if !inputs.contains_key(prop_name) {
-                            if let Some(val) = json_value_to_eval_value(const_val) {
-                                inputs.insert(prop_name.clone(), val);
-                            }
+        if let Some(info) = schema_resource_info {
+            for (prop_name, prop_info) in &info.property_types {
+                if let Some(ref const_val) = prop_info.const_value {
+                    if !inputs.contains_key(prop_name) {
+                        if let Some(val) = json_value_to_eval_value(const_val) {
+                            inputs.insert(prop_name.clone(), val);
                         }
                     }
                 }
@@ -506,22 +510,20 @@ impl<'src, C: ResourceCallback> Evaluator<'src, '_, C> {
         options.property_dependencies = property_deps;
 
         // Enrich resource options from schema (secrets, aliases)
-        if let Some(store) = self.schema_store {
-            if let Some(info) = store.lookup_resource(type_token) {
-                for prop in &info.secret_properties {
-                    if !options.additional_secret_outputs.contains(prop) {
-                        options.additional_secret_outputs.push(prop.clone());
-                    }
+        if let Some(info) = schema_resource_info {
+            for prop in &info.secret_properties {
+                if !options.additional_secret_outputs.contains(prop) {
+                    options.additional_secret_outputs.push(prop.clone());
                 }
-                for alias in &info.aliases {
-                    let already_present = options.aliases.iter().any(
-                        |a| matches!(a, crate::eval::resource::ResolvedAlias::Urn(u) if u == alias),
-                    );
-                    if !already_present {
-                        options
-                            .aliases
-                            .push(crate::eval::resource::ResolvedAlias::Urn(alias.clone()));
-                    }
+            }
+            for alias in &info.aliases {
+                let already_present = options.aliases.iter().any(
+                    |a| matches!(a, crate::eval::resource::ResolvedAlias::Urn(u) if u == alias),
+                );
+                if !already_present {
+                    options
+                        .aliases
+                        .push(crate::eval::resource::ResolvedAlias::Urn(alias.clone()));
                 }
             }
         }

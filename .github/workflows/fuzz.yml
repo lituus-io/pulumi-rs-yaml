@@ -28,6 +28,7 @@ jobs:
           - fuzz_builtins
           - fuzz_converter
           - fuzz_yaml_bomb
+          - fuzz_extra_context
     steps:
       - uses: actions/checkout@v4
 

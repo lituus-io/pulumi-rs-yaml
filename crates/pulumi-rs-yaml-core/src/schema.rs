@@ -619,6 +619,53 @@ pub fn generate_component_schema(
     })
 }
 
+/// Builds a `GetSchemaRequest` for the given package dependency, including
+/// any parameterization. Invalid base64 in the parameterization value is
+/// reported as a warning and treated as an empty byte slice.
+pub fn build_schema_request(
+    pkg: &crate::packages::PackageDependency,
+) -> pulumi_rs_yaml_proto::codegen::GetSchemaRequest {
+    let parameterization = pkg.parameterization.as_ref().map(|p| {
+        use base64::Engine;
+        let value = match base64::engine::general_purpose::STANDARD.decode(&p.value) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!(
+                    "warning: invalid base64 parameterization for {}: {}",
+                    p.name, e
+                );
+                Vec::new()
+            }
+        };
+        pulumi_rs_yaml_proto::codegen::Parameterization {
+            name: p.name.clone(),
+            version: p.version.clone(),
+            value,
+        }
+    });
+    pulumi_rs_yaml_proto::codegen::GetSchemaRequest {
+        package: pkg.name.clone(),
+        version: pkg.version.clone(),
+        download_url: pkg.download_url.clone(),
+        parameterization,
+    }
+}
+
+/// Parses schema bytes and inserts the result into `store`.
+///
+/// Returns an error string on parse failure; the caller is responsible
+/// for deciding how to report it (typically as a warning).
+pub fn process_schema_response(
+    store: &mut SchemaStore,
+    pkg_name: &str,
+    schema_bytes: &[u8],
+) -> Result<(), String> {
+    let pkg_schema = parse_schema_json(schema_bytes)
+        .map_err(|e| format!("failed to parse schema for {}: {}", pkg_name, e))?;
+    store.insert(pkg_schema);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

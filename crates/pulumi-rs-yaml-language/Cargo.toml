@@ -1,6 +1,6 @@
 [package]
 name = "pulumi-rs-yaml-language"
-version = "0.2.0"
+version = "0.4.0"
 edition = "2021"
 description = "Pulumi YAML language host plugin (Rust implementation)"
 license.workspace = true
