@@ -11,6 +11,7 @@ on:
         type: string
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   CARGO_TERM_COLOR: always
   FUZZ_DURATION: ${{ inputs.duration || '60' }}
 
