@@ -1,6 +1,6 @@
 [package]
 name = "pulumi-rs-yaml-python"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 description = "Python bindings for pulumi-rs-yaml via PyO3"
 license.workspace = true
