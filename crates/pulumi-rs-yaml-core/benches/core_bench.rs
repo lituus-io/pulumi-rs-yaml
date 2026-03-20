@@ -240,6 +240,7 @@ outputs:
         config: &config,
         project_dir: "/home/user",
         undefined: UndefinedMode::Strict,
+        extra: &HashMap::new(),
     };
 
     c.bench_function("jinja_preprocessor_fast_path", |b| {
@@ -275,6 +276,7 @@ resources:
         config: &config,
         project_dir: "/home/user",
         undefined: UndefinedMode::Strict,
+        extra: &HashMap::new(),
     };
 
     c.bench_function("jinja_preprocessor_render_10_resources", |b| {
@@ -443,6 +445,7 @@ fn bench_jinja_preprocess_multi_file(c: &mut Criterion) {
         config: &config,
         project_dir: dir.path().to_str().unwrap(),
         undefined: UndefinedMode::Strict,
+        extra: &HashMap::new(),
     };
 
     let path = dir.path().to_path_buf();

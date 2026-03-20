@@ -110,4 +110,42 @@ fuzz_target!(|input: FuzzInput| {
         let mut diags = Diagnostics::new();
         let _ = builtins::eval_from_base64(&value, &mut diags);
     }
+
+    // v0.4.0: math builtins — must never panic
+    {
+        let mut diags = Diagnostics::new();
+        let _ = builtins::eval_abs(&value, &mut diags);
+    }
+    {
+        let mut diags = Diagnostics::new();
+        let _ = builtins::eval_floor(&value, &mut diags);
+    }
+    {
+        let mut diags = Diagnostics::new();
+        let _ = builtins::eval_ceil(&value, &mut diags);
+    }
+    {
+        let mut diags = Diagnostics::new();
+        let _ = builtins::eval_max(&value, &mut diags);
+    }
+    {
+        let mut diags = Diagnostics::new();
+        let _ = builtins::eval_min(&value, &mut diags);
+    }
+
+    // v0.4.0: string builtins — must never panic
+    {
+        let mut diags = Diagnostics::new();
+        let _ = builtins::eval_string_len(&value, &mut diags);
+    }
+    {
+        let mut diags = Diagnostics::new();
+        let _ = builtins::eval_substring(&value, &index, &value, &mut diags);
+    }
+
+    // v0.4.0: Value::from_json_owned — must never panic
+    {
+        let json_val = value.to_json();
+        let _ = Value::from_json_owned(json_val);
+    }
 });

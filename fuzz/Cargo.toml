@@ -49,3 +49,8 @@ doc = false
 name = "fuzz_yaml_bomb"
 path = "fuzz_targets/fuzz_yaml_bomb.rs"
 doc = false
+
+[[bin]]
+name = "fuzz_extra_context"
+path = "fuzz_targets/fuzz_extra_context.rs"
+doc = false

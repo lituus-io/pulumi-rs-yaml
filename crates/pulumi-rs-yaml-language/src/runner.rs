@@ -55,20 +55,21 @@ pub async fn run(
     }
 
     // 2. Build Jinja context for preprocessing
-    let coerced_config_pre = coerce_config_values(config, config_secret_keys);
     let undefined_mode = match std::env::var("PULUMI_YAML_JINJA_UNDEFINED").as_deref() {
         Ok("passthrough") => UndefinedMode::Passthrough,
         _ => UndefinedMode::Strict,
     };
+    let empty_extra = HashMap::new();
     let jinja_ctx = JinjaContext {
         project_name: project,
         stack_name: stack,
         cwd: pwd,
         organization,
         root_directory: program_directory,
-        config: &coerced_config_pre,
+        config,
         project_dir: program_directory,
         undefined: undefined_mode,
+        extra: &empty_extra,
     };
 
     // 3. Load template(s) — multi-file or single-file with Jinja source override
@@ -161,9 +162,6 @@ pub async fn run(
         }
     }
 
-    // 7. Apply smart config coercion (matching Go behavior)
-    let coerced_config = coerce_config_values(config, config_secret_keys);
-
     // 8. Create evaluator
     let mut eval = Evaluator::with_callback(
         project.to_string(),
@@ -221,7 +219,7 @@ pub async fn run(
     }
 
     // 10. Evaluate the template
-    eval.evaluate_template(template, &coerced_config, config_secret_keys);
+    eval.evaluate_template(template, config, config_secret_keys);
 
     // 11. Check for errors
     if eval.diags.has_errors() {
@@ -416,46 +414,5 @@ fn load_from_jinja_source(
             template,
             std::sync::Arc::new(std::collections::HashMap::new()),
         ))
-    }
-}
-
-/// Applies smart config type coercion matching Go's behavior.
-///
-/// The Go implementation coerces raw string config values into typed values:
-/// 1. Strings starting with "0" (but not "0." or just "0") stay as strings
-/// 2. Try parse as integer
-/// 3. Try parse as bool
-/// 4. Try parse as float
-/// 5. Try parse as JSON (for arrays/objects)
-/// 6. Fallback to string
-///
-/// This function returns the coerced config map suitable for the evaluator.
-/// The evaluator's own config resolution will handle the final type checking.
-fn coerce_config_values(
-    config: &HashMap<String, String>,
-    _secret_keys: &[String],
-) -> HashMap<String, String> {
-    // The evaluator already handles string→typed coercion via config::resolve_config_entry.
-    // We pass through the raw config as-is since the evaluator does its own parsing.
-    // The Go implementation's coercion is done because Go's SDK expects typed PropertyValues,
-    // but our Rust evaluator works directly with raw strings and applies types from schema declarations.
-    config.clone()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_coerce_config_values_passthrough() {
-        let mut config = HashMap::new();
-        config.insert("key1".to_string(), "hello".to_string());
-        config.insert("key2".to_string(), "42".to_string());
-        config.insert("key3".to_string(), "true".to_string());
-
-        let result = coerce_config_values(&config, &[]);
-        assert_eq!(result.get("key1").unwrap(), "hello");
-        assert_eq!(result.get("key2").unwrap(), "42");
-        assert_eq!(result.get("key3").unwrap(), "true");
     }
 }

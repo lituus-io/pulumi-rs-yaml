@@ -10,6 +10,9 @@ use pulumi_rs_yaml_core::jinja::{
     UndefinedMode,
 };
 
+static EMPTY_EXTRA: std::sync::LazyLock<HashMap<String, String>> =
+    std::sync::LazyLock::new(HashMap::new);
+
 fn make_context(config: &HashMap<String, String>) -> JinjaContext<'_> {
     JinjaContext {
         project_name: "test-project",
@@ -20,6 +23,7 @@ fn make_context(config: &HashMap<String, String>) -> JinjaContext<'_> {
         config,
         project_dir: "/home/user/project",
         undefined: UndefinedMode::Strict,
+        extra: &EMPTY_EXTRA,
     }
 }
 
@@ -753,6 +757,7 @@ outputs:
         config: &config,
         project_dir: "/tmp",
         undefined: UndefinedMode::Strict,
+        extra: &HashMap::new(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
     let rendered = preprocessor.preprocess(original, "Pulumi.yaml").unwrap();
@@ -907,6 +912,7 @@ fn make_readfile_context<'a>(
         config,
         project_dir,
         undefined: UndefinedMode::Strict,
+        extra: &EMPTY_EXTRA,
     }
 }
 
@@ -1005,7 +1011,8 @@ fn test_readfile_file_not_found_error() {
     assert!(result.is_err());
     let diag = result.unwrap_err();
     assert!(
-        diag.message.contains("readFile: failed to read"),
+        diag.message.contains("readFile: failed to resolve")
+            || diag.message.contains("readFile: failed to read"),
         "got: {}",
         diag.message
     );
@@ -1017,6 +1024,7 @@ fn test_readfile_file_not_found_error() {
 #[cfg(unix)] // Windows backslashes in paths are misinterpreted as Jinja escape sequences
 #[test]
 fn test_readfile_absolute_path() {
+    // Security fix: absolute paths are now rejected
     let dir = make_temp_dir(&[("abs.txt", "absolute content")]);
     let abs_path = dir.path().join("abs.txt");
     let config = HashMap::new();
@@ -1024,11 +1032,13 @@ fn test_readfile_absolute_path() {
     let preprocessor = JinjaPreprocessor::new(&ctx);
 
     let source = format!("data: {{{{ readFile(\"{}\") }}}}\n", abs_path.display());
-    let result = preprocessor.preprocess(&source, "Pulumi.yaml").unwrap();
+    let result = preprocessor.preprocess(&source, "Pulumi.yaml");
+    assert!(result.is_err(), "absolute paths should be rejected");
+    let err = result.unwrap_err();
     assert!(
-        result.contains("data: absolute content"),
-        "got:\n{}",
-        result
+        err.message.contains("absolute paths are not allowed"),
+        "got: {}",
+        err.message
     );
 }
 
@@ -1462,6 +1472,7 @@ resources:
         config: &config,
         project_dir: "/tmp",
         undefined: UndefinedMode::Passthrough,
+        extra: &HashMap::new(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
     let result = preprocessor.preprocess(source, "Pulumi.yaml").unwrap();
@@ -1487,6 +1498,7 @@ fn test_passthrough_config_typo_still_errors() {
         config: &config,
         project_dir: "/tmp",
         undefined: UndefinedMode::Passthrough,
+        extra: &HashMap::new(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
     let result = preprocessor.preprocess(source, "Pulumi.yaml");
@@ -1511,6 +1523,7 @@ fn test_passthrough_unknown_passes_through() {
         config: &config,
         project_dir: "/tmp",
         undefined: UndefinedMode::Passthrough,
+        extra: &HashMap::new(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
     let result = preprocessor.preprocess(source, "Pulumi.yaml").unwrap();
@@ -1534,6 +1547,7 @@ fn test_passthrough_readfile_still_works() {
         config: &config,
         project_dir: dir.path().to_str().unwrap(),
         undefined: UndefinedMode::Passthrough,
+        extra: &HashMap::new(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
     let source = "sql: {{ readFile('f.sql') }}\n";
@@ -1562,6 +1576,7 @@ fn test_passthrough_for_loop_with_unknown_vars() {
         config: &config,
         project_dir: "/tmp",
         undefined: UndefinedMode::Passthrough,
+        extra: &HashMap::new(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
     let result = preprocessor.preprocess(source, "Pulumi.yaml").unwrap();
@@ -1588,6 +1603,7 @@ fn test_strict_mode_unchanged() {
         config: &config,
         project_dir: "/tmp",
         undefined: UndefinedMode::Strict,
+        extra: &HashMap::new(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
     let result = preprocessor.preprocess(source, "Pulumi.yaml");

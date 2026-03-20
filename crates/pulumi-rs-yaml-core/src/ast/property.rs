@@ -113,7 +113,13 @@ pub fn parse_property_access<'src>(
                         diags.error(span, "missing closing bracket in property access", "");
                         return ("", None);
                     }
-                    let key_str = String::from_utf8(key).unwrap_or_default();
+                    let key_str = match String::from_utf8(key) {
+                        Ok(s) => s,
+                        Err(_) => {
+                            diags.error(span, "property key contains invalid UTF-8", "");
+                            return ("", None);
+                        }
+                    };
                     accessors.push(PropertyAccessor::StringSubscript(Cow::Owned(key_str)));
                     remaining = &remaining[i + 1..];
                 } else {

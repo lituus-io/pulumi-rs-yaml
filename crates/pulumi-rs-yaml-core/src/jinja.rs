@@ -197,24 +197,47 @@ pub struct JinjaContext<'cfg> {
     pub config: &'cfg HashMap<String, String>,
     pub project_dir: &'cfg str,
     pub undefined: UndefinedMode,
+    /// Extra context variables passed through from the caller.
+    /// Inserted into the Jinja context BEFORE built-in keys, so built-ins
+    /// always win on collision (prevents override attacks).
+    pub extra: &'cfg HashMap<String, String>,
 }
 
 /// Builds a minijinja context Value from borrowed references.
 /// This is the ONLY allocation boundary — minijinja requires owned values internally.
+///
+/// Extras are inserted FIRST, then built-in keys overwrite them.
+/// This prevents extra vars from overriding built-in Pulumi context.
 fn build_minijinja_context(ctx: &JinjaContext<'_>) -> minijinja::Value {
-    // Build config sub-object
-    let config_val = build_config_value(ctx.config);
-    let env_val = build_env_value();
+    let mut map = std::collections::BTreeMap::<String, minijinja::Value>::new();
 
-    minijinja::context! {
-        pulumi_project => ctx.project_name,
-        pulumi_stack => ctx.stack_name,
-        pulumi_cwd => ctx.cwd,
-        pulumi_organization => ctx.organization,
-        pulumi_root_directory => ctx.root_directory,
-        config => config_val,
-        env => env_val,
+    // Insert extras first (built-ins will overwrite on collision)
+    for (k, v) in ctx.extra {
+        map.insert(k.clone(), minijinja::Value::from(v.as_str()));
     }
+
+    // Built-in keys always win
+    map.insert(
+        "pulumi_project".into(),
+        minijinja::Value::from(ctx.project_name),
+    );
+    map.insert(
+        "pulumi_stack".into(),
+        minijinja::Value::from(ctx.stack_name),
+    );
+    map.insert("pulumi_cwd".into(), minijinja::Value::from(ctx.cwd));
+    map.insert(
+        "pulumi_organization".into(),
+        minijinja::Value::from(ctx.organization),
+    );
+    map.insert(
+        "pulumi_root_directory".into(),
+        minijinja::Value::from(ctx.root_directory),
+    );
+    map.insert("config".into(), build_config_value(ctx.config));
+    map.insert("env".into(), build_env_value());
+
+    minijinja::Value::from_serialize(&map)
 }
 
 fn build_config_value(config: &HashMap<String, String>) -> minijinja::Value {
@@ -468,7 +491,8 @@ pub fn pre_escape_for_passthrough(source: &str) -> Cow<'_, str> {
 
     let bytes = source.as_bytes();
     let len = bytes.len();
-    let mut result = String::with_capacity(source.len() + 64);
+    let expr_count = source.matches("{{").count();
+    let mut result = String::with_capacity(source.len() + expr_count * 25);
     let mut i = 0;
 
     while i < len {
@@ -563,7 +587,10 @@ impl TemplatePreprocessor for JinjaPreprocessor<'_> {
             .map_err(|e| build_render_diagnostic(source, &e))?;
 
         // Resolve readFile markers with auto-indentation
-        let final_output = match resolve_readfile_markers(&rendered, &cache.lock().unwrap()) {
+        let final_output = match resolve_readfile_markers(
+            &rendered,
+            &cache.lock().unwrap_or_else(|e| e.into_inner()),
+        ) {
             Some(resolved) => resolved,
             None => rendered,
         };
@@ -588,6 +615,14 @@ pub fn has_jinja_block_syntax(s: &str) -> bool {
         let trimmed = line.trim();
         trimmed.starts_with("{%") && trimmed.ends_with("%}")
     })
+}
+
+/// Checks if source contains any `{% %}` syntax anywhere (including inline).
+///
+/// Unlike `has_jinja_block_syntax`, this detects inline blocks like
+/// `val: {% if x %}y{% endif %}` which are valid Jinja but not on standalone lines.
+pub fn has_any_jinja_block_syntax(s: &str) -> bool {
+    s.contains("{%")
 }
 
 /// Strips lines containing Jinja block syntax (`{% %}`), preserving everything else.
@@ -745,10 +780,15 @@ fn indent_content(content: &str, indent: &str) -> String {
     if content.is_empty() {
         return String::new();
     }
+    let line_sep = if content.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
     let mut result = String::new();
     for (i, line) in content.lines().enumerate() {
         if i > 0 {
-            result.push('\n');
+            result.push_str(line_sep);
         }
         if !line.is_empty() {
             result.push_str(indent);
@@ -830,6 +870,9 @@ fn resolve_readfile_markers(rendered: &str, cache: &ReadFileCache) -> Option<Str
 }
 
 /// Registers the `readFile(path)` function in the minijinja environment.
+///
+/// Security: rejects absolute paths and path traversals that escape
+/// the project directory (e.g. `../../../etc/passwd`).
 fn register_readfile_function(
     env: &mut minijinja::Environment<'_>,
     project_dir: &str,
@@ -839,11 +882,31 @@ fn register_readfile_function(
     env.add_function(
         "readFile",
         move |path: String| -> Result<String, minijinja::Error> {
-            let resolved = if Path::new(&path).is_absolute() {
-                std::path::PathBuf::from(&path)
-            } else {
-                Path::new(&project_dir).join(&path)
-            };
+            // Reject absolute paths
+            if Path::new(&path).is_absolute() {
+                return Err(minijinja::Error::new(
+                    minijinja::ErrorKind::InvalidOperation,
+                    format!("readFile: absolute paths are not allowed: '{}'", path),
+                ));
+            }
+            let project_canonical = Path::new(&project_dir).canonicalize().map_err(|e| {
+                minijinja::Error::new(
+                    minijinja::ErrorKind::InvalidOperation,
+                    format!("readFile: failed to resolve project directory: {}", e),
+                )
+            })?;
+            let resolved = project_canonical.join(&path).canonicalize().map_err(|e| {
+                minijinja::Error::new(
+                    minijinja::ErrorKind::InvalidOperation,
+                    format!("readFile: failed to resolve '{}': {}", path, e),
+                )
+            })?;
+            if !resolved.starts_with(&project_canonical) {
+                return Err(minijinja::Error::new(
+                    minijinja::ErrorKind::InvalidOperation,
+                    format!("readFile: path '{}' escapes project directory", path),
+                ));
+            }
 
             let content = std::fs::read_to_string(&resolved).map_err(|e| {
                 minijinja::Error::new(
@@ -852,7 +915,7 @@ fn register_readfile_function(
                 )
             })?;
 
-            let id = cache.lock().unwrap().add(content);
+            let id = cache.lock().unwrap_or_else(|e| e.into_inner()).add(content);
             Ok(readfile_marker(id))
         },
     );
@@ -1131,6 +1194,7 @@ mod tests {
             config: &config,
             project_dir: "",
             undefined: UndefinedMode::Strict,
+            extra: &HashMap::new(),
         };
         let preprocessor = JinjaPreprocessor::new(&ctx);
         let source = "name: test\nruntime: yaml\n";
@@ -1150,6 +1214,7 @@ mod tests {
             config: &config,
             project_dir: "",
             undefined: UndefinedMode::Strict,
+            extra: &HashMap::new(),
         };
         let preprocessor = JinjaPreprocessor::new(&ctx);
         let source = "name: {{ pulumi_project }}\n";
@@ -1170,6 +1235,7 @@ mod tests {
             config: &config,
             project_dir: "",
             undefined: UndefinedMode::Strict,
+            extra: &HashMap::new(),
         };
         let preprocessor = JinjaPreprocessor::new(&ctx);
         let source = "name: {{ nonexistent }}\n";
@@ -1191,6 +1257,7 @@ mod tests {
             config: &config,
             project_dir: "",
             undefined: UndefinedMode::Strict,
+            extra: &HashMap::new(),
         };
         let preprocessor = JinjaPreprocessor::new(&ctx);
         let source = "{% for %}\n";
@@ -1213,6 +1280,7 @@ mod tests {
             config: &config,
             project_dir: "",
             undefined: UndefinedMode::Strict,
+            extra: &HashMap::new(),
         };
         let preprocessor = JinjaPreprocessor::new(&ctx);
         // Jinja {{ }} gets processed but Pulumi ${} passes through
@@ -1371,6 +1439,7 @@ mod tests {
             config: &std::collections::HashMap::new(),
             project_dir: "/tmp",
             undefined: UndefinedMode::Strict,
+            extra: &HashMap::new(),
         };
         let preprocessor = JinjaPreprocessor::new(&ctx);
         let result = preprocessor.preprocess(source, "Pulumi.yaml").unwrap();
@@ -1392,6 +1461,7 @@ mod tests {
             config: &std::collections::HashMap::new(),
             project_dir: "/tmp",
             undefined: UndefinedMode::Strict,
+            extra: &HashMap::new(),
         };
         let preprocessor = JinjaPreprocessor::new(&ctx);
         let result = preprocessor.preprocess(source, "Pulumi.yaml").unwrap();

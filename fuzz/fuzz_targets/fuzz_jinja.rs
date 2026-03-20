@@ -47,4 +47,15 @@ fuzz_target!(|data: &[u8]| {
 
     // pre_escape_for_passthrough must never panic
     let _ = pulumi_rs_yaml_core::jinja::pre_escape_for_passthrough(input);
+
+    // v0.4.0: has_any_jinja_block_syntax must never panic (inline detection)
+    let _ = pulumi_rs_yaml_core::jinja::has_any_jinja_block_syntax(input);
+
+    // Consistency: has_any is a superset of has_jinja_block_syntax
+    if pulumi_rs_yaml_core::jinja::has_jinja_block_syntax(input) {
+        assert!(
+            pulumi_rs_yaml_core::jinja::has_any_jinja_block_syntax(input),
+            "has_any must be superset of standalone block detection"
+        );
+    }
 });
