@@ -17,10 +17,7 @@ use pulumi_rs_yaml_core::eval::value::Value;
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn eval_with_mock(
-    source: &str,
-    mock: MockCallback,
-) -> (Evaluator<'static, MockCallback>, bool) {
+fn eval_with_mock(source: &str, mock: MockCallback) -> (Evaluator<'static, MockCallback>, bool) {
     eval_with_mock_and_config(source, mock, HashMap::new(), &[])
 }
 
@@ -199,7 +196,9 @@ outputs:
         Some("raw_events")
     );
     assert_eq!(
-        eval.get_output("tableType").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("tableType")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("TABLE")
     );
 }
@@ -245,7 +244,9 @@ outputs:
         Some("SELECT user_id FROM `analytics.events` WHERE active = true")
     );
     assert_eq!(
-        eval.get_output("viewType").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("viewType")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("VIEW")
     );
 }
@@ -299,7 +300,9 @@ outputs:
         other => panic!("columns should be a List, got {:?}", other),
     }
     assert_eq!(
-        eval.get_output("fingerprint").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("fingerprint")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("abc123def456")
     );
 }
@@ -365,11 +368,15 @@ outputs:
     assert_eq!(regs[0].type_token, "gcpx:dbt/project:Project");
     assert_eq!(regs[0].name, "myProject");
     assert_eq!(
-        eval.get_output("gcpProject").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("gcpProject")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("my-gcp-project")
     );
     assert_eq!(
-        eval.get_output("dataset").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("dataset")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("analytics")
     );
 }
@@ -414,11 +421,15 @@ outputs:
     assert_eq!(regs.len(), 1);
     assert_eq!(regs[0].type_token, "gcpx:dbt/macro:Macro");
     assert_eq!(
-        eval.get_output("macroName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("macroName")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("cents_to_dollars")
     );
     assert_eq!(
-        eval.get_output("macroSql").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("macroSql")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("{{ amount_cents }} / 100.0")
     );
 }
@@ -468,15 +479,21 @@ outputs:
     assert_eq!(regs.len(), 1);
     assert_eq!(regs[0].type_token, "gcpx:dbt/model:Model");
     assert_eq!(
-        eval.get_output("resolvedSql").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("resolvedSql")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("SELECT * FROM `my-gcp-project.raw_data.events`")
     );
     assert_eq!(
-        eval.get_output("tableRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("tableRef")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("`my-gcp-project.analytics.stg_events`")
     );
     assert_eq!(
-        eval.get_output("materialization").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("materialization")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("view")
     );
 }
@@ -590,7 +607,9 @@ outputs:
     );
 
     assert_eq!(
-        eval.get_output("tableRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("tableRef")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("`my-gcp-project.analytics.stg_events`")
     );
 }
@@ -692,7 +711,9 @@ outputs:
     );
 
     assert_eq!(
-        eval.get_output("martTableRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("martTableRef")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("`my-gcp-project.analytics.mart_daily`")
     );
 }
@@ -752,11 +773,15 @@ outputs:
         Some("0 2 * * *")
     );
     assert_eq!(
-        eval.get_output("workflowName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("workflowName")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("projects/my-gcp-project/locations/us/workflows/daily_refresh")
     );
     assert_eq!(
-        eval.get_output("state").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("state")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("ENABLED")
     );
 }
@@ -878,7 +903,9 @@ outputs:
         Some(ddl)
     );
     assert_eq!(
-        eval.get_output("jobSql").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("jobSql")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some(ddl)
     );
 }
@@ -998,15 +1025,21 @@ outputs:
 
     assert_eq!(eval.callback().registrations().len(), 1);
     assert_eq!(
-        eval.get_output("deepDataset").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("deepDataset")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("raw_data")
     );
     assert_eq!(
-        eval.get_output("projId").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("projId")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("project-deep-001")
     );
     assert_eq!(
-        eval.get_output("projUrn").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("projUrn")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("urn:pulumi:test::test::gcpx:dbt/project:Project::proj")
     );
 }
@@ -1056,7 +1089,9 @@ outputs:
     assert_eq!(obj_field(tp, "type").as_str(), Some("DAY"));
     assert_eq!(obj_field(tp, "field").as_str(), Some("event_date"));
     assert_eq!(
-        eval.get_output("tableType").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("tableType")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("TABLE")
     );
 }
@@ -1217,7 +1252,9 @@ outputs:
         Some(3600000.0)
     );
     assert_eq!(
-        eval.get_output("tableType").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("tableType")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("MATERIALIZED_VIEW")
     );
 }
@@ -1288,7 +1325,9 @@ outputs:
         other => panic!("columns should be a List, got {:?}", other),
     }
     assert_eq!(
-        eval.get_output("fingerprint").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("fingerprint")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("nested-fp-xyz")
     );
 }
@@ -1353,11 +1392,15 @@ outputs:
     assert_eq!(regs[1].name, "eventsSchema");
     assert_eq!(regs[1].type_token, "gcpx:bigquery/tableSchema:TableSchema");
     assert_eq!(
-        eval.get_output("tableType").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("tableType")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("TABLE")
     );
     assert_eq!(
-        eval.get_output("fingerprint").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("fingerprint")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("fp-after-table")
     );
 }
@@ -1428,7 +1471,9 @@ resources:
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 2);
     assert_eq!(
-        eval.get_output("modelTableRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("modelTableRef")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("`my-gcp-project.analytics.stg_events`")
     );
 }
@@ -1517,7 +1562,9 @@ resources:
         Some("my-gcp-project")
     );
     assert_eq!(
-        eval.get_output("tableRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("tableRef")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("`my-gcp-project.analytics.stg_events`")
     );
 }
@@ -1623,11 +1670,15 @@ resources:
     assert_eq!(regs[1].name, "dbtProject");
     assert_eq!(regs[2].name, "stgModel");
     assert_eq!(
-        eval.get_output("macroName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("macroName")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("cents_to_dollars")
     );
     assert_eq!(
-        eval.get_output("modelTableRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("modelTableRef")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("`my-gcp-project.analytics.stg_orders`")
     );
 }
@@ -1903,15 +1954,21 @@ resources:
 
     // Outputs resolve correctly
     assert_eq!(
-        eval.get_output("stgOrdersRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("stgOrdersRef")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("`my-gcp-project.analytics.stg_orders`")
     );
     assert_eq!(
-        eval.get_output("stgUsersRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("stgUsersRef")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("`my-gcp-project.analytics.stg_users`")
     );
     assert_eq!(
-        eval.get_output("martRevenueRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("martRevenueRef")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("`my-gcp-project.analytics.mart_revenue`")
     );
 }
@@ -2132,11 +2189,15 @@ outputs:
 
     // Outputs resolve correctly
     assert_eq!(
-        eval.get_output("stgOrdersRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("stgOrdersRef")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("`my-gcp-project.analytics.stg_orders`")
     );
     assert_eq!(
-        eval.get_output("martRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("martRef")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("`my-gcp-project.analytics.mart_revenue`")
     );
 }
@@ -2248,7 +2309,9 @@ outputs:
     );
 
     assert_eq!(
-        eval.get_output("tableRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("tableRef")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("`my-gcp-project.analytics.stg_events`")
     );
 }

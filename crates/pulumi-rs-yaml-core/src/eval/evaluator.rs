@@ -356,11 +356,7 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
         raw_config: &RawConfig,
         secret_keys: &[String],
     ) {
-        if let Some(entry) = template
-            .config
-            .iter()
-            .find(|e| e.key.as_ref() == node_name)
-        {
+        if let Some(entry) = template.config.iter().find(|e| e.key.as_ref() == node_name) {
             self.eval_config_entry(entry, raw_config, secret_keys);
             return;
         }
@@ -449,11 +445,7 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
             }
             None => {
                 // Mark as poisoned to prevent cascading errors
-                self.state
-                    .poisoned
-                    .lock()
-                    .unwrap()
-                    .insert(key.to_string());
+                self.state.poisoned.lock().unwrap().insert(key.to_string());
             }
         }
     }
@@ -1430,14 +1422,15 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
     }
 
     /// Evaluates a property access expression like `${resource.output.field}`.
-    fn eval_property_access_expr<'e>(
-        &self,
-        access: &'e PropertyAccess<'e>,
-    ) -> Option<Value<'e>> {
+    fn eval_property_access_expr<'e>(&self, access: &'e PropertyAccess<'e>) -> Option<Value<'e>> {
         let root_name = match access.root_name() {
             Ok(name) => name,
             Err(e) => {
-                self.state.diags.lock().unwrap().error(None, e.to_string(), "");
+                self.state
+                    .diags
+                    .lock()
+                    .unwrap()
+                    .error(None, e.to_string(), "");
                 return None;
             }
         };
@@ -1641,11 +1634,11 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
                 }
             }
             Err(e) => {
-                self.state
-                    .diags
-                    .lock()
-                    .unwrap()
-                    .error(None, format!("invoke {} failed: {}", token, e), "");
+                self.state.diags.lock().unwrap().error(
+                    None,
+                    format!("invoke {} failed: {}", token, e),
+                    "",
+                );
                 None
             }
         }
@@ -1953,7 +1946,8 @@ variables:
             eval.state.config.lock().unwrap().keys().collect::<Vec<_>>()
         );
         assert_eq!(
-            eval.get_config("greeting").and_then(|v| v.as_str().map(|s| s.to_string())),
+            eval.get_config("greeting")
+                .and_then(|v| v.as_str().map(|s| s.to_string())),
             Some("hello".to_string())
         );
 
@@ -1961,7 +1955,12 @@ variables:
         assert!(
             eval.has_variable("msg"),
             "variable keys: {:?}",
-            eval.state.variables.lock().unwrap().keys().collect::<Vec<_>>()
+            eval.state
+                .variables
+                .lock()
+                .unwrap()
+                .keys()
+                .collect::<Vec<_>>()
         );
     }
 
@@ -2322,7 +2321,8 @@ outputs:
             Some(11.0)
         );
         assert_eq!(
-            eval.get_output("substring").and_then(|v| v.as_str().map(|s| s.to_string())),
+            eval.get_output("substring")
+                .and_then(|v| v.as_str().map(|s| s.to_string())),
             Some("hello".to_string())
         );
     }

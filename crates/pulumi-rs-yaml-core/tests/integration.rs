@@ -15,10 +15,7 @@ use pulumi_rs_yaml_core::eval::value::{Archive, Asset, Value};
 ///
 /// Uses `Box::leak` to give the template a `'static` lifetime, which is fine
 /// for tests since the process exits after each test anyway.
-fn eval_with_mock(
-    source: &str,
-    mock: MockCallback,
-) -> (Evaluator<'static, MockCallback>, bool) {
+fn eval_with_mock(source: &str, mock: MockCallback) -> (Evaluator<'static, MockCallback>, bool) {
     let (template, parse_diags) = parse_template(source, None);
     if parse_diags.has_errors() {
         panic!("parse errors: {}", parse_diags);
@@ -88,7 +85,11 @@ resources:
     assert_eq!(regs[0].name, "myBucket");
     assert!(regs[0].custom);
     assert_eq!(
-        regs[0].inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        regs[0]
+            .inputs
+            .get("bucketName")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("my-bucket")
     );
 }
@@ -165,7 +166,11 @@ resources:
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
     assert_eq!(
-        regs[0].inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        regs[0]
+            .inputs
+            .get("bucketName")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("default-bucket")
     );
 }
@@ -193,7 +198,11 @@ resources:
 
     let regs = eval.callback().registrations();
     assert_eq!(
-        regs[0].inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        regs[0]
+            .inputs
+            .get("bucketName")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("from-config")
     );
 }
@@ -222,7 +231,11 @@ resources:
 
     let regs = eval.callback().registrations();
     assert_eq!(
-        regs[0].inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        regs[0]
+            .inputs
+            .get("bucketName")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("my-resource")
     );
 }
@@ -268,7 +281,11 @@ resources:
     // Verify the resource got the invoke result
     let regs = eval.callback().registrations();
     assert_eq!(
-        regs[0].inputs.get("ami").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        regs[0]
+            .inputs
+            .get("ami")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("ami-12345")
     );
 }
@@ -306,7 +323,11 @@ resources:
 
     let regs = eval.callback().registrations();
     assert_eq!(
-        regs[0].inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        regs[0]
+            .inputs
+            .get("bucketName")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("123456789")
     );
 }
@@ -353,7 +374,11 @@ resources:
 
     // Second resource should reference the first resource's ARN
     assert_eq!(
-        regs[1].inputs.get("bucket").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        regs[1]
+            .inputs
+            .get("bucket")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("arn:aws:s3:::test-bucket")
     );
 }
@@ -377,11 +402,15 @@ outputs:
     assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("result")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("hello")
     );
     assert_eq!(
-        eval.get_output("constant").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("constant")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("world")
     );
 }
@@ -642,7 +671,11 @@ resources:
 
     let regs = eval.callback().registrations();
     assert_eq!(
-        regs[0].inputs.get("tags").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        regs[0]
+            .inputs
+            .get("tags")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("tag1,tag2,tag3")
     );
 }
@@ -669,11 +702,19 @@ resources:
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
     assert_eq!(
-        regs[0].inputs.get("key1").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        regs[0]
+            .inputs
+            .get("key1")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("value1")
     );
     assert_eq!(
-        regs[0].inputs.get("key2").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        regs[0]
+            .inputs
+            .get("key2")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("value2")
     );
 }
@@ -816,7 +857,9 @@ outputs:
     assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("result")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("override-name")
     );
 }
@@ -1096,7 +1139,9 @@ outputs:
     assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("result")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("one")
     );
 }
@@ -1143,7 +1188,10 @@ outputs:
     let (eval, has_errors) = eval_with_mock(source, mock);
     assert!(!has_errors, "errors: {}", eval.diags_display());
 
-    let json_string = eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).unwrap();
+    let json_string = eval
+        .get_output("result")
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap();
     let json_str = json_string.as_str();
     let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
     assert_eq!(parsed["key"], "value");
@@ -1167,7 +1215,9 @@ outputs:
     assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("result")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("SGVsbG8sIFdvcmxkIQ==")
     );
 }
@@ -1189,7 +1239,9 @@ outputs:
     assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("result")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("Hello, World!")
     );
 }
@@ -1321,15 +1373,21 @@ outputs:
 
     assert_eq!(eval.state.outputs.lock().unwrap().len(), 3);
     assert_eq!(
-        eval.get_output("greetingOut").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("greetingOut")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("Hello, world!")
     );
     assert_eq!(
-        eval.get_output("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("bucketName")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("test-bucket")
     );
     assert_eq!(
-        eval.get_output("literal").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("literal")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("constant-value")
     );
 }
@@ -1354,7 +1412,9 @@ outputs:
     assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("result")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("http://localhost:8080/api")
     );
 }
@@ -1379,7 +1439,9 @@ outputs:
     assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("result")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("debug=true")
     );
 }
@@ -1403,7 +1465,9 @@ outputs:
     assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("result")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("deep")
     );
 }
@@ -1427,7 +1491,9 @@ outputs:
     assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("result")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("second")
     );
 }
@@ -1454,7 +1520,9 @@ outputs:
     assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("result")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("base-a-base-b")
     );
 }
@@ -1678,7 +1746,9 @@ outputs:
     assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("result")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("start-1-2-3-4-5")
     );
 }
@@ -1713,7 +1783,9 @@ outputs:
     assert!(invocations[0].args.is_empty());
 
     assert_eq!(
-        eval.get_output("account").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("account")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("123456")
     );
 }
@@ -1769,11 +1841,15 @@ outputs:
     assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.get_output("amiId").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("amiId")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("ami-123")
     );
     assert_eq!(
-        eval.get_output("vpcId").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("vpcId")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("vpc-456")
     );
 }
@@ -1798,11 +1874,17 @@ outputs:
     assert!(!has_errors, "errors: {}", eval.diags_display());
 
     // URN and ID should be populated from mock
-    let urn = eval.get_output("urn").and_then(|v| v.as_str().map(|s| s.to_string())).unwrap();
+    let urn = eval
+        .get_output("urn")
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap();
     assert!(urn.contains("aws:s3/bucket:Bucket"));
     assert!(urn.contains("bucket"));
 
-    let id = eval.get_output("id").and_then(|v| v.as_str().map(|s| s.to_string())).unwrap();
+    let id = eval
+        .get_output("id")
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap();
     assert!(!id.is_empty());
 }
 
@@ -1822,7 +1904,9 @@ outputs:
     let (eval, has_errors) = eval_with_mock(source, mock);
     assert!(!has_errors, "errors: {}", eval.diags_display());
     assert_eq!(
-        eval.get_output("cwd").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("cwd")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("/tmp")
     );
 }
@@ -1839,7 +1923,9 @@ outputs:
     let (eval, has_errors) = eval_with_mock(source, mock);
     assert!(!has_errors, "errors: {}", eval.diags_display());
     assert_eq!(
-        eval.get_output("proj").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("proj")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("test")
     );
 }
@@ -1856,7 +1942,9 @@ outputs:
     let (eval, has_errors) = eval_with_mock(source, mock);
     assert!(!has_errors, "errors: {}", eval.diags_display());
     assert_eq!(
-        eval.get_output("stack").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("stack")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("dev")
     );
 }
@@ -1885,7 +1973,9 @@ outputs:
     eval.evaluate_template(template, &HashMap::new(), &[]);
     assert!(!eval.has_errors(), "errors: {}", eval.diags_display());
     assert_eq!(
-        eval.get_output("org").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("org")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("my-org")
     );
 }
@@ -1902,7 +1992,9 @@ outputs:
     let (eval, has_errors) = eval_with_mock(source, mock);
     assert!(!has_errors, "errors: {}", eval.diags_display());
     assert_eq!(
-        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("result")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("prefix-test-suffix")
     );
 }
@@ -1931,7 +2023,9 @@ outputs:
     eval.evaluate_template(template, &HashMap::new(), &[]);
     assert!(!eval.has_errors(), "errors: {}", eval.diags_display());
     assert_eq!(
-        eval.get_output("rootDir").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("rootDir")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("/home/user/project")
     );
 }
@@ -2545,13 +2639,21 @@ resources:
     assert_eq!(regs.len(), 1);
     // "kind" should be injected from schema constant
     assert_eq!(
-        regs[0].inputs.get("kind").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        regs[0]
+            .inputs
+            .get("kind")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("ConstantKind"),
         "constant value should be injected from schema"
     );
     // "name" should be the user-provided value
     assert_eq!(
-        regs[0].inputs.get("name").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        regs[0]
+            .inputs
+            .get("name")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("my-resource")
     );
 }
@@ -2600,7 +2702,11 @@ resources:
     assert_eq!(regs.len(), 1);
     // User-provided value should NOT be overwritten by schema constant
     assert_eq!(
-        regs[0].inputs.get("kind").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        regs[0]
+            .inputs
+            .get("kind")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("UserKind"),
         "user-provided value should take precedence over schema constant"
     );
@@ -3182,7 +3288,11 @@ variables:
     fn::dateFormat: "%Y"
 "#;
     let (eval, has_errors) = eval_with_mock(source, MockCallback::new());
-    assert!(!has_errors, "dateFormat should succeed: {}", eval.diags_display());
+    assert!(
+        !has_errors,
+        "dateFormat should succeed: {}",
+        eval.diags_display()
+    );
     match &eval.get_variable("result").unwrap() {
         Value::String(s) => {
             // Should be a 4-digit year
@@ -3286,7 +3396,11 @@ outputs:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "full pipeline should succeed: {}", eval.diags_display());
+    assert!(
+        !has_errors,
+        "full pipeline should succeed: {}",
+        eval.diags_display()
+    );
 
     // Verify config was resolved
     assert!(eval.has_config("region"));
@@ -3329,7 +3443,9 @@ outputs:
     let (eval, has_errors) = eval_with_mock(source, MockCallback::new());
     assert!(!has_errors, "errors: {}", eval.diags_display());
     assert_eq!(
-        eval.get_output("out").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("out")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("a,b")
     );
 }
@@ -3353,7 +3469,9 @@ outputs:
     let (eval, has_errors) = eval_with_mock(source, MockCallback::new());
     assert!(!has_errors, "errors: {}", eval.diags_display());
     assert_eq!(
-        eval.get_output("out").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("out")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("beta")
     );
 }
@@ -3371,7 +3489,9 @@ outputs:
     let (eval, has_errors) = eval_with_mock(source, MockCallback::new());
     assert!(!has_errors, "errors: {}", eval.diags_display());
     assert_eq!(
-        eval.get_output("out").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("out")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("aGVsbG8=")
     );
 }
@@ -3389,7 +3509,9 @@ outputs:
     let (eval, has_errors) = eval_with_mock(source, MockCallback::new());
     assert!(!has_errors, "errors: {}", eval.diags_display());
     assert_eq!(
-        eval.get_output("out").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("out")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("hello")
     );
 }
@@ -3914,7 +4036,9 @@ outputs:
     assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.get_output("bucketTags").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("bucketTags")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("my-tag-value"),
         "should access outputs from read resource"
     );
@@ -3968,7 +4092,11 @@ resources:
     assert_eq!(reads[0].id, "bucket-existing");
     // Properties are passed as inputs to read_resource
     assert_eq!(
-        reads[0].inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        reads[0]
+            .inputs
+            .get("bucketName")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("my-bucket")
     );
 
@@ -4006,7 +4134,11 @@ resources:
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
     assert_eq!(
-        regs[0].inputs.get("content").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        regs[0]
+            .inputs
+            .get("content")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("file-content-here")
     );
 
@@ -4052,7 +4184,11 @@ resources:
 
     let regs = eval.callback().registrations();
     assert_eq!(
-        regs[0].inputs.get("data").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        regs[0]
+            .inputs
+            .get("data")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("var-file-content")
     );
 
@@ -4452,7 +4588,11 @@ resources:
 
     let regs = eval.callback().registrations();
     assert_eq!(
-        regs[0].inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        regs[0]
+            .inputs
+            .get("bucketName")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("dev-app-bucket")
     );
 }
@@ -4503,7 +4643,11 @@ resources:
 
     let regs = eval.callback().registrations();
     assert_eq!(
-        regs[0].inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        regs[0]
+            .inputs
+            .get("bucketName")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("direct-value")
     );
 }
@@ -4527,7 +4671,9 @@ outputs:
     assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.get_output("final").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("final")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("prefix-my-bucket")
     );
 }
@@ -4609,7 +4755,9 @@ outputs:
     assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.get_output("first").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("first")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("dev")
     );
 }
@@ -4881,11 +5029,19 @@ resources:
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
     assert_eq!(
-        regs[0].inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        regs[0]
+            .inputs
+            .get("bucketName")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("from-variable")
     );
     assert_eq!(
-        regs[0].inputs.get("region").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        regs[0]
+            .inputs
+            .get("region")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("us-west-2")
     );
 }
@@ -5065,7 +5221,9 @@ outputs:
     assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.get_output("first").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("first")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("first-item")
     );
 }
@@ -5106,7 +5264,9 @@ outputs:
     assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.get_output("nested").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("nested")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("nested-value")
     );
 }
@@ -5128,7 +5288,9 @@ outputs:
     assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.get_output("literal").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        eval.get_output("literal")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("$${something}"),
         "$$ is kept literally"
     );
@@ -5448,9 +5610,8 @@ outputs:
 #[test]
 fn test_parallel_stress_wide_fan_out() {
     // 50 resources all depending on one root — maximum parallelism at level 1
-    let mut source = String::from(
-        "name: test\nruntime: yaml\nresources:\n  root:\n    type: test:Root\n",
-    );
+    let mut source =
+        String::from("name: test\nruntime: yaml\nresources:\n  root:\n    type: test:Root\n");
     for i in 0..50 {
         source.push_str(&format!(
             "  fan{}:\n    type: test:Fan\n    properties:\n      dep: ${{root.id}}\n",
