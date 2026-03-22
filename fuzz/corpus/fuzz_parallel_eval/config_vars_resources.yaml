@@ -1,0 +1,25 @@
+name: fuzz
+runtime: yaml
+config:
+  region:
+    type: string
+    default: us-east-1
+variables:
+  prefix: hello
+  suffix: ${prefix}-world
+resources:
+  bucket1:
+    type: test:Bucket
+    properties:
+      name: ${prefix}
+  bucket2:
+    type: test:Bucket
+    properties:
+      name: ${suffix}
+  bucket3:
+    type: test:Bucket
+    properties:
+      name: ${region}
+outputs:
+  out1: ${bucket1.id}
+  out2: ${bucket2.id}

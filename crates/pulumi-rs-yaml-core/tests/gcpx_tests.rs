@@ -20,7 +20,7 @@ use pulumi_rs_yaml_core::eval::value::Value;
 fn eval_with_mock(
     source: &str,
     mock: MockCallback,
-) -> (Evaluator<'static, 'static, MockCallback>, bool) {
+) -> (Evaluator<'static, MockCallback>, bool) {
     eval_with_mock_and_config(source, mock, HashMap::new(), &[])
 }
 
@@ -29,13 +29,13 @@ fn eval_with_mock_and_config(
     mock: MockCallback,
     raw_config: HashMap<String, String>,
     secret_keys: &[String],
-) -> (Evaluator<'static, 'static, MockCallback>, bool) {
+) -> (Evaluator<'static, MockCallback>, bool) {
     let (template, parse_diags) = parse_template(source, None);
     if parse_diags.has_errors() {
         panic!("parse errors: {}", parse_diags);
     }
     let template: &'static _ = Box::leak(Box::new(template));
-    let mut eval = Evaluator::with_callback(
+    let eval = Evaluator::with_callback(
         "test".to_string(),
         "dev".to_string(),
         "/tmp".to_string(),
@@ -43,7 +43,7 @@ fn eval_with_mock_and_config(
         mock,
     );
     eval.evaluate_template(template, &raw_config, secret_keys);
-    let has_errors = eval.diags.has_errors();
+    let has_errors = eval.has_errors();
     (eval, has_errors)
 }
 
@@ -51,7 +51,7 @@ fn eval_multifile(
     main_src: &str,
     extras: Vec<(&str, &str)>,
     mock: MockCallback,
-) -> (Evaluator<'static, 'static, MockCallback>, bool) {
+) -> (Evaluator<'static, MockCallback>, bool) {
     use pulumi_rs_yaml_core::multi_file::merge_templates;
 
     let (main_template, main_diags) = parse_template(main_src, None);
@@ -76,7 +76,7 @@ fn eval_multifile(
     let template = merged.as_template_decl();
     let template: &'static _ = Box::leak(Box::new(template));
 
-    let mut eval = Evaluator::with_callback(
+    let eval = Evaluator::with_callback(
         "test".to_string(),
         "dev".to_string(),
         "/tmp".to_string(),
@@ -85,7 +85,7 @@ fn eval_multifile(
     );
     let raw_config = HashMap::new();
     eval.evaluate_template(template, &raw_config, &[]);
-    let has_errors = eval.diags.has_errors();
+    let has_errors = eval.has_errors();
     (eval, has_errors)
 }
 
@@ -179,7 +179,7 @@ outputs:
     )]);
 
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -199,7 +199,7 @@ outputs:
         Some("raw_events")
     );
     assert_eq!(
-        eval.outputs.get("tableType").and_then(|v| v.as_str()),
+        eval.get_output("tableType").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("TABLE")
     );
 }
@@ -234,7 +234,7 @@ outputs:
     )]);
 
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -245,7 +245,7 @@ outputs:
         Some("SELECT user_id FROM `analytics.events` WHERE active = true")
     );
     assert_eq!(
-        eval.outputs.get("viewType").and_then(|v| v.as_str()),
+        eval.get_output("viewType").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("VIEW")
     );
 }
@@ -289,7 +289,7 @@ outputs:
     )]);
 
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -299,7 +299,7 @@ outputs:
         other => panic!("columns should be a List, got {:?}", other),
     }
     assert_eq!(
-        eval.outputs.get("fingerprint").and_then(|v| v.as_str()),
+        eval.get_output("fingerprint").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("abc123def456")
     );
 }
@@ -358,18 +358,18 @@ outputs:
     )]);
 
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
     assert_eq!(regs[0].type_token, "gcpx:dbt/project:Project");
     assert_eq!(regs[0].name, "myProject");
     assert_eq!(
-        eval.outputs.get("gcpProject").and_then(|v| v.as_str()),
+        eval.get_output("gcpProject").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("my-gcp-project")
     );
     assert_eq!(
-        eval.outputs.get("dataset").and_then(|v| v.as_str()),
+        eval.get_output("dataset").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("analytics")
     );
 }
@@ -408,17 +408,17 @@ outputs:
     )]);
 
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
     assert_eq!(regs[0].type_token, "gcpx:dbt/macro:Macro");
     assert_eq!(
-        eval.outputs.get("macroName").and_then(|v| v.as_str()),
+        eval.get_output("macroName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("cents_to_dollars")
     );
     assert_eq!(
-        eval.outputs.get("macroSql").and_then(|v| v.as_str()),
+        eval.get_output("macroSql").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("{{ amount_cents }} / 100.0")
     );
 }
@@ -462,21 +462,21 @@ outputs:
     )]);
 
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
     assert_eq!(regs[0].type_token, "gcpx:dbt/model:Model");
     assert_eq!(
-        eval.outputs.get("resolvedSql").and_then(|v| v.as_str()),
+        eval.get_output("resolvedSql").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("SELECT * FROM `my-gcp-project.raw_data.events`")
     );
     assert_eq!(
-        eval.outputs.get("tableRef").and_then(|v| v.as_str()),
+        eval.get_output("tableRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("`my-gcp-project.analytics.stg_events`")
     );
     assert_eq!(
-        eval.outputs.get("materialization").and_then(|v| v.as_str()),
+        eval.get_output("materialization").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("view")
     );
 }
@@ -561,7 +561,7 @@ outputs:
     ]);
 
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 3);
@@ -590,7 +590,7 @@ outputs:
     );
 
     assert_eq!(
-        eval.outputs.get("tableRef").and_then(|v| v.as_str()),
+        eval.get_output("tableRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("`my-gcp-project.analytics.stg_events`")
     );
 }
@@ -676,7 +676,7 @@ outputs:
     ]);
 
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 3);
@@ -692,7 +692,7 @@ outputs:
     );
 
     assert_eq!(
-        eval.outputs.get("martTableRef").and_then(|v| v.as_str()),
+        eval.get_output("martTableRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("`my-gcp-project.analytics.mart_daily`")
     );
 }
@@ -733,7 +733,7 @@ outputs:
     )]);
 
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -752,11 +752,11 @@ outputs:
         Some("0 2 * * *")
     );
     assert_eq!(
-        eval.outputs.get("workflowName").and_then(|v| v.as_str()),
+        eval.get_output("workflowName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("projects/my-gcp-project/locations/us/workflows/daily_refresh")
     );
     assert_eq!(
-        eval.outputs.get("state").and_then(|v| v.as_str()),
+        eval.get_output("state").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("ENABLED")
     );
 }
@@ -865,7 +865,7 @@ outputs:
     ]);
 
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 4);
@@ -878,7 +878,7 @@ outputs:
         Some(ddl)
     );
     assert_eq!(
-        eval.outputs.get("jobSql").and_then(|v| v.as_str()),
+        eval.get_output("jobSql").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some(ddl)
     );
 }
@@ -904,7 +904,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 2);
@@ -939,7 +939,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock_and_config(source, mock, raw_config, &[]);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -994,19 +994,19 @@ outputs:
     )]);
 
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(eval.callback().registrations().len(), 1);
     assert_eq!(
-        eval.outputs.get("deepDataset").and_then(|v| v.as_str()),
+        eval.get_output("deepDataset").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("raw_data")
     );
     assert_eq!(
-        eval.outputs.get("projId").and_then(|v| v.as_str()),
+        eval.get_output("projId").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("project-deep-001")
     );
     assert_eq!(
-        eval.outputs.get("projUrn").and_then(|v| v.as_str()),
+        eval.get_output("projUrn").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("urn:pulumi:test::test::gcpx:dbt/project:Project::proj")
     );
 }
@@ -1045,7 +1045,7 @@ outputs:
     )]);
 
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -1056,7 +1056,7 @@ outputs:
     assert_eq!(obj_field(tp, "type").as_str(), Some("DAY"));
     assert_eq!(obj_field(tp, "field").as_str(), Some("event_date"));
     assert_eq!(
-        eval.outputs.get("tableType").and_then(|v| v.as_str()),
+        eval.get_output("tableType").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("TABLE")
     );
 }
@@ -1094,7 +1094,7 @@ outputs:
     )]);
 
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -1140,7 +1140,7 @@ outputs:
     )]);
 
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -1199,7 +1199,7 @@ outputs:
     )]);
 
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -1217,7 +1217,7 @@ outputs:
         Some(3600000.0)
     );
     assert_eq!(
-        eval.outputs.get("tableType").and_then(|v| v.as_str()),
+        eval.get_output("tableType").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("MATERIALIZED_VIEW")
     );
 }
@@ -1262,7 +1262,7 @@ outputs:
     )]);
 
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -1288,7 +1288,7 @@ outputs:
         other => panic!("columns should be a List, got {:?}", other),
     }
     assert_eq!(
-        eval.outputs.get("fingerprint").and_then(|v| v.as_str()),
+        eval.get_output("fingerprint").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("nested-fp-xyz")
     );
 }
@@ -1343,7 +1343,7 @@ outputs:
     ]);
 
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 2);
@@ -1353,11 +1353,11 @@ outputs:
     assert_eq!(regs[1].name, "eventsSchema");
     assert_eq!(regs[1].type_token, "gcpx:bigquery/tableSchema:TableSchema");
     assert_eq!(
-        eval.outputs.get("tableType").and_then(|v| v.as_str()),
+        eval.get_output("tableType").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("TABLE")
     );
     assert_eq!(
-        eval.outputs.get("fingerprint").and_then(|v| v.as_str()),
+        eval.get_output("fingerprint").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("fp-after-table")
     );
 }
@@ -1423,12 +1423,12 @@ resources:
     ]);
 
     let (eval, has_errors) = eval_multifile(main_src, vec![("Pulumi.dbt.yaml", extra_src)], mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 2);
     assert_eq!(
-        eval.outputs.get("modelTableRef").and_then(|v| v.as_str()),
+        eval.get_output("modelTableRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("`my-gcp-project.analytics.stg_events`")
     );
 }
@@ -1499,7 +1499,7 @@ resources:
         ],
         mock,
     );
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 2);
@@ -1517,7 +1517,7 @@ resources:
         Some("my-gcp-project")
     );
     assert_eq!(
-        eval.outputs.get("tableRef").and_then(|v| v.as_str()),
+        eval.get_output("tableRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("`my-gcp-project.analytics.stg_events`")
     );
 }
@@ -1614,7 +1614,7 @@ resources:
         ],
         mock,
     );
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 3);
@@ -1623,11 +1623,11 @@ resources:
     assert_eq!(regs[1].name, "dbtProject");
     assert_eq!(regs[2].name, "stgModel");
     assert_eq!(
-        eval.outputs.get("macroName").and_then(|v| v.as_str()),
+        eval.get_output("macroName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("cents_to_dollars")
     );
     assert_eq!(
-        eval.outputs.get("modelTableRef").and_then(|v| v.as_str()),
+        eval.get_output("modelTableRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("`my-gcp-project.analytics.stg_orders`")
     );
 }
@@ -1668,7 +1668,7 @@ outputs:
     )]);
 
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -1717,7 +1717,7 @@ outputs:
     )]);
 
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -1871,7 +1871,7 @@ resources:
         ],
         mock,
     );
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 5);
@@ -1903,15 +1903,15 @@ resources:
 
     // Outputs resolve correctly
     assert_eq!(
-        eval.outputs.get("stgOrdersRef").and_then(|v| v.as_str()),
+        eval.get_output("stgOrdersRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("`my-gcp-project.analytics.stg_orders`")
     );
     assert_eq!(
-        eval.outputs.get("stgUsersRef").and_then(|v| v.as_str()),
+        eval.get_output("stgUsersRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("`my-gcp-project.analytics.stg_users`")
     );
     assert_eq!(
-        eval.outputs.get("martRevenueRef").and_then(|v| v.as_str()),
+        eval.get_output("martRevenueRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("`my-gcp-project.analytics.mart_revenue`")
     );
 }
@@ -2079,7 +2079,7 @@ outputs:
         ),
     ]);
 
-    let mut eval = Evaluator::with_callback(
+    let eval = Evaluator::with_callback(
         "test".to_string(),
         "dev".to_string(),
         dir.path().to_str().unwrap().to_string(),
@@ -2088,9 +2088,9 @@ outputs:
     );
     eval.evaluate_template(template, &config, &[]);
     assert!(
-        !eval.diags.has_errors(),
+        !eval.has_errors(),
         "evaluation errors: {}",
-        eval.diags
+        eval.diags_display()
     );
 
     let regs = eval.callback().registrations();
@@ -2132,11 +2132,11 @@ outputs:
 
     // Outputs resolve correctly
     assert_eq!(
-        eval.outputs.get("stgOrdersRef").and_then(|v| v.as_str()),
+        eval.get_output("stgOrdersRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("`my-gcp-project.analytics.stg_orders`")
     );
     assert_eq!(
-        eval.outputs.get("martRef").and_then(|v| v.as_str()),
+        eval.get_output("martRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("`my-gcp-project.analytics.mart_revenue`")
     );
 }
@@ -2216,7 +2216,7 @@ outputs:
     assert!(!parse_diags.has_errors(), "parse errors: {}", parse_diags);
     let template: &'static _ = Box::leak(Box::new(template));
 
-    let mut eval = Evaluator::with_callback(
+    let eval = Evaluator::with_callback(
         "test".to_string(),
         "dev".to_string(),
         dir.path().to_str().unwrap().to_string(),
@@ -2226,9 +2226,9 @@ outputs:
     let raw_config = HashMap::new();
     eval.evaluate_template(template, &raw_config, &[]);
     assert!(
-        !eval.diags.has_errors(),
+        !eval.has_errors(),
         "evaluation errors: {}",
-        eval.diags
+        eval.diags_display()
     );
 
     let regs = eval.callback().registrations();
@@ -2248,7 +2248,7 @@ outputs:
     );
 
     assert_eq!(
-        eval.outputs.get("tableRef").and_then(|v| v.as_str()),
+        eval.get_output("tableRef").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("`my-gcp-project.analytics.stg_events`")
     );
 }

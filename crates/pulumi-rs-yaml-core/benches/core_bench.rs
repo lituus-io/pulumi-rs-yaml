@@ -81,7 +81,7 @@ outputs:
             let (template, _diags) = parse_template(source, None);
             let template: &'static _ = Box::leak(Box::new(template));
             let mock = MockCallback::new();
-            let mut eval = Evaluator::with_callback(
+            let eval = Evaluator::with_callback(
                 "bench".to_string(),
                 "dev".to_string(),
                 ".".to_string(),
@@ -90,7 +90,7 @@ outputs:
             );
             let raw_config = HashMap::new();
             eval.evaluate_template(template, &raw_config, &[]);
-            black_box(&eval.outputs);
+            black_box(&eval.state.outputs);
         })
     });
 }
@@ -182,7 +182,7 @@ config:
     c.bench_function("config_resolution_5_entries", |b| {
         b.iter(|| {
             let mock = MockCallback::new();
-            let mut eval = Evaluator::with_callback(
+            let eval = Evaluator::with_callback(
                 "bench".to_string(),
                 "dev".to_string(),
                 ".".to_string(),
@@ -190,7 +190,7 @@ config:
                 mock,
             );
             eval.evaluate_template(template, black_box(&raw_config), &[]);
-            black_box(&eval.config);
+            black_box(&eval.state.config);
         })
     });
 }

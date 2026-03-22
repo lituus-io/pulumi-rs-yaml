@@ -28,10 +28,10 @@ pub struct InvokeResponse {
 /// - `MockCallback` for integration tests (record & replay)
 /// - `GrpcCallback` for real deployment (wraps tonic gRPC clients)
 #[allow(clippy::too_many_arguments)]
-pub trait ResourceCallback {
+pub trait ResourceCallback: Send + Sync {
     /// Register a resource with the engine.
     fn register_resource(
-        &mut self,
+        &self,
         type_token: &str,
         name: &str,
         custom: bool,
@@ -42,7 +42,7 @@ pub trait ResourceCallback {
 
     /// Read an existing resource from the engine.
     fn read_resource(
-        &mut self,
+        &self,
         type_token: &str,
         name: &str,
         id: &str,
@@ -54,7 +54,7 @@ pub trait ResourceCallback {
 
     /// Invoke a provider function.
     fn invoke(
-        &mut self,
+        &self,
         token: &str,
         args: HashMap<String, Value<'static>>,
         provider: &str,
@@ -65,13 +65,13 @@ pub trait ResourceCallback {
 
     /// Register outputs for a resource (typically the stack).
     fn register_outputs(
-        &mut self,
+        &self,
         urn: &str,
         outputs: HashMap<String, Value<'static>>,
     ) -> Result<(), EngineError>;
 
     /// Log a message to the engine.
-    fn log(&mut self, severity: i32, message: &str);
+    fn log(&self, severity: i32, message: &str);
 }
 
 /// No-op callback that returns placeholder values.
@@ -83,7 +83,7 @@ pub struct NoopCallback;
 
 impl ResourceCallback for NoopCallback {
     fn register_resource(
-        &mut self,
+        &self,
         _type_token: &str,
         _name: &str,
         _custom: bool,
@@ -100,7 +100,7 @@ impl ResourceCallback for NoopCallback {
     }
 
     fn read_resource(
-        &mut self,
+        &self,
         _type_token: &str,
         _name: &str,
         _id: &str,
@@ -118,7 +118,7 @@ impl ResourceCallback for NoopCallback {
     }
 
     fn invoke(
-        &mut self,
+        &self,
         _token: &str,
         _args: HashMap<String, Value<'static>>,
         _provider: &str,
@@ -133,14 +133,14 @@ impl ResourceCallback for NoopCallback {
     }
 
     fn register_outputs(
-        &mut self,
+        &self,
         _urn: &str,
         _outputs: HashMap<String, Value<'static>>,
     ) -> Result<(), EngineError> {
         Ok(())
     }
 
-    fn log(&mut self, _severity: i32, _message: &str) {}
+    fn log(&self, _severity: i32, _message: &str) {}
 }
 
 #[cfg(test)]
@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn test_noop_register_echoes_inputs() {
-        let mut noop = NoopCallback;
+        let noop = NoopCallback;
         let mut inputs = HashMap::new();
         inputs.insert(
             "key".to_string(),
@@ -176,7 +176,7 @@ mod tests {
 
     #[test]
     fn test_noop_read_echoes_inputs() {
-        let mut noop = NoopCallback;
+        let noop = NoopCallback;
         let mut inputs = HashMap::new();
         inputs.insert("prop".to_string(), Value::Bool(true));
         let resp = noop
@@ -190,7 +190,7 @@ mod tests {
 
     #[test]
     fn test_noop_invoke_returns_empty() {
-        let mut noop = NoopCallback;
+        let noop = NoopCallback;
         let resp = noop
             .invoke("test:func", HashMap::new(), "", "", "", &[])
             .unwrap();
@@ -200,13 +200,13 @@ mod tests {
 
     #[test]
     fn test_noop_register_outputs_ok() {
-        let mut noop = NoopCallback;
+        let noop = NoopCallback;
         assert!(noop.register_outputs("urn:test", HashMap::new()).is_ok());
     }
 
     #[test]
     fn test_noop_log_does_nothing() {
-        let mut noop = NoopCallback;
+        let noop = NoopCallback;
         noop.log(3, "error message"); // should not panic
     }
 }

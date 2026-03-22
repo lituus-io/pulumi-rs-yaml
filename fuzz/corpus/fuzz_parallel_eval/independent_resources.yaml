@@ -1,0 +1,13 @@
+name: fuzz
+runtime: yaml
+resources:
+  a:
+    type: test:A
+  b:
+    type: test:B
+  c:
+    type: test:C
+  d:
+    type: test:D
+  e:
+    type: test:E

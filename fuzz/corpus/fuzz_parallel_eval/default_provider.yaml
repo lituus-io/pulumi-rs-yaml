@@ -1,0 +1,12 @@
+name: fuzz
+runtime: yaml
+resources:
+  myProvider:
+    type: pulumi:providers:aws
+    defaultProvider: true
+  bucket1:
+    type: aws:s3:Bucket
+  bucket2:
+    type: aws:s3:Bucket
+  bucket3:
+    type: aws:s3:Bucket

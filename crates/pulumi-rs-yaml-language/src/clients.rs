@@ -19,13 +19,16 @@ pub struct GrpcCallback {
     handle: Handle,
 }
 
-/// Runs a future to completion using `block_in_place`, allowing synchronous
-/// callers to drive async gRPC calls without nesting async contexts.
+/// Runs a future to completion on the tokio runtime, allowing synchronous
+/// callers to drive async gRPC calls.
+///
+/// Uses `Handle::block_on` which works from any OS thread (including rayon
+/// worker threads), unlike `block_in_place` which requires a tokio worker.
 ///
 /// Using a free function rather than a method avoids borrow-checker conflicts
 /// when the future also borrows other fields of the same struct.
 fn block_on<F: std::future::Future>(handle: &Handle, f: F) -> F::Output {
-    tokio::task::block_in_place(|| handle.block_on(f))
+    handle.block_on(f)
 }
 
 impl GrpcCallback {
@@ -52,7 +55,7 @@ impl GrpcCallback {
 
     /// Registers a package with the engine and returns a package reference UUID.
     pub fn register_package(
-        &mut self,
+        &self,
         name: &str,
         version: &str,
         download_url: &str,
@@ -72,9 +75,9 @@ impl GrpcCallback {
             parameterization: param,
         };
 
+        let mut monitor = self.monitor.clone();
         block_on(&self.handle, async {
-            let resp = self
-                .monitor
+            let resp = monitor
                 .register_package(req)
                 .await
                 .map_err(|e| {
@@ -90,7 +93,7 @@ impl GrpcCallback {
 
     /// Logs a message to the engine.
     pub fn log_to_engine(
-        &mut self,
+        &self,
         severity: i32,
         message: &str,
         urn: &str,
@@ -104,8 +107,9 @@ impl GrpcCallback {
             stream_id,
             ephemeral,
         };
+        let mut engine = self.engine.clone();
         block_on(&self.handle, async {
-            self.engine
+            engine
                 .log(req)
                 .await
                 .map_err(|e| EngineError::Grpc(format!("log failed: {}", e)))?;
@@ -116,7 +120,7 @@ impl GrpcCallback {
 
 impl ResourceCallback for GrpcCallback {
     fn register_resource(
-        &mut self,
+        &self,
         type_token: &str,
         name: &str,
         custom: bool,
@@ -230,9 +234,9 @@ impl ResourceCallback for GrpcCallback {
             hide_diffs: options.hide_diffs.clone(),
         };
 
+        let mut monitor = self.monitor.clone();
         block_on(&self.handle, async {
-            let resp = self
-                .monitor
+            let resp = monitor
                 .register_resource(req)
                 .await
                 .map_err(|e| EngineError::Registration(format!("register {} failed: {}", name, e)))?
@@ -250,7 +254,7 @@ impl ResourceCallback for GrpcCallback {
     }
 
     fn read_resource(
-        &mut self,
+        &self,
         type_token: &str,
         name: &str,
         id: &str,
@@ -281,9 +285,9 @@ impl ResourceCallback for GrpcCallback {
             package_ref: String::new(),
         };
 
+        let mut monitor = self.monitor.clone();
         block_on(&self.handle, async {
-            let resp = self
-                .monitor
+            let resp = monitor
                 .read_resource(req)
                 .await
                 .map_err(|e| EngineError::Grpc(format!("read resource failed: {}", e)))?
@@ -301,7 +305,7 @@ impl ResourceCallback for GrpcCallback {
     }
 
     fn invoke(
-        &mut self,
+        &self,
         token: &str,
         args: HashMap<String, Value<'static>>,
         provider: &str,
@@ -325,9 +329,9 @@ impl ResourceCallback for GrpcCallback {
             parent_stack_trace_handle: String::new(),
         };
 
+        let mut monitor = self.monitor.clone();
         block_on(&self.handle, async {
-            let resp = self
-                .monitor
+            let resp = monitor
                 .invoke(req)
                 .await
                 .map_err(|e| EngineError::Invoke(format!("invoke {} failed: {}", token, e)))?
@@ -348,7 +352,7 @@ impl ResourceCallback for GrpcCallback {
     }
 
     fn register_outputs(
-        &mut self,
+        &self,
         urn: &str,
         outputs: HashMap<String, Value<'static>>,
     ) -> Result<(), EngineError> {
@@ -359,8 +363,9 @@ impl ResourceCallback for GrpcCallback {
             outputs: Some(outputs_struct),
         };
 
+        let mut monitor = self.monitor.clone();
         block_on(&self.handle, async {
-            self.monitor
+            monitor
                 .register_resource_outputs(req)
                 .await
                 .map_err(|e| EngineError::Grpc(format!("register outputs failed: {}", e)))?;
@@ -368,7 +373,7 @@ impl ResourceCallback for GrpcCallback {
         })
     }
 
-    fn log(&mut self, severity: i32, message: &str) {
+    fn log(&self, severity: i32, message: &str) {
         let _ = self.log_to_engine(severity, message, "", 0, false);
     }
 }

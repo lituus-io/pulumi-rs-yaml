@@ -1,0 +1,44 @@
+name: fuzz
+runtime: yaml
+resources:
+  root:
+    type: test:Root
+  f1:
+    type: test:Fan
+    properties:
+      dep: ${root.id}
+  f2:
+    type: test:Fan
+    properties:
+      dep: ${root.id}
+  f3:
+    type: test:Fan
+    properties:
+      dep: ${root.id}
+  f4:
+    type: test:Fan
+    properties:
+      dep: ${root.id}
+  f5:
+    type: test:Fan
+    properties:
+      dep: ${root.id}
+  f6:
+    type: test:Fan
+    properties:
+      dep: ${root.id}
+  f7:
+    type: test:Fan
+    properties:
+      dep: ${root.id}
+  f8:
+    type: test:Fan
+    properties:
+      dep: ${root.id}
+  collector:
+    type: test:Collector
+    properties:
+      d1: ${f1.id}
+      d2: ${f2.id}
+      d3: ${f3.id}
+      d4: ${f4.id}
