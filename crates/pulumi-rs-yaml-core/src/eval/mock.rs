@@ -158,7 +158,7 @@ impl Default for MockCallback {
 
 impl ResourceCallback for MockCallback {
     fn register_resource(
-        &mut self,
+        &self,
         type_token: &str,
         name: &str,
         custom: bool,
@@ -193,7 +193,7 @@ impl ResourceCallback for MockCallback {
     }
 
     fn read_resource(
-        &mut self,
+        &self,
         type_token: &str,
         name: &str,
         id: &str,
@@ -227,7 +227,7 @@ impl ResourceCallback for MockCallback {
     }
 
     fn invoke(
-        &mut self,
+        &self,
         token: &str,
         args: HashMap<String, Value<'static>>,
         provider: &str,
@@ -255,7 +255,7 @@ impl ResourceCallback for MockCallback {
     }
 
     fn register_outputs(
-        &mut self,
+        &self,
         urn: &str,
         outputs: HashMap<String, Value<'static>>,
     ) -> Result<(), EngineError> {
@@ -269,7 +269,7 @@ impl ResourceCallback for MockCallback {
         Ok(())
     }
 
-    fn log(&mut self, severity: i32, message: &str) {
+    fn log(&self, severity: i32, message: &str) {
         self.logs
             .lock()
             .unwrap()
@@ -284,7 +284,7 @@ mod tests {
 
     #[test]
     fn test_mock_auto_generates_responses() {
-        let mut mock = MockCallback::new();
+        let mock = MockCallback::new();
         let result = mock
             .register_resource(
                 "aws:s3:Bucket",
@@ -309,7 +309,7 @@ mod tests {
             outputs: HashMap::new(),
             stables: vec!["id".to_string()],
         };
-        let mut mock = MockCallback::with_register_responses(vec![resp]);
+        let mock = MockCallback::with_register_responses(vec![resp]);
 
         let result = mock
             .register_resource(
@@ -328,7 +328,7 @@ mod tests {
 
     #[test]
     fn test_mock_captures_registrations() {
-        let mut mock = MockCallback::new();
+        let mock = MockCallback::new();
         let mut inputs = HashMap::new();
         inputs.insert(
             "bucketName".to_string(),
@@ -358,7 +358,7 @@ mod tests {
 
     #[test]
     fn test_mock_captures_invocations() {
-        let mut mock = MockCallback::new();
+        let mock = MockCallback::new();
         let mut args = HashMap::new();
         args.insert(
             "name".to_string(),
@@ -385,7 +385,7 @@ mod tests {
             return_values,
             failures: Vec::new(),
         };
-        let mut mock = MockCallback::with_invoke_responses(vec![resp]);
+        let mock = MockCallback::with_invoke_responses(vec![resp]);
 
         let result = mock
             .invoke("aws:ec2:getAmi", HashMap::new(), "", "", "", &[])
@@ -398,7 +398,7 @@ mod tests {
 
     #[test]
     fn test_mock_captures_logs() {
-        let mut mock = MockCallback::new();
+        let mock = MockCallback::new();
         mock.log(1, "test message");
         mock.log(3, "error message");
 
@@ -410,7 +410,7 @@ mod tests {
 
     #[test]
     fn test_mock_captures_outputs() {
-        let mut mock = MockCallback::new();
+        let mock = MockCallback::new();
         let mut outputs = HashMap::new();
         outputs.insert(
             "result".to_string(),
@@ -425,8 +425,8 @@ mod tests {
 
     #[test]
     fn test_mock_clone_shares_state() {
-        let mut mock1 = MockCallback::new();
-        let mut mock2 = mock1.clone();
+        let mock1 = MockCallback::new();
+        let mock2 = mock1.clone();
 
         mock1
             .register_resource(

@@ -341,7 +341,7 @@ resources:
     let template: &'static _ = Box::leak(Box::new(template));
 
     let mock = MockCallback::new();
-    let mut eval = Evaluator::with_callback(
+    let eval = Evaluator::with_callback(
         "test".to_string(),
         "dev".to_string(),
         ".".to_string(),
@@ -351,7 +351,7 @@ resources:
 
     let raw_config = HashMap::new();
     eval.evaluate_template(template, &raw_config, &[]);
-    assert!(!eval.diags.has_errors(), "eval errors: {}", eval.diags);
+    assert!(!eval.has_errors(), "eval errors: {}", eval.diags_display());
 
     // Check that the resource was registered
     let registrations = eval.callback().registrations.lock().unwrap();
@@ -601,7 +601,7 @@ fn test_multi_file_jinja_full_pipeline() {
     let template: &'static _ = Box::leak(Box::new(template));
 
     let mock = MockCallback::new();
-    let mut eval = Evaluator::with_callback(
+    let eval = Evaluator::with_callback(
         "test".to_string(),
         "dev".to_string(),
         ".".to_string(),
@@ -611,7 +611,7 @@ fn test_multi_file_jinja_full_pipeline() {
 
     let raw_config = HashMap::new();
     eval.evaluate_template(template, &raw_config, &[]);
-    assert!(!eval.diags.has_errors(), "eval errors: {}", eval.diags);
+    assert!(!eval.has_errors(), "eval errors: {}", eval.diags_display());
 
     let registrations = eval.callback().registrations.lock().unwrap();
     assert_eq!(registrations.len(), 3);
@@ -1099,7 +1099,7 @@ fn test_readfile_cross_file_with_evaluation() {
     let template: &'static _ = Box::leak(Box::new(template));
 
     let mock = MockCallback::new();
-    let mut eval = Evaluator::with_callback(
+    let eval = Evaluator::with_callback(
         "test".to_string(),
         "dev".to_string(),
         ".".to_string(),
@@ -1109,13 +1109,13 @@ fn test_readfile_cross_file_with_evaluation() {
 
     let raw_config = HashMap::new();
     eval.evaluate_template(template, &raw_config, &[]);
-    assert!(!eval.diags.has_errors(), "eval errors: {}", eval.diags);
+    assert!(!eval.has_errors(), "eval errors: {}", eval.diags_display());
 
     let registrations = eval.callback().registrations.lock().unwrap();
     assert_eq!(registrations.len(), 1);
     assert_eq!(registrations[0].name, "bucket");
     assert_eq!(
-        registrations[0].inputs.get("name").and_then(|v| v.as_str()),
+        registrations[0].inputs.get("name").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("my-bucket"),
     );
 }

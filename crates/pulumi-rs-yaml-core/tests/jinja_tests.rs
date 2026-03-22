@@ -334,7 +334,7 @@ outputs:
 
     // Evaluate with mock
     let template: &'static _ = Box::leak(Box::new(template));
-    let mut eval = Evaluator::with_callback(
+    let eval = Evaluator::with_callback(
         "test-project".to_string(),
         "dev".to_string(),
         "/tmp".to_string(),
@@ -342,14 +342,14 @@ outputs:
         MockCallback::new(),
     );
     eval.evaluate_template(template, &HashMap::new(), &[]);
-    assert!(!eval.diags.has_errors(), "eval errors: {}", eval.diags);
+    assert!(!eval.has_errors(), "eval errors: {}", eval.diags_display());
 
     // All 3 buckets should be registered
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 3);
     for (i, reg) in regs.iter().enumerate() {
         assert_eq!(
-            reg.inputs.get("bucketName").and_then(|v| v.as_str()),
+            reg.inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
             Some(format!("test-project-bucket-{}", i).as_str()),
         );
     }
@@ -768,7 +768,7 @@ outputs:
 
     // Phase 4: Evaluate with mock
     let template: &'static _ = Box::leak(Box::new(template));
-    let mut eval = Evaluator::with_callback(
+    let eval = Evaluator::with_callback(
         "exec-test".to_string(),
         "dev".to_string(),
         "/tmp".to_string(),
@@ -776,14 +776,14 @@ outputs:
         MockCallback::new(),
     );
     eval.evaluate_template(template, &HashMap::new(), &[]);
-    assert!(!eval.diags.has_errors(), "eval errors: {}", eval.diags);
+    assert!(!eval.has_errors(), "eval errors: {}", eval.diags_display());
 
     // Verify all 3 buckets registered
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 3, "expected 3 bucket registrations");
     for (i, reg) in regs.iter().enumerate() {
         assert_eq!(
-            reg.inputs.get("bucketName").and_then(|v| v.as_str()),
+            reg.inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
             Some(format!("exec-test-{}", i).as_str()),
         );
     }
@@ -843,7 +843,7 @@ outputs:
     let (template, diags) = parse_template(rendered.as_ref(), None);
     assert!(!diags.has_errors(), "parse errors: {}", diags);
     let template: &'static _ = Box::leak(Box::new(template));
-    let mut eval = Evaluator::with_callback(
+    let eval = Evaluator::with_callback(
         "test-project".to_string(),
         "dev".to_string(),
         "/tmp".to_string(),
@@ -851,12 +851,12 @@ outputs:
         MockCallback::new(),
     );
     eval.evaluate_template(template, &HashMap::new(), &[]);
-    assert!(!eval.diags.has_errors(), "eval errors: {}", eval.diags);
+    assert!(!eval.has_errors(), "eval errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
     assert_eq!(
-        regs[0].inputs.get("bucketName").and_then(|v| v.as_str()),
+        regs[0].inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("myapp-data"),
     );
 }
@@ -1210,7 +1210,7 @@ outputs:
 
     // Evaluate with mock
     let template: &'static _ = Box::leak(Box::new(template));
-    let mut eval = Evaluator::with_callback(
+    let eval = Evaluator::with_callback(
         "test-project".to_string(),
         "dev".to_string(),
         "/tmp".to_string(),
@@ -1218,7 +1218,7 @@ outputs:
         MockCallback::new(),
     );
     eval.evaluate_template(template, &HashMap::new(), &[]);
-    assert!(!eval.diags.has_errors(), "eval errors: {}", eval.diags);
+    assert!(!eval.has_errors(), "eval errors: {}", eval.diags_display());
 
     // Verify the resource was registered and has schema content
     let regs = eval.callback().registrations();

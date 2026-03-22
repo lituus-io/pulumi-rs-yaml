@@ -139,7 +139,7 @@ pub async fn run(
 
     // 7. Register packages and collect package refs
     let mut package_refs = HashMap::new();
-    let mut callback = callback;
+    let callback = callback;
     for pkg_decl in &referenced_pkgs {
         match callback.register_package(
             &pkg_decl.name,
@@ -199,7 +199,7 @@ pub async fn run(
     let stack_name_full = format!("{}-{}", project, stack);
     let stack_type = "pulumi:pulumi:Stack";
 
-    match eval.callback_mut().register_resource(
+    match eval.callback().register_resource(
         stack_type,
         &stack_name_full,
         false, // custom=false for stack
@@ -222,25 +222,20 @@ pub async fn run(
     eval.evaluate_template(template, config, config_secret_keys);
 
     // 11. Check for errors
-    if eval.diags.has_errors() {
-        // Collect error messages to avoid borrow conflict
-        let errors: Vec<String> = eval
-            .diags
-            .iter()
-            .filter(|d| d.is_error())
-            .map(|d| d.summary.clone())
-            .collect();
+    if eval.has_errors() {
+        // Collect error messages
+        let errors = eval.diag_errors();
 
         // Write errors to stderr and log to engine
         for msg in &errors {
             eprintln!("error: {}", msg);
-            eval.callback_mut().log(3, msg);
+            eval.callback().log(3, msg);
         }
 
         // Register empty outputs for the stack
         let stack_urn = eval.stack_urn.clone();
         if let Some(urn) = stack_urn {
-            let _ = eval.callback_mut().register_outputs(&urn, HashMap::new());
+            let _ = eval.callback().register_outputs(&urn, HashMap::new());
         }
 
         // Return with bail=true to signal program abort (matching Go)
@@ -251,27 +246,22 @@ pub async fn run(
     }
 
     // 12. Log warnings to stderr and engine
-    let warnings: Vec<String> = eval
-        .diags
-        .iter()
-        .filter(|d| !d.is_error())
-        .map(|d| d.summary.clone())
-        .collect();
+    let warnings = eval.diag_warnings();
     for msg in &warnings {
         eprintln!("warning: {}", msg);
-        eval.callback_mut().log(2, msg);
+        eval.callback().log(2, msg);
     }
 
     // 13. Register stack outputs
     let stack_urn = eval.stack_urn.clone();
     if let Some(urn) = stack_urn {
         let outputs: HashMap<String, Value<'static>> = eval
-            .outputs
-            .drain()
+            .take_outputs()
+            .into_iter()
             .map(|(k, v)| (k, v.into_owned()))
             .collect();
 
-        if let Err(e) = eval.callback_mut().register_outputs(&urn, outputs) {
+        if let Err(e) = eval.callback().register_outputs(&urn, outputs) {
             return RunResult {
                 error: format!("failed to register stack outputs: {}", e),
                 bail: false,

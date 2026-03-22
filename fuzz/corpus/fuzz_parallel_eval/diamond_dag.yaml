@@ -1,0 +1,18 @@
+name: fuzz
+runtime: yaml
+resources:
+  a:
+    type: test:A
+  b:
+    type: test:B
+    properties:
+      dep: ${a.id}
+  c:
+    type: test:C
+    properties:
+      dep: ${a.id}
+  d:
+    type: test:D
+    properties:
+      dep1: ${b.id}
+      dep2: ${c.id}

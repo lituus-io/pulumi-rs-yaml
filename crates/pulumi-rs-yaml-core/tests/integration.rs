@@ -18,7 +18,7 @@ use pulumi_rs_yaml_core::eval::value::{Archive, Asset, Value};
 fn eval_with_mock(
     source: &str,
     mock: MockCallback,
-) -> (Evaluator<'static, 'static, MockCallback>, bool) {
+) -> (Evaluator<'static, MockCallback>, bool) {
     let (template, parse_diags) = parse_template(source, None);
     if parse_diags.has_errors() {
         panic!("parse errors: {}", parse_diags);
@@ -27,7 +27,7 @@ fn eval_with_mock(
     // Leak the template so it lives for 'static — acceptable in tests.
     let template: &'static _ = Box::leak(Box::new(template));
 
-    let mut eval = Evaluator::with_callback(
+    let eval = Evaluator::with_callback(
         "test".to_string(),
         "dev".to_string(),
         "/tmp".to_string(),
@@ -36,7 +36,7 @@ fn eval_with_mock(
     );
     let raw_config = HashMap::new();
     eval.evaluate_template(template, &raw_config, &[]);
-    let has_errors = eval.diags.has_errors();
+    let has_errors = eval.has_errors();
     (eval, has_errors)
 }
 
@@ -46,7 +46,7 @@ fn eval_with_mock_and_config(
     mock: MockCallback,
     raw_config: HashMap<String, String>,
     secret_keys: &[String],
-) -> (Evaluator<'static, 'static, MockCallback>, bool) {
+) -> (Evaluator<'static, MockCallback>, bool) {
     let (template, parse_diags) = parse_template(source, None);
     if parse_diags.has_errors() {
         panic!("parse errors: {}", parse_diags);
@@ -54,7 +54,7 @@ fn eval_with_mock_and_config(
 
     let template: &'static _ = Box::leak(Box::new(template));
 
-    let mut eval = Evaluator::with_callback(
+    let eval = Evaluator::with_callback(
         "test".to_string(),
         "dev".to_string(),
         "/tmp".to_string(),
@@ -62,7 +62,7 @@ fn eval_with_mock_and_config(
         mock,
     );
     eval.evaluate_template(template, &raw_config, secret_keys);
-    let has_errors = eval.diags.has_errors();
+    let has_errors = eval.has_errors();
     (eval, has_errors)
 }
 
@@ -80,7 +80,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -88,7 +88,7 @@ resources:
     assert_eq!(regs[0].name, "myBucket");
     assert!(regs[0].custom);
     assert_eq!(
-        regs[0].inputs.get("bucketName").and_then(|v| v.as_str()),
+        regs[0].inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("my-bucket")
     );
 }
@@ -107,10 +107,10 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
-    assert!(eval.resources.contains_key("myProvider"));
-    assert!(eval.resources["myProvider"].is_provider);
+    assert!(eval.has_resource("myProvider"));
+    assert!(eval.get_resource("myProvider").unwrap().is_provider);
 }
 
 #[test]
@@ -132,7 +132,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 2);
@@ -160,12 +160,12 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
     assert_eq!(
-        regs[0].inputs.get("bucketName").and_then(|v| v.as_str()),
+        regs[0].inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("default-bucket")
     );
 }
@@ -189,11 +189,11 @@ resources:
     raw_config.insert("test:name".to_string(), "from-config".to_string());
     let (eval, has_errors) =
         eval_with_mock_and_config(source, MockCallback::new(), raw_config, &[]);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(
-        regs[0].inputs.get("bucketName").and_then(|v| v.as_str()),
+        regs[0].inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("from-config")
     );
 }
@@ -218,11 +218,11 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(
-        regs[0].inputs.get("bucketName").and_then(|v| v.as_str()),
+        regs[0].inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("my-resource")
     );
 }
@@ -258,7 +258,7 @@ resources:
 
     let mock = MockCallback::with_invoke_responses(vec![invoke_resp]);
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     // Verify the invoke was called
     let invocations = eval.callback().invocations();
@@ -268,7 +268,7 @@ resources:
     // Verify the resource got the invoke result
     let regs = eval.callback().registrations();
     assert_eq!(
-        regs[0].inputs.get("ami").and_then(|v| v.as_str()),
+        regs[0].inputs.get("ami").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("ami-12345")
     );
 }
@@ -302,11 +302,11 @@ resources:
 
     let mock = MockCallback::with_invoke_responses(vec![invoke_resp]);
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(
-        regs[0].inputs.get("bucketName").and_then(|v| v.as_str()),
+        regs[0].inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("123456789")
     );
 }
@@ -346,14 +346,14 @@ resources:
 
     let mock = MockCallback::with_register_responses(vec![resp]);
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 2);
 
     // Second resource should reference the first resource's ARN
     assert_eq!(
-        regs[1].inputs.get("bucket").and_then(|v| v.as_str()),
+        regs[1].inputs.get("bucket").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("arn:aws:s3:::test-bucket")
     );
 }
@@ -374,14 +374,14 @@ outputs:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.outputs.get("result").and_then(|v| v.as_str()),
+        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("hello")
     );
     assert_eq!(
-        eval.outputs.get("constant").and_then(|v| v.as_str()),
+        eval.get_output("constant").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("world")
     );
 }
@@ -405,10 +405,10 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     // Config value should be a secret
-    let pw = eval.config.get("password").unwrap();
+    let pw = eval.get_config("password").unwrap();
     assert!(pw.is_secret());
     assert_eq!(pw.unwrap_secret().as_str(), Some("s3cr3t"));
 
@@ -434,10 +434,10 @@ variables:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     // The interpolated variable should be marked as secret
-    let url = eval.variables.get("url").unwrap();
+    let url = eval.get_variable("url").unwrap();
     assert!(
         url.is_secret(),
         "interpolated value with secret should be secret"
@@ -515,7 +515,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 3);
@@ -537,7 +537,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -562,7 +562,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs[0].options.ignore_changes, vec!["bucketName", "tags"]);
@@ -584,7 +584,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert!(regs[0].options.delete_before_replace);
@@ -611,7 +611,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 2);
@@ -638,11 +638,11 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(
-        regs[0].inputs.get("tags").and_then(|v| v.as_str()),
+        regs[0].inputs.get("tags").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("tag1,tag2,tag3")
     );
 }
@@ -664,16 +664,16 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
     assert_eq!(
-        regs[0].inputs.get("key1").and_then(|v| v.as_str()),
+        regs[0].inputs.get("key1").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("value1")
     );
     assert_eq!(
-        regs[0].inputs.get("key2").and_then(|v| v.as_str()),
+        regs[0].inputs.get("key2").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("value2")
     );
 }
@@ -749,11 +749,11 @@ runtime: yaml
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 0);
-    assert!(eval.outputs.is_empty());
+    assert!(eval.state.outputs.lock().unwrap().is_empty());
 }
 
 #[test]
@@ -771,9 +771,9 @@ outputs:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
-    let val = eval.config.get("enabled").unwrap();
+    let val = eval.get_config("enabled").unwrap();
     assert_eq!(val.as_bool(), Some(true));
 }
 
@@ -790,9 +790,9 @@ config:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
-    let val = eval.config.get("port").unwrap();
+    let val = eval.get_config("port").unwrap();
     assert_eq!(val.as_number(), Some(8080.0));
 }
 
@@ -813,10 +813,10 @@ outputs:
     raw_config.insert("test:name".to_string(), "override-name".to_string());
     let (eval, has_errors) =
         eval_with_mock_and_config(source, MockCallback::new(), raw_config, &[]);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.outputs.get("result").and_then(|v| v.as_str()),
+        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("override-name")
     );
 }
@@ -892,7 +892,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert!(regs[0].options.retain_on_delete);
@@ -915,7 +915,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs[0].options.replace_on_changes, vec!["bucketName"]);
@@ -939,7 +939,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(
@@ -964,7 +964,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs[0].options.import_id, "existing-bucket-id");
@@ -986,7 +986,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs[0].options.version, "5.0.0");
@@ -1011,7 +1011,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     let timeouts = regs[0].options.custom_timeouts.as_ref().unwrap();
@@ -1040,7 +1040,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 2);
@@ -1068,7 +1068,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 2);
@@ -1093,10 +1093,10 @@ outputs:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.outputs.get("result").and_then(|v| v.as_str()),
+        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("one")
     );
 }
@@ -1117,9 +1117,9 @@ outputs:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
-    match eval.outputs.get("count") {
+    match eval.get_output("count") {
         Some(Value::List(items)) => assert_eq!(items.len(), 3),
         other => panic!("expected list, got {:?}", other),
     }
@@ -1141,9 +1141,10 @@ outputs:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
-    let json_str = eval.outputs.get("result").and_then(|v| v.as_str()).unwrap();
+    let json_string = eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).unwrap();
+    let json_str = json_string.as_str();
     let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
     assert_eq!(parsed["key"], "value");
     assert_eq!(parsed["num"], serde_json::json!(42.0));
@@ -1163,10 +1164,10 @@ outputs:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.outputs.get("result").and_then(|v| v.as_str()),
+        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("SGVsbG8sIFdvcmxkIQ==")
     );
 }
@@ -1185,10 +1186,10 @@ outputs:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.outputs.get("result").and_then(|v| v.as_str()),
+        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("Hello, World!")
     );
 }
@@ -1207,9 +1208,9 @@ outputs:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
-    let val = eval.outputs.get("result").unwrap();
+    let val = eval.get_output("result").unwrap();
     assert!(val.is_secret());
     assert_eq!(val.unwrap_secret().as_str(), Some("my-secret-value"));
 }
@@ -1229,7 +1230,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     match regs[0].inputs.get("source") {
@@ -1255,7 +1256,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     match regs[0].inputs.get("source") {
@@ -1281,7 +1282,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     match regs[0].inputs.get("code") {
@@ -1316,19 +1317,19 @@ outputs:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
-    assert_eq!(eval.outputs.len(), 3);
+    assert_eq!(eval.state.outputs.lock().unwrap().len(), 3);
     assert_eq!(
-        eval.outputs.get("greetingOut").and_then(|v| v.as_str()),
+        eval.get_output("greetingOut").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("Hello, world!")
     );
     assert_eq!(
-        eval.outputs.get("bucketName").and_then(|v| v.as_str()),
+        eval.get_output("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("test-bucket")
     );
     assert_eq!(
-        eval.outputs.get("literal").and_then(|v| v.as_str()),
+        eval.get_output("literal").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("constant-value")
     );
 }
@@ -1350,10 +1351,10 @@ outputs:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.outputs.get("result").and_then(|v| v.as_str()),
+        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("http://localhost:8080/api")
     );
 }
@@ -1375,10 +1376,10 @@ outputs:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.outputs.get("result").and_then(|v| v.as_str()),
+        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("debug=true")
     );
 }
@@ -1399,10 +1400,10 @@ outputs:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.outputs.get("result").and_then(|v| v.as_str()),
+        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("deep")
     );
 }
@@ -1423,10 +1424,10 @@ outputs:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.outputs.get("result").and_then(|v| v.as_str()),
+        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("second")
     );
 }
@@ -1450,10 +1451,10 @@ outputs:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.outputs.get("result").and_then(|v| v.as_str()),
+        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("base-a-base-b")
     );
 }
@@ -1472,7 +1473,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs[0].type_token, "gcp:storage/bucket:Bucket");
@@ -1492,7 +1493,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs[0].type_token, "gcp:storage/bucket:Bucket");
@@ -1512,7 +1513,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs[0].type_token, "pulumi:providers:aws");
@@ -1542,7 +1543,7 @@ variables:
         failures: Vec::new(),
     }]);
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let invocations = eval.callback().invocations();
     assert_eq!(invocations[0].token, "aws:ec2/getAmi:getAmi");
@@ -1564,7 +1565,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(
@@ -1588,7 +1589,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert!(regs[0].inputs.contains_key("optional"));
@@ -1611,7 +1612,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     match regs[0].inputs.get("tags") {
@@ -1641,7 +1642,7 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     match regs[0].inputs.get("config") {
@@ -1674,10 +1675,10 @@ outputs:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.outputs.get("result").and_then(|v| v.as_str()),
+        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("start-1-2-3-4-5")
     );
 }
@@ -1705,14 +1706,14 @@ outputs:
         failures: Vec::new(),
     }]);
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     // Verify invoke was called with empty args
     let invocations = eval.callback().invocations();
     assert!(invocations[0].args.is_empty());
 
     assert_eq!(
-        eval.outputs.get("account").and_then(|v| v.as_str()),
+        eval.get_output("account").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("123456")
     );
 }
@@ -1765,14 +1766,14 @@ outputs:
         },
     ]);
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.outputs.get("amiId").and_then(|v| v.as_str()),
+        eval.get_output("amiId").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("ami-123")
     );
     assert_eq!(
-        eval.outputs.get("vpcId").and_then(|v| v.as_str()),
+        eval.get_output("vpcId").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("vpc-456")
     );
 }
@@ -1794,14 +1795,14 @@ outputs:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     // URN and ID should be populated from mock
-    let urn = eval.outputs.get("urn").and_then(|v| v.as_str()).unwrap();
+    let urn = eval.get_output("urn").and_then(|v| v.as_str().map(|s| s.to_string())).unwrap();
     assert!(urn.contains("aws:s3/bucket:Bucket"));
     assert!(urn.contains("bucket"));
 
-    let id = eval.outputs.get("id").and_then(|v| v.as_str()).unwrap();
+    let id = eval.get_output("id").and_then(|v| v.as_str().map(|s| s.to_string())).unwrap();
     assert!(!id.is_empty());
 }
 
@@ -1819,9 +1820,9 @@ outputs:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
     assert_eq!(
-        eval.outputs.get("cwd").and_then(|v| v.as_str()),
+        eval.get_output("cwd").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("/tmp")
     );
 }
@@ -1836,9 +1837,9 @@ outputs:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
     assert_eq!(
-        eval.outputs.get("proj").and_then(|v| v.as_str()),
+        eval.get_output("proj").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("test")
     );
 }
@@ -1853,9 +1854,9 @@ outputs:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
     assert_eq!(
-        eval.outputs.get("stack").and_then(|v| v.as_str()),
+        eval.get_output("stack").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("dev")
     );
 }
@@ -1882,9 +1883,9 @@ outputs:
     );
     eval.organization = "my-org".to_string();
     eval.evaluate_template(template, &HashMap::new(), &[]);
-    assert!(!eval.diags.has_errors(), "errors: {}", eval.diags);
+    assert!(!eval.has_errors(), "errors: {}", eval.diags_display());
     assert_eq!(
-        eval.outputs.get("org").and_then(|v| v.as_str()),
+        eval.get_output("org").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("my-org")
     );
 }
@@ -1899,9 +1900,9 @@ outputs:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
     assert_eq!(
-        eval.outputs.get("result").and_then(|v| v.as_str()),
+        eval.get_output("result").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("prefix-test-suffix")
     );
 }
@@ -1928,9 +1929,9 @@ outputs:
     );
     eval.root_directory = "/home/user/project".to_string();
     eval.evaluate_template(template, &HashMap::new(), &[]);
-    assert!(!eval.diags.has_errors(), "errors: {}", eval.diags);
+    assert!(!eval.has_errors(), "errors: {}", eval.diags_display());
     assert_eq!(
-        eval.outputs.get("rootDir").and_then(|v| v.as_str()),
+        eval.get_output("rootDir").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("/home/user/project")
     );
 }
@@ -1947,7 +1948,7 @@ fn eval_with_schema(
     mock: MockCallback,
     schema_store: Option<SchemaStore>,
     dry_run: bool,
-) -> (Evaluator<'static, 'static, MockCallback>, bool) {
+) -> (Evaluator<'static, MockCallback>, bool) {
     let (template, parse_diags) = parse_template(source, None);
     if parse_diags.has_errors() {
         panic!("parse errors: {}", parse_diags);
@@ -1965,7 +1966,7 @@ fn eval_with_schema(
     eval.schema_store = schema_store.map(|s| &*Box::leak(Box::new(s)) as &'static SchemaStore);
     let raw_config = HashMap::new();
     eval.evaluate_template(template, &raw_config, &[]);
-    let has_errors = eval.diags.has_errors();
+    let has_errors = eval.has_errors();
     (eval, has_errors)
 }
 
@@ -2013,9 +2014,9 @@ resources:
     let store = make_bucket_schema();
 
     let (eval, has_errors) = eval_with_schema(source, mock, Some(store), true);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
-    let state = eval.resources.get("myBucket").unwrap();
+    let state = eval.get_resource("myBucket").unwrap();
     // Output-only properties should be filled with Unknown in preview
     assert!(
         state.outputs.contains_key("arn"),
@@ -2094,9 +2095,9 @@ resources:
     let mock = MockCallback::new();
 
     let (eval, has_errors) = eval_with_schema(source, mock, None, true);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
-    let state = eval.resources.get("myBucket").unwrap();
+    let state = eval.get_resource("myBucket").unwrap();
     let regs = eval.callback().registrations();
 
     // Without schema, no extra outputs should be added
@@ -2207,7 +2208,7 @@ resources:
     let store = make_secret_input_schema();
 
     let (eval, has_errors) = eval_with_schema(source, mock, Some(store), false);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -2258,7 +2259,7 @@ resources:
     let store = make_secret_input_schema();
 
     let (eval, has_errors) = eval_with_schema(source, mock, Some(store), false);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -2298,14 +2299,14 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
     // The name passed to register_resource should be the explicit name
     assert_eq!(regs[0].name, "custom-bucket-name");
     // But the resource should still be stored under the logical name
-    assert!(eval.resources.contains_key("myBucket"));
+    assert!(eval.has_resource("myBucket"));
 }
 
 #[test]
@@ -2321,7 +2322,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -2345,7 +2346,7 @@ resources:
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
     assert!(has_errors, "should error on non-bool protect");
-    let diag_str = format!("{}", eval.diags);
+    let diag_str = eval.diags_display();
     assert!(
         diag_str.contains("protect must be a boolean"),
         "expected protect validation error, got: {}",
@@ -2368,7 +2369,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert!(regs[0].options.protect);
@@ -2387,10 +2388,10 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     // StackReference should be stored
-    assert!(eval.resources.contains_key("netStack"));
+    assert!(eval.has_resource("netStack"));
 
     // Should NOT appear in registrations (uses read_resource, not register_resource)
     let regs = eval.callback().registrations();
@@ -2412,10 +2413,10 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     // Without explicit name property, should default to resource name
-    assert!(eval.resources.contains_key("myStackRef"));
+    assert!(eval.has_resource("myStackRef"));
 }
 
 #[test]
@@ -2449,7 +2450,7 @@ resources:
     store.insert(schema);
 
     let (eval, has_errors) = eval_with_schema(source, mock, Some(store), false);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -2462,7 +2463,7 @@ resources:
     );
 
     // State should reflect is_component
-    let state = eval.resources.get("myComp").unwrap();
+    let state = eval.get_resource("myComp").unwrap();
     assert!(state.is_component);
 }
 
@@ -2479,7 +2480,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_schema(source, mock, None, false);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -2538,19 +2539,19 @@ resources:
     store.insert(schema);
 
     let (eval, has_errors) = eval_with_schema(source, mock, Some(store), false);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
     // "kind" should be injected from schema constant
     assert_eq!(
-        regs[0].inputs.get("kind").and_then(|v| v.as_str()),
+        regs[0].inputs.get("kind").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("ConstantKind"),
         "constant value should be injected from schema"
     );
     // "name" should be the user-provided value
     assert_eq!(
-        regs[0].inputs.get("name").and_then(|v| v.as_str()),
+        regs[0].inputs.get("name").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("my-resource")
     );
 }
@@ -2593,13 +2594,13 @@ resources:
     store.insert(schema);
 
     let (eval, has_errors) = eval_with_schema(source, mock, Some(store), false);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
     // User-provided value should NOT be overwritten by schema constant
     assert_eq!(
-        regs[0].inputs.get("kind").and_then(|v| v.as_str()),
+        regs[0].inputs.get("kind").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("UserKind"),
         "user-provided value should take precedence over schema constant"
     );
@@ -2625,7 +2626,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 2);
@@ -2656,7 +2657,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 2);
@@ -2683,7 +2684,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 2);
@@ -2715,7 +2716,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 2);
@@ -2749,7 +2750,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -2786,7 +2787,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     // All three should be registered
     let regs = eval.callback().registrations();
@@ -2819,7 +2820,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 3);
@@ -2860,7 +2861,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 4);
@@ -3024,7 +3025,7 @@ resources:
 "#;
     let (eval, has_errors) = eval_with_mock(source, MockCallback::new());
     assert!(!has_errors, "aws:s3:Bucket should not be blocked");
-    assert!(eval.resources.contains_key("bucket"));
+    assert!(eval.has_resource("bucket"));
 }
 
 #[test]
@@ -3039,7 +3040,7 @@ resources:
       file: f.yaml
 "#;
     let (eval, _) = eval_with_mock(source, MockCallback::new());
-    let diag_str = format!("{}", eval.diags);
+    let diag_str = eval.diags_display();
     assert!(
         diag_str.contains("kubernetes:yaml:ConfigFile"),
         "error should mention the resource type, got: {}",
@@ -3068,7 +3069,7 @@ resources:
     assert!(
         !has_errors,
         "pulumi variables should be available without explicit settings: {}",
-        eval.diags
+        eval.diags_display()
     );
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -3092,7 +3093,7 @@ variables:
 "#;
     let (eval, has_errors) = eval_with_mock(source, MockCallback::new());
     assert!(!has_errors);
-    assert_eq!(eval.variables["result"], Value::Number(42.0));
+    assert_eq!(eval.get_variable("result").unwrap(), Value::Number(42.0));
 }
 
 #[test]
@@ -3106,7 +3107,7 @@ variables:
 "#;
     let (eval, has_errors) = eval_with_mock(source, MockCallback::new());
     assert!(!has_errors);
-    assert_eq!(eval.variables["result"], Value::Number(42.0));
+    assert_eq!(eval.get_variable("result").unwrap(), Value::Number(42.0));
 }
 
 #[test]
@@ -3120,7 +3121,7 @@ variables:
 "#;
     let (eval, has_errors) = eval_with_mock(source, MockCallback::new());
     assert!(!has_errors);
-    assert_eq!(eval.variables["result"], Value::Number(3.0));
+    assert_eq!(eval.get_variable("result").unwrap(), Value::Number(3.0));
 }
 
 #[test]
@@ -3134,7 +3135,7 @@ variables:
 "#;
     let (eval, has_errors) = eval_with_mock(source, MockCallback::new());
     assert!(!has_errors);
-    assert_eq!(eval.variables["result"], Value::Number(4.0));
+    assert_eq!(eval.get_variable("result").unwrap(), Value::Number(4.0));
 }
 
 #[test]
@@ -3151,7 +3152,7 @@ variables:
 "#;
     let (eval, has_errors) = eval_with_mock(source, MockCallback::new());
     assert!(!has_errors);
-    assert_eq!(eval.variables["result"], Value::Number(5.0));
+    assert_eq!(eval.get_variable("result").unwrap(), Value::Number(5.0));
 }
 
 #[test]
@@ -3168,7 +3169,7 @@ variables:
 "#;
     let (eval, has_errors) = eval_with_mock(source, MockCallback::new());
     assert!(!has_errors);
-    assert_eq!(eval.variables["result"], Value::Number(2.0));
+    assert_eq!(eval.get_variable("result").unwrap(), Value::Number(2.0));
 }
 
 #[test]
@@ -3181,8 +3182,8 @@ variables:
     fn::dateFormat: "%Y"
 "#;
     let (eval, has_errors) = eval_with_mock(source, MockCallback::new());
-    assert!(!has_errors, "dateFormat should succeed: {}", eval.diags);
-    match &eval.variables["result"] {
+    assert!(!has_errors, "dateFormat should succeed: {}", eval.diags_display());
+    match &eval.get_variable("result").unwrap() {
         Value::String(s) => {
             // Should be a 4-digit year
             assert_eq!(s.len(), 4, "year should be 4 chars: {}", s);
@@ -3235,7 +3236,7 @@ resources:
     let template = merged.as_template_decl();
     let template: &'static _ = Box::leak(Box::new(template));
 
-    let mut eval = Evaluator::with_callback(
+    let eval = Evaluator::with_callback(
         "test".to_string(),
         "dev".to_string(),
         "/tmp".to_string(),
@@ -3245,12 +3246,12 @@ resources:
     let raw_config = HashMap::new();
     eval.evaluate_template(template, &raw_config, &[]);
     assert!(
-        !eval.diags.has_errors(),
+        !eval.has_errors(),
         "evaluation should succeed: {}",
-        eval.diags
+        eval.diags_display()
     );
-    assert!(eval.resources.contains_key("bucket"));
-    assert!(eval.resources.contains_key("table"));
+    assert!(eval.has_resource("bucket"));
+    assert!(eval.has_resource("table"));
 }
 
 // ===========================================================================
@@ -3285,28 +3286,28 @@ outputs:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "full pipeline should succeed: {}", eval.diags);
+    assert!(!has_errors, "full pipeline should succeed: {}", eval.diags_display());
 
     // Verify config was resolved
-    assert!(eval.config.contains_key("region"));
-    match &eval.config["region"] {
-        Value::String(s) => assert_eq!(s.as_ref(), "us-east-1"),
+    assert!(eval.has_config("region"));
+    match eval.get_config("region") {
+        Some(Value::String(s)) => assert_eq!(s.as_ref(), "us-east-1"),
         other => panic!("expected string config, got {:?}", other),
     }
 
     // Verify variable was computed
-    assert!(eval.variables.contains_key("prefix"));
-    match &eval.variables["prefix"] {
-        Value::String(s) => assert_eq!(s.as_ref(), "full-test"),
+    assert!(eval.has_variable("prefix"));
+    match eval.get_variable("prefix") {
+        Some(Value::String(s)) => assert_eq!(s.as_ref(), "full-test"),
         other => panic!("expected string variable, got {:?}", other),
     }
 
     // Verify resource was registered
-    assert!(eval.resources.contains_key("bucket"));
+    assert!(eval.has_resource("bucket"));
 
     // Verify outputs
-    assert!(eval.outputs.contains_key("bucketId"));
-    assert!(eval.outputs.contains_key("bucketUrn"));
+    assert!(eval.get_output("bucketId").is_some());
+    assert!(eval.get_output("bucketUrn").is_some());
 }
 
 // ============================================================
@@ -3326,9 +3327,9 @@ outputs:
   out: ${result}
 "#;
     let (eval, has_errors) = eval_with_mock(source, MockCallback::new());
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
     assert_eq!(
-        eval.outputs.get("out").and_then(|v| v.as_str()),
+        eval.get_output("out").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("a,b")
     );
 }
@@ -3350,9 +3351,9 @@ outputs:
   out: ${result}
 "#;
     let (eval, has_errors) = eval_with_mock(source, MockCallback::new());
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
     assert_eq!(
-        eval.outputs.get("out").and_then(|v| v.as_str()),
+        eval.get_output("out").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("beta")
     );
 }
@@ -3368,9 +3369,9 @@ outputs:
   out: ${encoded}
 "#;
     let (eval, has_errors) = eval_with_mock(source, MockCallback::new());
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
     assert_eq!(
-        eval.outputs.get("out").and_then(|v| v.as_str()),
+        eval.get_output("out").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("aGVsbG8=")
     );
 }
@@ -3386,9 +3387,9 @@ outputs:
   out: ${decoded}
 "#;
     let (eval, has_errors) = eval_with_mock(source, MockCallback::new());
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
     assert_eq!(
-        eval.outputs.get("out").and_then(|v| v.as_str()),
+        eval.get_output("out").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("hello")
     );
 }
@@ -3407,7 +3408,7 @@ outputs:
     fn::toJSON: ${parts}
 "#;
     let (eval, has_errors) = eval_with_mock(source, MockCallback::new());
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 }
 
 // ============================================================
@@ -3431,7 +3432,7 @@ outputs:
     let (eval, has_errors) = eval_with_mock(source, MockCallback::new());
     assert!(has_errors, "should have errors");
     // Should only report the root error about badVar, not cascading errors
-    let error_count = eval.diags.iter().filter(|d| d.is_error()).count();
+    let error_count = eval.diag_errors().len();
     assert!(
         error_count <= 2,
         "expected at most 2 errors (root + downstream), got {}",
@@ -3460,7 +3461,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     // Find the bucket registration
@@ -3493,8 +3494,8 @@ outputs:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
-    assert!(eval.resources.contains_key("networkStack"));
+    assert!(!has_errors, "errors: {}", eval.diags_display());
+    assert!(eval.has_resource("networkStack"));
 }
 
 // ============================================================
@@ -3519,7 +3520,7 @@ outputs:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let invocations = eval.callback().invocations();
     assert_eq!(invocations.len(), 1);
@@ -3546,7 +3547,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -3571,7 +3572,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -3596,7 +3597,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -3774,7 +3775,7 @@ resources:
     // Set component parent URN
     eval.component_parent_urn = Some("urn:pulumi:test::proj::pkg:index:MyComp::myComp".to_string());
     eval.evaluate_template(template, &HashMap::new(), &[]);
-    assert!(!eval.diags.has_errors(), "errors: {}", eval.diags);
+    assert!(!eval.has_errors(), "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -3801,7 +3802,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     // Should call read_resource, not register_resource
     let reads = eval.callback().reads();
@@ -3848,7 +3849,7 @@ resources:
     };
     let mock = MockCallback::with_read_responses(vec![read_resp]);
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let reads = eval.callback().reads();
     assert_eq!(reads.len(), 1);
@@ -3872,7 +3873,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let reads = eval.callback().reads();
     assert_eq!(reads.len(), 1);
@@ -3910,10 +3911,10 @@ outputs:
     };
     let mock = MockCallback::with_read_responses(vec![read_resp]);
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.outputs.get("bucketTags").and_then(|v| v.as_str()),
+        eval.get_output("bucketTags").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("my-tag-value"),
         "should access outputs from read resource"
     );
@@ -3935,7 +3936,7 @@ resources:
     let (eval, has_errors) = eval_with_mock(source, mock);
     assert!(has_errors, "non-string id should produce error");
 
-    let diag_text = format!("{}", eval.diags);
+    let diag_text = eval.diags_display();
     assert!(
         diag_text.contains("string"),
         "error should mention string type requirement: {}",
@@ -3960,14 +3961,14 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let reads = eval.callback().reads();
     assert_eq!(reads.len(), 1, "should call read_resource");
     assert_eq!(reads[0].id, "bucket-existing");
     // Properties are passed as inputs to read_resource
     assert_eq!(
-        reads[0].inputs.get("bucketName").and_then(|v| v.as_str()),
+        reads[0].inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("my-bucket")
     );
 
@@ -4000,12 +4001,12 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(&source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
     assert_eq!(
-        regs[0].inputs.get("content").and_then(|v| v.as_str()),
+        regs[0].inputs.get("content").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("file-content-here")
     );
 
@@ -4047,11 +4048,11 @@ resources:
 
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(&source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(
-        regs[0].inputs.get("data").and_then(|v| v.as_str()),
+        regs[0].inputs.get("data").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("var-file-content")
     );
 
@@ -4075,7 +4076,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -4100,7 +4101,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -4129,7 +4130,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -4163,7 +4164,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -4210,7 +4211,7 @@ resources:
     };
     let mock = MockCallback::with_invoke_responses(vec![invoke_resp]);
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let invocations = eval.callback().invocations();
     assert_eq!(invocations.len(), 1);
@@ -4230,7 +4231,7 @@ outputs:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let invocations = eval.callback().invocations();
     assert_eq!(invocations.len(), 1);
@@ -4259,7 +4260,7 @@ outputs:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let invocations = eval.callback().invocations();
     assert_eq!(invocations.len(), 1);
@@ -4293,9 +4294,9 @@ outputs:
     };
     let mock = MockCallback::with_invoke_responses(vec![invoke_resp]);
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
-    let pw = eval.outputs.get("pw").unwrap();
+    let pw = eval.get_output("pw").unwrap();
     assert!(pw.is_secret(), "returned secret value should be secret");
 }
 
@@ -4322,9 +4323,9 @@ outputs:
     };
     let mock = MockCallback::with_invoke_responses(vec![invoke_resp]);
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
-    let out = eval.outputs.get("out").unwrap();
+    let out = eval.get_output("out").unwrap();
     assert!(
         out.is_secret(),
         "secret field from invoke result should propagate"
@@ -4364,7 +4365,7 @@ outputs:
     };
     let mock = MockCallback::with_invoke_responses(vec![invoke_resp]);
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     // Resource should be registered before invoke is called
     let regs = eval.callback().registrations();
@@ -4405,7 +4406,7 @@ resources:
     };
     let mock = MockCallback::with_invoke_responses(vec![invoke_resp]);
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     // Invoke should be called exactly once despite being referenced by 2 resources
     let invocations = eval.callback().invocations();
@@ -4447,11 +4448,11 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(
-        regs[0].inputs.get("bucketName").and_then(|v| v.as_str()),
+        regs[0].inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("dev-app-bucket")
     );
 }
@@ -4473,7 +4474,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     // The invoke should still be called even though the variable is unused
     let invocations = eval.callback().invocations();
@@ -4498,11 +4499,11 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(
-        regs[0].inputs.get("bucketName").and_then(|v| v.as_str()),
+        regs[0].inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("direct-value")
     );
 }
@@ -4523,10 +4524,10 @@ outputs:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.outputs.get("final").and_then(|v| v.as_str()),
+        eval.get_output("final").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("prefix-my-bucket")
     );
 }
@@ -4552,9 +4553,9 @@ resources:
     let mut raw = HashMap::new();
     raw.insert("test:apiKey".to_string(), "key-12345".to_string());
     let (eval, has_errors) = eval_with_mock_and_config(source, MockCallback::new(), raw, &[]);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
-    let cfg_val = eval.config.get("apiKey").unwrap();
+    let cfg_val = eval.get_config("apiKey").unwrap();
     assert!(
         cfg_val.is_secret(),
         "config with secret: true should be secret"
@@ -4581,9 +4582,9 @@ outputs:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
-    let result = eval.outputs.get("result").unwrap();
+    let result = eval.get_output("result").unwrap();
     assert_eq!(result.as_number(), Some(42.0));
 }
 
@@ -4605,10 +4606,10 @@ outputs:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.outputs.get("first").and_then(|v| v.as_str()),
+        eval.get_output("first").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("dev")
     );
 }
@@ -4628,9 +4629,9 @@ outputs:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
-    let timeout = eval.outputs.get("timeout").unwrap();
+    let timeout = eval.get_output("timeout").unwrap();
     assert_eq!(timeout.as_number(), Some(30.0));
 }
 
@@ -4672,7 +4673,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     let child_reg = regs.iter().find(|r| r.name == "child").unwrap();
@@ -4705,7 +4706,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert!(
@@ -4737,7 +4738,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert!(
@@ -4766,7 +4767,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert!(
@@ -4824,7 +4825,7 @@ variables:
         has_errors,
         "config and variable with same name should produce error"
     );
-    let diag_text = format!("{}", eval.diags);
+    let diag_text = eval.diags_display();
     assert!(
         diag_text.contains("duplicate") || diag_text.contains("already defined"),
         "error should mention duplicate: {}",
@@ -4848,7 +4849,7 @@ resources:
         has_errors,
         "resource and variable with same name should produce error"
     );
-    let diag_text = format!("{}", eval.diags);
+    let diag_text = eval.diags_display();
     assert!(
         diag_text.contains("duplicate") || diag_text.contains("already defined"),
         "error should mention duplicate: {}",
@@ -4875,16 +4876,16 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
     assert_eq!(
-        regs[0].inputs.get("bucketName").and_then(|v| v.as_str()),
+        regs[0].inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("from-variable")
     );
     assert_eq!(
-        regs[0].inputs.get("region").and_then(|v| v.as_str()),
+        regs[0].inputs.get("region").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("us-west-2")
     );
 }
@@ -4904,7 +4905,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -4937,10 +4938,10 @@ outputs:
     let store = make_bucket_schema();
 
     let (eval, has_errors) = eval_with_schema(source, mock, Some(store), true);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     // In preview, output-only properties should be Unknown
-    let arn = eval.outputs.get("arn").unwrap();
+    let arn = eval.get_output("arn").unwrap();
     assert!(arn.is_unknown(), "arn should be unknown in preview mode");
 }
 
@@ -4970,9 +4971,9 @@ resources:
 
     // dry_run = false: should NOT inject Unknown for output-only properties
     let (eval, has_errors) = eval_with_schema(source, mock, Some(store), false);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
-    let state = eval.resources.get("myBucket").unwrap();
+    let state = eval.get_resource("myBucket").unwrap();
     // arn was not in the mock response and should not be auto-injected as Unknown during update
     if let Some(arn) = state.outputs.get("arn") {
         assert!(!arn.is_unknown(), "arn should NOT be unknown during update");
@@ -5012,9 +5013,9 @@ outputs:
 
     // In preview, bucket.arn is Unknown → invoke arg is Unknown → result propagates
     let (eval, has_errors) = eval_with_schema(source, mock, Some(store), true);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
-    let policy = eval.outputs.get("policy").unwrap();
+    let policy = eval.get_output("policy").unwrap();
     // When an invoke argument is unknown, the invoke call may still happen
     // but the unknown propagation depends on whether the evaluator short-circuits
     // This test validates the behavior exists without assuming a specific outcome
@@ -5061,10 +5062,10 @@ outputs:
     };
     let mock = MockCallback::with_read_responses(vec![read_resp]);
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.outputs.get("first").and_then(|v| v.as_str()),
+        eval.get_output("first").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("first-item")
     );
 }
@@ -5102,10 +5103,10 @@ outputs:
     };
     let mock = MockCallback::with_read_responses(vec![read_resp]);
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.outputs.get("nested").and_then(|v| v.as_str()),
+        eval.get_output("nested").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("nested-value")
     );
 }
@@ -5124,10 +5125,10 @@ outputs:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     assert_eq!(
-        eval.outputs.get("literal").and_then(|v| v.as_str()),
+        eval.get_output("literal").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
         Some("$${something}"),
         "$$ is kept literally"
     );
@@ -5158,7 +5159,7 @@ resources:
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
-    assert!(!has_errors, "errors: {}", eval.diags);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -5264,7 +5265,7 @@ resources:
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
     assert!(has_errors, "blocklisted resource type should produce error");
-    let diag_text = format!("{}", eval.diags);
+    let diag_text = eval.diags_display();
     assert!(
         diag_text.contains("not supported")
             || diag_text.contains("blocked")
@@ -5272,4 +5273,247 @@ resources:
         "error should mention the blocked type: {}",
         diag_text
     );
+}
+
+// =========================================================================
+// Parallel evaluation stress tests
+// =========================================================================
+
+/// Helper to run evaluation with parallel=4.
+fn eval_with_mock_parallel(
+    source: &str,
+    mock: MockCallback,
+) -> (Evaluator<'static, MockCallback>, bool) {
+    let (template, parse_diags) = parse_template(source, None);
+    if parse_diags.has_errors() {
+        panic!("parse errors: {}", parse_diags);
+    }
+    let template: &'static _ = Box::leak(Box::new(template));
+    let mut eval = Evaluator::with_callback(
+        "test".to_string(),
+        "dev".to_string(),
+        "/tmp".to_string(),
+        false,
+        mock,
+    );
+    eval.parallel = 4;
+    let raw_config = HashMap::new();
+    eval.evaluate_template(template, &raw_config, &[]);
+    let has_errors = eval.has_errors();
+    (eval, has_errors)
+}
+
+#[test]
+fn test_parallel_sequential_equivalence_simple() {
+    let source = r#"
+name: test
+runtime: yaml
+resources:
+  bucket:
+    type: aws:s3/bucket:Bucket
+    properties:
+      bucketName: my-bucket
+"#;
+    let mock_seq = MockCallback::new();
+    let (eval_seq, err_seq) = eval_with_mock(source, mock_seq);
+
+    let mock_par = MockCallback::new();
+    let (eval_par, err_par) = eval_with_mock_parallel(source, mock_par);
+
+    assert_eq!(err_seq, err_par);
+    assert_eq!(
+        eval_seq.callback().registrations().len(),
+        eval_par.callback().registrations().len()
+    );
+}
+
+#[test]
+fn test_parallel_sequential_equivalence_many_independent() {
+    // 20 independent resources — wide parallelism opportunity
+    let mut source = String::from("name: test\nruntime: yaml\nresources:\n");
+    for i in 0..20 {
+        source.push_str(&format!(
+            "  res{}:\n    type: test:Resource{}\n    properties:\n      idx: {}\n",
+            i, i, i
+        ));
+    }
+
+    let mock_seq = MockCallback::new();
+    let (eval_seq, err_seq) = eval_with_mock(&source, mock_seq);
+
+    let mock_par = MockCallback::new();
+    let (eval_par, err_par) = eval_with_mock_parallel(&source, mock_par);
+
+    assert_eq!(err_seq, err_par);
+    assert_eq!(
+        eval_seq.callback().registrations().len(),
+        eval_par.callback().registrations().len(),
+    );
+    assert_eq!(eval_seq.callback().registrations().len(), 20);
+}
+
+#[test]
+fn test_parallel_sequential_equivalence_chain() {
+    // Linear chain: a → b → c → d → e (no parallelism within levels)
+    let source = r#"
+name: test
+runtime: yaml
+resources:
+  a:
+    type: test:A
+  b:
+    type: test:B
+    properties:
+      dep: ${a.id}
+  c:
+    type: test:C
+    properties:
+      dep: ${b.id}
+  d:
+    type: test:D
+    properties:
+      dep: ${c.id}
+  e:
+    type: test:E
+    properties:
+      dep: ${d.id}
+"#;
+    let mock_seq = MockCallback::new();
+    let (eval_seq, err_seq) = eval_with_mock(source, mock_seq);
+
+    let mock_par = MockCallback::new();
+    let (eval_par, err_par) = eval_with_mock_parallel(source, mock_par);
+
+    assert_eq!(err_seq, err_par);
+    assert_eq!(
+        eval_seq.callback().registrations().len(),
+        eval_par.callback().registrations().len(),
+    );
+}
+
+#[test]
+fn test_parallel_sequential_equivalence_mixed_dag() {
+    // Complex DAG with variables, config, and resources at multiple levels
+    let source = r#"
+name: test
+runtime: yaml
+config:
+  region:
+    type: string
+    default: us-east-1
+variables:
+  prefix:
+    fn::join:
+      - "-"
+      - - hello
+        - world
+resources:
+  provider:
+    type: pulumi:providers:aws
+    defaultProvider: true
+  bucketA:
+    type: aws:s3:Bucket
+    properties:
+      name: ${prefix}-a
+  bucketB:
+    type: aws:s3:Bucket
+    properties:
+      name: ${prefix}-b
+  bucketC:
+    type: aws:s3:Bucket
+    properties:
+      name: ${prefix}-c
+  collector:
+    type: test:Collector
+    properties:
+      a: ${bucketA.id}
+      b: ${bucketB.id}
+      c: ${bucketC.id}
+outputs:
+  result: ${collector.id}
+"#;
+    let mock_seq = MockCallback::new();
+    let (eval_seq, err_seq) = eval_with_mock(source, mock_seq);
+
+    let mock_par = MockCallback::new();
+    let (eval_par, err_par) = eval_with_mock_parallel(source, mock_par);
+
+    assert_eq!(err_seq, err_par);
+    assert_eq!(
+        eval_seq.callback().registrations().len(),
+        eval_par.callback().registrations().len(),
+    );
+}
+
+#[test]
+fn test_parallel_stress_wide_fan_out() {
+    // 50 resources all depending on one root — maximum parallelism at level 1
+    let mut source = String::from(
+        "name: test\nruntime: yaml\nresources:\n  root:\n    type: test:Root\n",
+    );
+    for i in 0..50 {
+        source.push_str(&format!(
+            "  fan{}:\n    type: test:Fan\n    properties:\n      dep: ${{root.id}}\n",
+            i
+        ));
+    }
+
+    let mock = MockCallback::new();
+    let (eval, has_errors) = eval_with_mock_parallel(&source, mock);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
+    // 1 root + 50 fan-out = 51 resources
+    assert_eq!(eval.callback().registrations().len(), 51);
+}
+
+#[test]
+fn test_parallel_with_outputs_and_interpolation() {
+    let source = r#"
+name: test
+runtime: yaml
+variables:
+  greeting: hello
+resources:
+  a:
+    type: test:A
+    properties:
+      msg: ${greeting}
+  b:
+    type: test:B
+    properties:
+      msg: ${greeting}
+outputs:
+  outA: ${a.id}
+  outB: ${b.id}
+  combined: "${a.id}-${b.id}"
+"#;
+    let mock = MockCallback::new();
+    let (eval, has_errors) = eval_with_mock_parallel(source, mock);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
+    assert!(eval.get_output("outA").is_some());
+    assert!(eval.get_output("outB").is_some());
+    assert!(eval.get_output("combined").is_some());
+}
+
+#[test]
+fn test_parallel_repeated_runs_consistent() {
+    // Run the same template 10 times in parallel mode to check for non-determinism
+    let source = r#"
+name: test
+runtime: yaml
+resources:
+  a:
+    type: test:A
+  b:
+    type: test:B
+  c:
+    type: test:C
+  d:
+    type: test:D
+"#;
+    for _ in 0..10 {
+        let mock = MockCallback::new();
+        let (eval, has_errors) = eval_with_mock_parallel(source, mock);
+        assert!(!has_errors, "errors: {}", eval.diags_display());
+        assert_eq!(eval.callback().registrations().len(), 4);
+    }
 }

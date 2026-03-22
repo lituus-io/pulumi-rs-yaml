@@ -54,3 +54,8 @@ doc = false
 name = "fuzz_extra_context"
 path = "fuzz_targets/fuzz_extra_context.rs"
 doc = false
+
+[[bin]]
+name = "fuzz_parallel_eval"
+path = "fuzz_targets/fuzz_parallel_eval.rs"
+doc = false

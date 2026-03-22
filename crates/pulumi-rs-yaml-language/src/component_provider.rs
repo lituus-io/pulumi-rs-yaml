@@ -103,7 +103,7 @@ impl pulumirpc::resource_provider_server::ResourceProvider for ComponentProvider
             })?;
 
         // Connect gRPC clients for inner resource registration
-        let mut callback = GrpcCallback::connect(&self.monitor_address, &self.engine_address)
+        let callback = GrpcCallback::connect(&self.monitor_address, &self.engine_address)
             .await
             .map_err(|e| Status::internal(format!("failed to connect: {}", e)))?;
 
@@ -159,13 +159,8 @@ impl pulumirpc::resource_provider_server::ResourceProvider for ComponentProvider
         // Evaluate the component body
         eval.evaluate_template(synthetic, &raw_config, &[]);
 
-        if eval.diags.has_errors() {
-            let errors: Vec<String> = eval
-                .diags
-                .iter()
-                .filter(|d| d.is_error())
-                .map(|d| d.summary.clone())
-                .collect();
+        if eval.has_errors() {
+            let errors = eval.diag_errors();
             return Err(Status::internal(format!(
                 "component evaluation failed: {}",
                 errors.join("; ")
@@ -174,13 +169,13 @@ impl pulumirpc::resource_provider_server::ResourceProvider for ComponentProvider
 
         // Collect outputs
         let output_values: HashMap<String, Value<'static>> = eval
-            .outputs
-            .drain()
+            .take_outputs()
+            .into_iter()
             .map(|(k, v)| (k, v.into_owned()))
             .collect();
 
         // Register outputs on the component
-        eval.callback_mut()
+        eval.callback()
             .register_outputs(&component_urn, output_values.clone())
             .map_err(|e| {
                 Status::internal(format!("failed to register component outputs: {}", e))
