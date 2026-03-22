@@ -1115,7 +1115,11 @@ fn test_readfile_cross_file_with_evaluation() {
     assert_eq!(registrations.len(), 1);
     assert_eq!(registrations[0].name, "bucket");
     assert_eq!(
-        registrations[0].inputs.get("name").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        registrations[0]
+            .inputs
+            .get("name")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("my-bucket"),
     );
 }

@@ -349,7 +349,10 @@ outputs:
     assert_eq!(regs.len(), 3);
     for (i, reg) in regs.iter().enumerate() {
         assert_eq!(
-            reg.inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+            reg.inputs
+                .get("bucketName")
+                .and_then(|v| v.as_str().map(|s| s.to_string()))
+                .as_deref(),
             Some(format!("test-project-bucket-{}", i).as_str()),
         );
     }
@@ -783,7 +786,10 @@ outputs:
     assert_eq!(regs.len(), 3, "expected 3 bucket registrations");
     for (i, reg) in regs.iter().enumerate() {
         assert_eq!(
-            reg.inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+            reg.inputs
+                .get("bucketName")
+                .and_then(|v| v.as_str().map(|s| s.to_string()))
+                .as_deref(),
             Some(format!("exec-test-{}", i).as_str()),
         );
     }
@@ -856,7 +862,11 @@ outputs:
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
     assert_eq!(
-        regs[0].inputs.get("bucketName").and_then(|v| v.as_str().map(|s| s.to_string())).as_deref(),
+        regs[0]
+            .inputs
+            .get("bucketName")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .as_deref(),
         Some("myapp-data"),
     );
 }
