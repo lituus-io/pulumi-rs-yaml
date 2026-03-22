@@ -2421,9 +2421,6 @@ resources:
 
     #[test]
     fn test_parallel_error_isolation() {
-        use crate::eval::callback::RegisterResponse;
-        use crate::eval::context::EngineError;
-
         // 3 independent resources; middle one will fail via mock
         let source = r#"
 name: test
