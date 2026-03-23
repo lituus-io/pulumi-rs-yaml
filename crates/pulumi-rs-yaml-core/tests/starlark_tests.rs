@@ -45,27 +45,6 @@ fn eval_with_mock(source: &str, mock: MockCallback) -> (Evaluator<'static, MockC
     (eval, has_errors)
 }
 
-fn eval_with_config(
-    source: &str,
-    raw_config: HashMap<String, String>,
-    secret_keys: &[String],
-) -> (Evaluator<'static, NoopCallback>, bool) {
-    let (template, parse_diags) = parse_template(source, None);
-    if parse_diags.has_errors() {
-        panic!("parse errors: {}", parse_diags);
-    }
-    let template: &'static _ = Box::leak(Box::new(template));
-    let eval = Evaluator::new(
-        "test".to_string(),
-        "dev".to_string(),
-        "/tmp".to_string(),
-        false,
-    );
-    eval.evaluate_template(template, &raw_config, secret_keys);
-    let has_errors = eval.has_errors();
-    (eval, has_errors)
-}
-
 // =========================================================================
 // Basic functionality
 // =========================================================================
@@ -356,7 +335,6 @@ fn test_starlark_unknown_propagation() {
     // Test the unknown propagation logic by directly calling the evaluator
     // with a variable that resolves to Unknown. We use a mock that returns
     // Unknown for a specific output property.
-    use pulumi_rs_yaml_core::eval::mock::MockCallback;
     let source = r#"
 name: test
 runtime: yaml
