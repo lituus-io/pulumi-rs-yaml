@@ -22,13 +22,13 @@ pub struct GrpcCallback {
 /// Runs a future to completion on the tokio runtime, allowing synchronous
 /// callers to drive async gRPC calls.
 ///
-/// Uses `Handle::block_on` which works from any OS thread (including rayon
-/// worker threads), unlike `block_in_place` which requires a tokio worker.
+/// Uses `block_in_place` + `Handle::block_on` which safely bridges sync→async
+/// even when called from a tokio worker thread (e.g. inside a tonic gRPC handler).
 ///
 /// Using a free function rather than a method avoids borrow-checker conflicts
 /// when the future also borrows other fields of the same struct.
 fn block_on<F: std::future::Future>(handle: &Handle, f: F) -> F::Output {
-    handle.block_on(f)
+    tokio::task::block_in_place(|| handle.block_on(f))
 }
 
 impl GrpcCallback {
