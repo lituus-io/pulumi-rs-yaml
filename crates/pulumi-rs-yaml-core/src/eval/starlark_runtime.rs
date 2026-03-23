@@ -48,7 +48,7 @@ impl StarlarkRuntime {
     /// Each function's script is parsed, evaluated (to define the function),
     /// and frozen. Compilation errors are emitted as diagnostics.
     pub fn compile(functions: &[StarlarkFunctionDecl<'_>], diags: &mut Diagnostics) -> Self {
-        let mut modules = HashMap::new();
+        let mut modules = HashMap::with_capacity(functions.len());
         let globals = Globals::standard();
 
         for func in functions {

@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use crate::ast::expr::{Expr, InvokeExpr};
 use crate::ast::property::PropertyAccess;
@@ -39,16 +39,16 @@ impl ProgressSink for NoopProgress {
 
 /// Interior-mutable evaluation state.
 ///
-/// All fields are wrapped in `Mutex` (or `AtomicU32`) so that the
-/// `Evaluator` methods can take `&self` instead of `&mut self`,
-/// enabling future parallel evaluation within a topological level.
+/// Read-heavy fields (`config`, `variables`, `resources`, `poisoned`,
+/// `starlark_runtime`) use `RwLock` for concurrent reads in parallel
+/// evaluation. Write-heavy or low-traffic fields use `Mutex`.
 pub struct EvalState {
     /// Resolved config values, keyed by config variable name.
-    pub config: Mutex<HashMap<String, Value<'static>>>,
+    pub config: RwLock<HashMap<String, Value<'static>>>,
     /// Resolved variable values, keyed by variable name.
-    pub variables: Mutex<HashMap<String, Value<'static>>>,
+    pub variables: RwLock<HashMap<String, Value<'static>>>,
     /// Registered resource states, keyed by logical name.
-    pub resources: Mutex<HashMap<String, ResourceState>>,
+    pub resources: RwLock<HashMap<String, ResourceState>>,
     /// Evaluated output values, keyed by output name.
     pub outputs: Mutex<HashMap<String, Value<'static>>>,
     /// Diagnostics accumulated during evaluation.
@@ -59,7 +59,7 @@ pub struct EvalState {
     pub resource_indices: Mutex<HashMap<String, u32>>,
     /// Names of variables/resources that failed evaluation.
     /// Used to prevent cascading errors from downstream dependents.
-    pub poisoned: Mutex<HashSet<String>>,
+    pub poisoned: RwLock<HashSet<String>>,
     /// Default providers: package_name → provider_ref (urn::id).
     /// Populated when a resource with `defaultProvider: true` is registered.
     pub default_providers: Mutex<HashMap<String, String>>,
@@ -67,7 +67,7 @@ pub struct EvalState {
     /// Avoids duplicate read_resource calls for the same stack reference.
     pub stack_ref_cache: Mutex<HashMap<String, crate::eval::callback::RegisterResponse>>,
     /// Compiled Starlark runtime (None if no starlark functions defined).
-    pub starlark_runtime: Mutex<Option<crate::eval::starlark_runtime::StarlarkRuntime>>,
+    pub starlark_runtime: RwLock<Option<crate::eval::starlark_runtime::StarlarkRuntime>>,
 }
 
 // Compile-time assertion that EvalState is Send + Sync.
@@ -82,17 +82,17 @@ impl EvalState {
     /// Creates a new empty evaluation state.
     fn new() -> Self {
         Self {
-            config: Mutex::new(HashMap::new()),
-            variables: Mutex::new(HashMap::new()),
-            resources: Mutex::new(HashMap::new()),
+            config: RwLock::new(HashMap::new()),
+            variables: RwLock::new(HashMap::new()),
+            resources: RwLock::new(HashMap::new()),
             outputs: Mutex::new(HashMap::new()),
             diags: Mutex::new(Diagnostics::new()),
             resource_counter: AtomicU32::new(0),
             resource_indices: Mutex::new(HashMap::new()),
-            poisoned: Mutex::new(HashSet::new()),
+            poisoned: RwLock::new(HashSet::new()),
             default_providers: Mutex::new(HashMap::new()),
             stack_ref_cache: Mutex::new(HashMap::new()),
-            starlark_runtime: Mutex::new(None),
+            starlark_runtime: RwLock::new(None),
         }
     }
 }
@@ -222,32 +222,32 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
 
     /// Gets a cloned resource state by logical name.
     pub fn get_resource(&self, name: &str) -> Option<ResourceState> {
-        self.state.resources.lock().unwrap().get(name).cloned()
+        self.state.resources.read().unwrap().get(name).cloned()
     }
 
     /// Returns true if a resource with the given logical name exists.
     pub fn has_resource(&self, name: &str) -> bool {
-        self.state.resources.lock().unwrap().contains_key(name)
+        self.state.resources.read().unwrap().contains_key(name)
     }
 
     /// Gets a cloned config value by key.
     pub fn get_config(&self, key: &str) -> Option<Value<'static>> {
-        self.state.config.lock().unwrap().get(key).cloned()
+        self.state.config.read().unwrap().get(key).cloned()
     }
 
     /// Returns true if a config entry with the given key exists.
     pub fn has_config(&self, key: &str) -> bool {
-        self.state.config.lock().unwrap().contains_key(key)
+        self.state.config.read().unwrap().contains_key(key)
     }
 
     /// Gets a cloned variable value by key.
     pub fn get_variable(&self, key: &str) -> Option<Value<'static>> {
-        self.state.variables.lock().unwrap().get(key).cloned()
+        self.state.variables.read().unwrap().get(key).cloned()
     }
 
     /// Returns true if a variable with the given key exists.
     pub fn has_variable(&self, key: &str) -> bool {
-        self.state.variables.lock().unwrap().contains_key(key)
+        self.state.variables.read().unwrap().contains_key(key)
     }
 
     /// Formats diagnostics for display in tests and assertions.
@@ -269,6 +269,35 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
         raw_config: &RawConfig,
         secret_keys: &[String],
     ) {
+        // Pre-allocate maps based on template size to avoid rehashing
+        {
+            self.state
+                .config
+                .write()
+                .unwrap()
+                .reserve(template.config.len());
+            self.state
+                .variables
+                .write()
+                .unwrap()
+                .reserve(template.variables.len() + 1); // +1 for "pulumi"
+            self.state
+                .resources
+                .write()
+                .unwrap()
+                .reserve(template.resources.len());
+            self.state
+                .outputs
+                .lock()
+                .unwrap()
+                .reserve(template.outputs.len());
+            self.state
+                .resource_indices
+                .lock()
+                .unwrap()
+                .reserve(template.resources.len());
+        }
+
         // Always inject the pulumi built-in variable (Go: ensureSetup)
         let pulumi_obj = Value::Object(vec![
             (
@@ -294,7 +323,7 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
         ]);
         self.state
             .variables
-            .lock()
+            .write()
             .unwrap()
             .insert("pulumi".to_string(), pulumi_obj);
 
@@ -307,7 +336,7 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
                     &mut compile_diags,
                 )
             };
-            *self.state.starlark_runtime.lock().unwrap() = Some(runtime);
+            *self.state.starlark_runtime.write().unwrap() = Some(runtime);
             if self.has_errors() {
                 return;
             }
@@ -315,9 +344,12 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
 
         // Topological sort with dependency graph
         let (result, sort_diags) = topological_sort_with_deps(template, self.source_map.as_deref());
-        self.state.diags.lock().unwrap().extend(sort_diags);
-        if self.state.diags.lock().unwrap().has_errors() {
-            return;
+        {
+            let mut diags = self.state.diags.lock().unwrap();
+            diags.extend(sort_diags);
+            if diags.has_errors() {
+                return;
+            }
         }
 
         // Compute topological levels for level-aware evaluation
@@ -440,7 +472,7 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
             Some(resolved) => {
                 self.state
                     .config
-                    .lock()
+                    .write()
                     .unwrap()
                     .insert(key.to_string(), resolved.value);
             }
@@ -457,13 +489,13 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
             Some(value) => {
                 self.state
                     .variables
-                    .lock()
+                    .write()
                     .unwrap()
                     .insert(key.to_string(), value.into_owned());
             }
             None => {
                 // Mark as poisoned to prevent cascading errors
-                self.state.poisoned.lock().unwrap().insert(key.to_string());
+                self.state.poisoned.write().unwrap().insert(key.to_string());
             }
         }
     }
@@ -514,7 +546,7 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
         };
         self.state
             .resources
-            .lock()
+            .write()
             .unwrap()
             .insert(logical_name.to_string(), state);
     }
@@ -556,7 +588,7 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
                 if !all_ok {
                     self.state
                         .poisoned
-                        .lock()
+                        .write()
                         .unwrap()
                         .insert(logical_name.to_string());
                     return;
@@ -576,7 +608,7 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
                     );
                     self.state
                         .poisoned
-                        .lock()
+                        .write()
                         .unwrap()
                         .insert(logical_name.to_string());
                     return;
@@ -584,7 +616,7 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
                 None => {
                     self.state
                         .poisoned
-                        .lock()
+                        .write()
                         .unwrap()
                         .insert(logical_name.to_string());
                     return;
@@ -658,7 +690,7 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
             let resource_keys: Vec<String> = self
                 .state
                 .resources
-                .lock()
+                .read()
                 .unwrap()
                 .keys()
                 .cloned()
@@ -671,7 +703,7 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
                 let mut prop_refs = std::collections::HashSet::new();
                 collect_expr_deps(&prop.value, &resource_names, &mut prop_refs);
                 if !prop_refs.is_empty() {
-                    let resources_guard = self.state.resources.lock().unwrap();
+                    let resources_guard = self.state.resources.read().unwrap();
                     let urns: Vec<String> = prop_refs
                         .iter()
                         .filter_map(|name| resources_guard.get(*name).map(|r| r.urn.clone()))
@@ -1400,7 +1432,7 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
                     input_val
                 };
 
-                let runtime_guard = self.state.starlark_runtime.lock().unwrap();
+                let runtime_guard = self.state.starlark_runtime.read().unwrap();
                 let result = match runtime_guard.as_ref() {
                     Some(runtime) => {
                         let mut diags = self.state.diags.lock().unwrap();
@@ -1498,7 +1530,7 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
 
         // If the root is poisoned (failed evaluation), silently return None
         // to prevent cascading errors
-        if self.state.poisoned.lock().unwrap().contains(root_name) {
+        if self.state.poisoned.read().unwrap().contains(root_name) {
             return None;
         }
 
@@ -1510,14 +1542,14 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
         // multiple locks simultaneously (which clippy's if_let_mutex forbids).
         let receiver: Value<'static> = {
             // Try resources first
-            let res = self.state.resources.lock().unwrap().get(root_name).cloned();
+            let res = self.state.resources.read().unwrap().get(root_name).cloned();
             if let Some(val) = res {
                 self.resource_to_value(root_name, &val)
             } else {
                 // Try config (by exact name, then stripped namespace)
                 let stripped = config::strip_config_namespace(&self.project_name, root_name);
                 let cfg = {
-                    let guard = self.state.config.lock().unwrap();
+                    let guard = self.state.config.read().unwrap();
                     guard
                         .get(root_name)
                         .or_else(|| guard.get(stripped))
@@ -1527,7 +1559,7 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
                     val.into_owned()
                 } else {
                     // Try variables
-                    let var = self.state.variables.lock().unwrap().get(root_name).cloned();
+                    let var = self.state.variables.read().unwrap().get(root_name).cloned();
                     if let Some(val) = var {
                         val.into_owned()
                     } else {
@@ -2004,7 +2036,7 @@ variables:
         assert!(
             eval.has_config("greeting"),
             "config keys: {:?}",
-            eval.state.config.lock().unwrap().keys().collect::<Vec<_>>()
+            eval.state.config.read().unwrap().keys().collect::<Vec<_>>()
         );
         assert_eq!(
             eval.get_config("greeting")
@@ -2018,7 +2050,7 @@ variables:
             "variable keys: {:?}",
             eval.state
                 .variables
-                .lock()
+                .read()
                 .unwrap()
                 .keys()
                 .collect::<Vec<_>>()
