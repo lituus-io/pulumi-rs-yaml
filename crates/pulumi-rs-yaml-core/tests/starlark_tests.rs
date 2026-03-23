@@ -14,7 +14,12 @@ fn eval_with_noop(source: &str) -> (Evaluator<'static, NoopCallback>, bool) {
         panic!("parse errors: {}", parse_diags);
     }
     let template: &'static _ = Box::leak(Box::new(template));
-    let eval = Evaluator::new("test".to_string(), "dev".to_string(), "/tmp".to_string(), false);
+    let eval = Evaluator::new(
+        "test".to_string(),
+        "dev".to_string(),
+        "/tmp".to_string(),
+        false,
+    );
     let raw_config = HashMap::new();
     eval.evaluate_template(template, &raw_config, &[]);
     let has_errors = eval.has_errors();
@@ -50,7 +55,12 @@ fn eval_with_config(
         panic!("parse errors: {}", parse_diags);
     }
     let template: &'static _ = Box::leak(Box::new(template));
-    let eval = Evaluator::new("test".to_string(), "dev".to_string(), "/tmp".to_string(), false);
+    let eval = Evaluator::new(
+        "test".to_string(),
+        "dev".to_string(),
+        "/tmp".to_string(),
+        false,
+    );
     eval.evaluate_template(template, &raw_config, secret_keys);
     let has_errors = eval.has_errors();
     (eval, has_errors)
@@ -402,10 +412,7 @@ variables:
     // Result should be wrapped in Secret
     match val {
         Value::Secret(inner) => {
-            assert_eq!(
-                *inner,
-                Value::String("MY-SECRET-VALUE".to_string().into())
-            );
+            assert_eq!(*inner, Value::String("MY-SECRET-VALUE".to_string().into()));
         }
         _ => panic!("expected Secret, got {:?}", val),
     }
@@ -556,7 +563,10 @@ variables:
       input: hello
 "#;
     let (_, parse_diags) = parse_template(source, None);
-    assert!(parse_diags.has_errors(), "expected parse error for missing invoke");
+    assert!(
+        parse_diags.has_errors(),
+        "expected parse error for missing invoke"
+    );
 }
 
 #[test]
@@ -576,7 +586,10 @@ variables:
       invoke: upper
 "#;
     let (_, parse_diags) = parse_template(source, None);
-    assert!(parse_diags.has_errors(), "expected parse error for missing input");
+    assert!(
+        parse_diags.has_errors(),
+        "expected parse error for missing input"
+    );
 }
 
 // =========================================================================
