@@ -187,8 +187,7 @@ fn value_to_starlark<'v>(val: &Value<'_>, heap: &'v starlark::values::Heap) -> S
         Value::Bool(b) => StarlarkValue::new_bool(*b),
         Value::Number(n) => {
             // If the number is an exact integer, allocate as i64 for starlark's int type
-            if n.fract() == 0.0 && n.is_finite() && *n >= i64::MIN as f64 && *n <= i64::MAX as f64
-            {
+            if n.fract() == 0.0 && n.is_finite() && *n >= i64::MIN as f64 && *n <= i64::MAX as f64 {
                 heap.alloc(*n as i64)
             } else {
                 heap.alloc(*n)
@@ -201,9 +200,8 @@ fn value_to_starlark<'v>(val: &Value<'_>, heap: &'v starlark::values::Heap) -> S
             heap.alloc(converted)
         }
         Value::Object(entries) => {
-            let mut dict = starlark::values::dict::Dict::new(
-                starlark::collections::SmallMap::new(),
-            );
+            let mut dict =
+                starlark::values::dict::Dict::new(starlark::collections::SmallMap::new());
             for (k, v) in entries {
                 let key = heap.alloc_str(k.as_ref()).to_value();
                 let val = value_to_starlark(v, heap);
@@ -331,7 +329,11 @@ mod tests {
         let mut diags = Diagnostics::new();
         let rt = StarlarkRuntime::compile(&funcs, &mut diags);
 
-        let input = Value::List(vec![Value::Number(1.0), Value::Number(2.0), Value::Number(3.0)]);
+        let input = Value::List(vec![
+            Value::Number(1.0),
+            Value::Number(2.0),
+            Value::Number(3.0),
+        ]);
         let result = rt.call("double", &input, &mut diags);
         assert!(!diags.has_errors());
         assert_eq!(
@@ -359,10 +361,7 @@ mod tests {
         )]);
         let result = rt.call("get_name", &input, &mut diags);
         assert!(!diags.has_errors());
-        assert_eq!(
-            result,
-            Some(Value::String(Cow::Owned("alice".to_string())))
-        );
+        assert_eq!(result, Some(Value::String(Cow::Owned("alice".to_string()))));
     }
 
     #[test]
@@ -397,10 +396,7 @@ mod tests {
 
     #[test]
     fn test_call_function_not_found() {
-        let funcs = vec![make_func(
-            "upper",
-            "def upper(s):\n    return s.upper()\n",
-        )];
+        let funcs = vec![make_func("upper", "def upper(s):\n    return s.upper()\n")];
         let mut diags = Diagnostics::new();
         let rt = StarlarkRuntime::compile(&funcs, &mut diags);
 
@@ -412,10 +408,7 @@ mod tests {
 
     #[test]
     fn test_call_runtime_error() {
-        let funcs = vec![make_func(
-            "divide",
-            "def divide(n):\n    return n / 0\n",
-        )];
+        let funcs = vec![make_func("divide", "def divide(n):\n    return n / 0\n")];
         let mut diags = Diagnostics::new();
         let rt = StarlarkRuntime::compile(&funcs, &mut diags);
         assert!(!diags.has_errors());
@@ -467,10 +460,7 @@ mod tests {
             &Value::String(Cow::Borrowed("hello")),
             &mut diags,
         );
-        assert_eq!(
-            result,
-            Some(Value::String(Cow::Owned("hello".to_string())))
-        );
+        assert_eq!(result, Some(Value::String(Cow::Owned("hello".to_string()))));
     }
 
     #[test]
