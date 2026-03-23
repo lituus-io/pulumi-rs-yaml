@@ -66,6 +66,8 @@ pub struct EvalState {
     /// Stack reference cache: stack_name → cached RegisterResponse.
     /// Avoids duplicate read_resource calls for the same stack reference.
     pub stack_ref_cache: Mutex<HashMap<String, crate::eval::callback::RegisterResponse>>,
+    /// Compiled Starlark runtime (None if no starlark functions defined).
+    pub starlark_runtime: Mutex<Option<crate::eval::starlark_runtime::StarlarkRuntime>>,
 }
 
 // Compile-time assertion that EvalState is Send + Sync.
@@ -90,6 +92,7 @@ impl EvalState {
             poisoned: Mutex::new(HashSet::new()),
             default_providers: Mutex::new(HashMap::new()),
             stack_ref_cache: Mutex::new(HashMap::new()),
+            starlark_runtime: Mutex::new(None),
         }
     }
 }
@@ -294,6 +297,21 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
             .lock()
             .unwrap()
             .insert("pulumi".to_string(), pulumi_obj);
+
+        // Compile Starlark functions if any are defined
+        if !template.starlark_functions.is_empty() {
+            let runtime = {
+                let mut compile_diags = self.state.diags.lock().unwrap();
+                crate::eval::starlark_runtime::StarlarkRuntime::compile(
+                    &template.starlark_functions,
+                    &mut compile_diags,
+                )
+            };
+            *self.state.starlark_runtime.lock().unwrap() = Some(runtime);
+            if self.has_errors() {
+                return;
+            }
+        }
 
         // Topological sort with dependency graph
         let (result, sort_diags) = topological_sort_with_deps(template, self.source_map.as_deref());
@@ -1364,6 +1382,49 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
                     result.push((key.clone(), v));
                 }
                 Some(Value::Archive(Archive::Assets(result)))
+            }
+
+            Expr::Starlark(_, call) => {
+                let input_val = self.eval_expr(&call.input)?;
+
+                // Short-circuit on unknowns (preview mode)
+                if builtins::has_unknown(&input_val) {
+                    return Some(Value::Unknown);
+                }
+
+                // Track secret status for re-wrapping
+                let is_secret = matches!(&input_val, Value::Secret(_));
+                let unwrapped = if is_secret {
+                    input_val.unwrap_secret().clone()
+                } else {
+                    input_val
+                };
+
+                let runtime_guard = self.state.starlark_runtime.lock().unwrap();
+                let result = match runtime_guard.as_ref() {
+                    Some(runtime) => {
+                        let mut diags = self.state.diags.lock().unwrap();
+                        runtime.call(call.invoke.as_ref(), &unwrapped, &mut diags)
+                    }
+                    None => {
+                        self.state.diags.lock().unwrap().error(
+                            None,
+                            format!(
+                                "fn::starlark invoked '{}' but no starlark: block is defined",
+                                call.invoke
+                            ),
+                            "",
+                        );
+                        None
+                    }
+                };
+
+                // Re-wrap as secret if the input was secret
+                if is_secret {
+                    result.map(|v| Value::Secret(Box::new(v)))
+                } else {
+                    result
+                }
             }
         }
     }

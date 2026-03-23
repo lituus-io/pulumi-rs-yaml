@@ -133,6 +133,7 @@ impl pulumirpc::resource_provider_server::ResourceProvider for ComponentProvider
             resources: component.component.resources.clone(),
             outputs: component.component.outputs.clone(),
             components: Vec::new(),
+            starlark_functions: Vec::new(),
         };
 
         // Leak the synthetic template so it has 'static lifetime

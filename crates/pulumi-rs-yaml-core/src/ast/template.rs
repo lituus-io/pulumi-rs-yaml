@@ -15,6 +15,8 @@ pub struct TemplateDecl<'src> {
     pub resources: Vec<ResourceEntry<'src>>,
     pub outputs: Vec<OutputEntry<'src>>,
     pub components: Vec<ComponentDecl<'src>>,
+    /// Starlark function declarations from the `starlark:` top-level block.
+    pub starlark_functions: Vec<StarlarkFunctionDecl<'src>>,
 }
 
 /// Pulumi settings (e.g. `pulumi: requiredVersion: ">=3.0.0"`).
@@ -162,6 +164,15 @@ pub struct ComponentParamDecl<'src> {
     pub outputs: Vec<OutputEntry<'src>>,
 }
 
+/// A Starlark function declaration from the `starlark:` top-level block.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StarlarkFunctionDecl<'src> {
+    /// The function name (e.g. "uppercase").
+    pub name: Cow<'src, str>,
+    /// The Starlark source script defining this function.
+    pub script: Cow<'src, str>,
+}
+
 impl TemplateDecl<'_> {
     /// Creates a new empty template.
     pub fn new() -> Self {
@@ -176,6 +187,7 @@ impl TemplateDecl<'_> {
             resources: Vec::new(),
             outputs: Vec::new(),
             components: Vec::new(),
+            starlark_functions: Vec::new(),
         }
     }
 }

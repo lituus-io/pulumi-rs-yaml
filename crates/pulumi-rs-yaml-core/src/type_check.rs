@@ -417,6 +417,7 @@ impl TypeChecker<'_> {
             }
             Expr::FileArchive(_, _) | Expr::RemoteArchive(_, _) => InferredType::Archive,
             Expr::AssetArchive(_, _) => InferredType::Archive,
+            Expr::Starlark(_, _) => InferredType::Any,
         }
     }
 

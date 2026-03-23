@@ -537,7 +537,8 @@ impl Importer {
             | Expr::TimeUnix(_, _)
             | Expr::Uuid(_, _)
             | Expr::RandomString(_, _)
-            | Expr::DateFormat(_, _) => {
+            | Expr::DateFormat(_, _)
+            | Expr::Starlark(_, _) => {
                 let name = rust_only_builtin_name(expr);
                 self.diags.warning(
                     None,

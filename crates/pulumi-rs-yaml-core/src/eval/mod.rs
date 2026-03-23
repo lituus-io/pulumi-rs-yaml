@@ -7,4 +7,5 @@ pub mod graph;
 pub mod mock;
 pub mod protobuf;
 pub mod resource;
+pub mod starlark_runtime;
 pub mod value;

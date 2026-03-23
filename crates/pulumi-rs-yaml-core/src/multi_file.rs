@@ -72,6 +72,8 @@ pub struct MergedTemplate {
     outputs: Vec<OutputEntry<'static>>,
     /// Merged components from all files.
     components: Vec<ComponentDecl<'static>>,
+    /// Starlark function declarations (from main file only).
+    starlark_functions: Vec<StarlarkFunctionDecl<'static>>,
     /// Maps logical name → source filename for error reporting.
     source_map: Arc<HashMap<String, String>>,
 }
@@ -93,6 +95,7 @@ impl MergedTemplate {
             resources: self.resources.clone(),
             outputs: self.outputs.clone(),
             components: self.components.clone(),
+            starlark_functions: self.starlark_functions.clone(),
         }
     }
 
@@ -303,6 +306,7 @@ pub fn merge_templates(
     let main_description = main.description;
     let main_pulumi = main.pulumi;
     let main_config = main.config;
+    let main_starlark = main.starlark_functions;
 
     // Move collections (main is consumed by value, no need to clone)
     let mut resources = main.resources;
@@ -369,6 +373,16 @@ pub fn merge_templates(
                 "",
             );
         }
+        if !template.starlark_functions.is_empty() {
+            diags.error(
+                None,
+                format!(
+                    "'starlark' is only allowed in {}, found in {}",
+                    main_path, filename
+                ),
+                "",
+            );
+        }
 
         // Merge all sections with collision detection
         merge_section(
@@ -419,6 +433,7 @@ pub fn merge_templates(
         variables,
         outputs,
         components,
+        starlark_functions: main_starlark,
         source_map: Arc::new(source_map),
     };
 
@@ -451,6 +466,7 @@ pub fn load_project(
                 variables: Vec::new(),
                 outputs: Vec::new(),
                 components: Vec::new(),
+                starlark_functions: Vec::new(),
                 source_map: Arc::new(HashMap::new()),
             };
             return (empty, diags);
@@ -479,6 +495,7 @@ pub fn load_project(
                         variables: Vec::new(),
                         outputs: Vec::new(),
                         components: Vec::new(),
+                        starlark_functions: Vec::new(),
                         source_map: Arc::new(HashMap::new()),
                     };
                     return (empty, diags);
@@ -497,6 +514,7 @@ pub fn load_project(
                     variables: Vec::new(),
                     outputs: Vec::new(),
                     components: Vec::new(),
+                    starlark_functions: Vec::new(),
                     source_map: Arc::new(HashMap::new()),
                 };
                 return (empty, diags);
@@ -536,6 +554,7 @@ pub fn load_project(
             variables: Vec::new(),
             outputs: Vec::new(),
             components: Vec::new(),
+            starlark_functions: Vec::new(),
             source_map: Arc::new(HashMap::new()),
         };
         return (empty, diags);

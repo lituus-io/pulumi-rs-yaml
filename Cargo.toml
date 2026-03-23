@@ -30,6 +30,7 @@ pyo3 = { version = "0.24", features = ["extension-module", "abi3-py39"] }
 heck = "0.5"
 hcl-rs = "0.19"
 rayon = "1"
+starlark = "0.13"
 pretty_assertions = "1"
 tempfile = "3"
 criterion = { version = "0.5", features = ["html_reports"] }

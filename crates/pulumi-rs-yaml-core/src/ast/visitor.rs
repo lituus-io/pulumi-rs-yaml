@@ -102,6 +102,9 @@ pub fn walk_expr<'a, V: ExprVisitor>(expr: &'a Expr<'a>, visitor: &V, acc: &mut 
                 walk_expr(v, visitor, acc);
             }
         }
+        Expr::Starlark(_, call) => {
+            walk_expr(&call.input, visitor, acc);
+        }
         // Terminals
         Expr::Null(_) | Expr::Bool(_, _) | Expr::Number(_, _) | Expr::String(_, _) => {}
     }

@@ -265,6 +265,12 @@ pub fn expr_to_py(py: Python<'_>, expr: &Expr<'_>) -> PyResult<PyObject> {
             dict.set_item("entries", PyList::new(py, &py_entries)?)?;
             Ok(dict.into_any().unbind())
         }
+        Expr::Starlark(_, call) => {
+            dict.set_item("t", "starlark")?;
+            dict.set_item("invoke", call.invoke.as_ref())?;
+            dict.set_item("input", expr_to_py(py, &call.input)?)?;
+            Ok(dict.into_any().unbind())
+        }
     }
 }
 
