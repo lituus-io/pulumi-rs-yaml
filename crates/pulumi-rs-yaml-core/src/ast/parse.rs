@@ -1,4 +1,4 @@
-use crate::ast::expr::{Expr, InvokeExpr, InvokeOptions, ObjectProperty};
+use crate::ast::expr::{Expr, InvokeExpr, InvokeOptions, ObjectProperty, StarlarkCallExpr};
 use crate::ast::interpolation::{has_interpolations, parse_interpolation};
 use crate::ast::template::*;
 use crate::diag::{unexpected_casing, Diagnostics};
@@ -76,6 +76,9 @@ pub fn parse_template(source: &str, span: Option<Span>) -> (TemplateDecl<'static
             }
             "components" => {
                 template.components = parse_components(value, &mut diags);
+            }
+            "starlark" => {
+                template.starlark_functions = parse_starlark_block(value, &mut diags);
             }
             _ => {
                 // Unknown top-level keys are ignored
@@ -355,6 +358,12 @@ fn try_parse_builtin(
             let args = parse_expr(value, diags);
             return Some(Expr::DateFormat(meta, Box::new(args)));
         }
+        // Starlark
+        "fn::starlark" => {
+            check_casing(key, "fn::starlark", diags);
+            let args = parse_expr(value, diags);
+            return Some(parse_starlark_call(args, meta, diags));
+        }
         _ => {}
     }
 
@@ -380,6 +389,170 @@ fn try_parse_builtin(
 }
 
 /// Checks if a key matches the fn::pkg:module(:name)? invoke shorthand pattern.
+/// Parses the top-level `starlark:` block.
+///
+/// Expected structure:
+/// ```yaml
+/// starlark:
+///   functions:
+///     name:
+///       script: |
+///         def name(arg):
+///             return arg.upper()
+/// ```
+fn parse_starlark_block(
+    value: &serde_yaml::Value,
+    diags: &mut Diagnostics,
+) -> Vec<StarlarkFunctionDecl<'static>> {
+    let mapping = match value.as_mapping() {
+        Some(m) => m,
+        None => {
+            diags.error(None, "starlark: must be a mapping", "");
+            return Vec::new();
+        }
+    };
+
+    let mut result = Vec::new();
+
+    for (key, val) in mapping {
+        let key_str = match key.as_str() {
+            Some(s) => s,
+            None => continue,
+        };
+
+        match key_str.to_lowercase().as_str() {
+            "functions" => {
+                let funcs_map = match val.as_mapping() {
+                    Some(m) => m,
+                    None => {
+                        diags.error(None, "starlark.functions must be a mapping", "");
+                        continue;
+                    }
+                };
+
+                for (fname, fval) in funcs_map {
+                    let name = match fname.as_str() {
+                        Some(s) => s.to_string(),
+                        None => continue,
+                    };
+
+                    let fmap = match fval.as_mapping() {
+                        Some(m) => m,
+                        None => {
+                            diags.error(
+                                None,
+                                format!(
+                                    "starlark function '{}' must be a mapping with 'script'",
+                                    name
+                                ),
+                                "",
+                            );
+                            continue;
+                        }
+                    };
+
+                    let mut script: Option<String> = None;
+                    for (fk, fv) in fmap {
+                        if fk.as_str() == Some("script") {
+                            script = fv.as_str().map(|s| s.to_string());
+                        }
+                    }
+
+                    match script {
+                        Some(s) => result.push(StarlarkFunctionDecl {
+                            name: Cow::Owned(name),
+                            script: Cow::Owned(s),
+                        }),
+                        None => {
+                            diags.error(
+                                None,
+                                format!("starlark function '{}' is missing 'script'", name),
+                                "",
+                            );
+                        }
+                    }
+                }
+            }
+            _ => {
+                diags.warning(
+                    None,
+                    format!("unknown key '{}' in starlark: block", key_str),
+                    "",
+                );
+            }
+        }
+    }
+
+    result
+}
+
+/// Parses `fn::starlark` call expression.
+///
+/// Expected structure:
+/// ```yaml
+/// fn::starlark:
+///   invoke: function_name
+///   input: <expr>
+/// ```
+fn parse_starlark_call(
+    args: Expr<'static>,
+    meta: ExprMeta,
+    diags: &mut Diagnostics,
+) -> Expr<'static> {
+    let entries = match args {
+        Expr::Object(_, entries) => entries,
+        _ => {
+            diags.error(
+                None,
+                "the argument to fn::starlark must be an object with 'invoke' and 'input'",
+                "",
+            );
+            return args;
+        }
+    };
+
+    let mut invoke: Option<Cow<'static, str>> = None;
+    let mut input: Option<Expr<'static>> = None;
+
+    for entry in &entries {
+        if let Some(key_str) = entry.key.as_str() {
+            match key_str.to_lowercase().as_str() {
+                "invoke" => {
+                    invoke = entry.value.as_str().map(|s| Cow::Owned(s.to_string()));
+                }
+                "input" => {
+                    input = Some((*entry.value).clone());
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let invoke = match invoke {
+        Some(i) => i,
+        None => {
+            diags.error(None, "fn::starlark: missing 'invoke' (function name)", "");
+            return Expr::Object(meta, entries);
+        }
+    };
+
+    let input = match input {
+        Some(i) => i,
+        None => {
+            diags.error(None, "fn::starlark: missing 'input'", "");
+            return Expr::Object(meta, entries);
+        }
+    };
+
+    Expr::Starlark(
+        meta,
+        StarlarkCallExpr {
+            invoke,
+            input: Box::new(input),
+        },
+    )
+}
+
 fn is_invoke_shorthand(key: &str) -> bool {
     let lower = key.to_lowercase();
     if !lower.starts_with("fn::") {

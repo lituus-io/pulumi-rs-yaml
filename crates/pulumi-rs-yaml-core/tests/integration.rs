@@ -3850,6 +3850,7 @@ fn test_generate_component_schema() {
                 }],
             },
         }],
+        starlark_functions: Vec::new(),
     };
 
     let schema = generate_component_schema(&template);

@@ -93,6 +93,10 @@ pub enum Expr<'src> {
     RemoteArchive(ExprMeta, Box<Expr<'src>>),
     /// `fn::assetArchive` - creates an archive from a map of assets/archives.
     AssetArchive(ExprMeta, Vec<(Cow<'src, str>, Expr<'src>)>),
+
+    // --- Starlark ---
+    /// `fn::starlark` - calls a user-defined Starlark function.
+    Starlark(ExprMeta, StarlarkCallExpr<'src>),
 }
 
 /// An object property: a key-value pair where the key is an expression (typically a string).
@@ -113,6 +117,15 @@ pub struct InvokeExpr<'src> {
     pub call_opts: InvokeOptions<'src>,
     /// Return directive (specific output property name).
     pub return_: Option<Cow<'src, str>>,
+}
+
+/// Arguments for `fn::starlark`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StarlarkCallExpr<'src> {
+    /// The function name to invoke (e.g. "uppercase").
+    pub invoke: Cow<'src, str>,
+    /// The input expression to pass to the function.
+    pub input: Box<Expr<'src>>,
 }
 
 /// Options for `fn::invoke`.
@@ -162,7 +175,8 @@ impl Expr<'_> {
             | Expr::RemoteAsset(m, _)
             | Expr::FileArchive(m, _)
             | Expr::RemoteArchive(m, _)
-            | Expr::AssetArchive(m, _) => m,
+            | Expr::AssetArchive(m, _)
+            | Expr::Starlark(m, _) => m,
             Expr::Substring(m, _, _, _) => m,
         }
     }

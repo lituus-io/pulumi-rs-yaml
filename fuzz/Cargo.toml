@@ -59,3 +59,8 @@ doc = false
 name = "fuzz_parallel_eval"
 path = "fuzz_targets/fuzz_parallel_eval.rs"
 doc = false
+
+[[bin]]
+name = "fuzz_starlark"
+path = "fuzz_targets/fuzz_starlark.rs"
+doc = false
