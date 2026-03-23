@@ -59,7 +59,9 @@ fn topological_sort_inner<'a>(
     source_map: Option<&HashMap<String, String>>,
 ) -> (Vec<String>, HashMap<&'a str, HashSet<&'a str>>, Diagnostics) {
     let mut diags = Diagnostics::new();
-    let mut names: HashMap<&str, &str> = HashMap::new(); // name -> kind
+    let node_count =
+        template.config.len() + template.variables.len() + template.resources.len() + 1; // +1 for "pulumi"
+    let mut names: HashMap<&str, &str> = HashMap::with_capacity(node_count);
 
     // Always insert "pulumi" as a node — Go always does this regardless of settings
     names.insert("pulumi", "pulumi");
@@ -129,7 +131,7 @@ fn topological_sort_inner<'a>(
     }
 
     // Build adjacency: for each node, collect the set of nodes it depends on
-    let mut deps: HashMap<&str, HashSet<&str>> = HashMap::new();
+    let mut deps: HashMap<&str, HashSet<&str>> = HashMap::with_capacity(names.len());
     let dep_collector = DepCollector {
         known_names: &names,
     };
@@ -170,7 +172,7 @@ fn topological_sort_inner<'a>(
     deps.entry("pulumi").or_default();
 
     // Topological sort using DFS with cycle detection and path reconstruction
-    let mut visited: HashSet<&str> = HashSet::new();
+    let mut visited: HashSet<&str> = HashSet::with_capacity(names.len());
     let mut order: Vec<String> = Vec::new();
     let mut path: Vec<&str> = Vec::new();
     let mut path_set: HashSet<&str> = HashSet::new();
@@ -253,7 +255,7 @@ pub fn topological_levels(
     deps: &HashMap<String, HashSet<String>>,
 ) -> Vec<Vec<String>> {
     // Compute the level of each node
-    let mut levels: HashMap<&str, usize> = HashMap::new();
+    let mut levels: HashMap<&str, usize> = HashMap::with_capacity(sorted.len());
 
     for node in sorted {
         let node_deps = deps.get(node.as_str());
