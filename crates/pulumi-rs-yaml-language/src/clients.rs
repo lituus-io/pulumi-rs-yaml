@@ -81,14 +81,33 @@ impl GrpcCallback {
                 .register_package(req)
                 .await
                 .map_err(|e| {
-                    EngineError::Grpc(format!(
-                        "register package {}@{} failed: {}",
-                        name, version, e
-                    ))
+                    let pkg_id = if version.is_empty() {
+                        name.to_string()
+                    } else {
+                        format!("{}@{}", name, version)
+                    };
+                    EngineError::Grpc(format!("register package {} failed: {}", pkg_id, e))
                 })?
                 .into_inner();
             Ok(resp.r#ref)
         })
+    }
+
+    /// Checks if the resource monitor supports a given feature.
+    ///
+    /// Used to gate RPCs like `RegisterPackage` that may not be available
+    /// on older Pulumi engines. Returns `false` if the RPC itself fails.
+    pub fn supports_feature(&self, feature_id: &str) -> bool {
+        let req = pulumirpc::SupportsFeatureRequest {
+            id: feature_id.to_string(),
+        };
+        let mut monitor = self.monitor.clone();
+        match block_on(&self.handle, async {
+            monitor.supports_feature(req).await
+        }) {
+            Ok(resp) => resp.into_inner().has_support,
+            Err(_) => false,
+        }
     }
 
     /// Logs a message to the engine.
