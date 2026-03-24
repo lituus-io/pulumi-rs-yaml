@@ -138,26 +138,30 @@ pub async fn run(
     };
 
     // 7. Register packages and collect package refs
+    //    Only attempt if the engine supports the packageRegistry feature
+    //    (matches Go pulumi-yaml behavior via SupportsFeature check).
     let mut package_refs = HashMap::new();
     let callback = callback;
-    for pkg_decl in &referenced_pkgs {
-        match callback.register_package(
-            &pkg_decl.name,
-            &pkg_decl.version,
-            &pkg_decl.download_url,
-            pkg_decl.parameterization.as_ref().map(|p| {
-                use base64::Engine as _;
-                let value_bytes = base64::engine::general_purpose::STANDARD
-                    .decode(&p.value)
-                    .unwrap_or_default();
-                (p.name.clone(), p.version.clone(), value_bytes)
-            }),
-        ) {
-            Ok(pkg_ref) => {
-                package_refs.insert(pkg_decl.name.clone(), pkg_ref);
-            }
-            Err(e) => {
-                eprintln!("warning: register package {}: {}", pkg_decl.name, e);
+    if callback.supports_feature("packageRegistry") {
+        for pkg_decl in &referenced_pkgs {
+            match callback.register_package(
+                &pkg_decl.name,
+                &pkg_decl.version,
+                &pkg_decl.download_url,
+                pkg_decl.parameterization.as_ref().map(|p| {
+                    use base64::Engine as _;
+                    let value_bytes = base64::engine::general_purpose::STANDARD
+                        .decode(&p.value)
+                        .unwrap_or_default();
+                    (p.name.clone(), p.version.clone(), value_bytes)
+                }),
+            ) {
+                Ok(pkg_ref) => {
+                    package_refs.insert(pkg_decl.name.clone(), pkg_ref);
+                }
+                Err(e) => {
+                    eprintln!("warning: register package {}: {}", pkg_decl.name, e);
+                }
             }
         }
     }

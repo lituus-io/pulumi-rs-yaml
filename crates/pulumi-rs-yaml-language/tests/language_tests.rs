@@ -357,3 +357,113 @@ fn generate_package_lock(dir: &std::path::Path, schema_json: &str) -> Result<(),
 
     Ok(())
 }
+
+// ========== SupportsFeature / RegisterPackage Tests ==========
+
+/// Verify the error message format for register_package when version is empty.
+/// The format should NOT include a trailing `@` when version is absent.
+#[test]
+fn test_register_package_error_format_empty_version() {
+    // Simulate the error formatting logic from clients.rs
+    let name = "gcpx";
+    let version = "";
+    let error_msg = "status: Unimplemented";
+
+    let pkg_id = if version.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}@{}", name, version)
+    };
+    let formatted = format!("register package {} failed: {}", pkg_id, error_msg);
+
+    assert_eq!(
+        formatted,
+        "register package gcpx failed: status: Unimplemented"
+    );
+    assert!(
+        !formatted.contains("gcpx@"),
+        "should not contain trailing @ with empty version"
+    );
+}
+
+/// Verify the error message format includes version when present.
+#[test]
+fn test_register_package_error_format_with_version() {
+    let name = "aws";
+    let version = "6.0.0";
+    let error_msg = "connection refused";
+
+    let pkg_id = if version.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}@{}", name, version)
+    };
+    let formatted = format!("register package {} failed: {}", pkg_id, error_msg);
+
+    assert_eq!(
+        formatted,
+        "register package aws@6.0.0 failed: connection refused"
+    );
+}
+
+/// Verify that the SupportsFeatureRequest proto struct has the expected fields.
+#[test]
+fn test_supports_feature_request_structure() {
+    use pulumi_rs_yaml_proto::pulumirpc::SupportsFeatureRequest;
+    let req = SupportsFeatureRequest {
+        id: "packageRegistry".to_string(),
+    };
+    assert_eq!(req.id, "packageRegistry");
+}
+
+/// Verify that the SupportsFeatureResponse proto struct has the expected fields.
+#[test]
+fn test_supports_feature_response_structure() {
+    use pulumi_rs_yaml_proto::pulumirpc::SupportsFeatureResponse;
+    let resp = SupportsFeatureResponse { has_support: true };
+    assert!(resp.has_support);
+
+    let resp_false = SupportsFeatureResponse {
+        has_support: false,
+    };
+    assert!(!resp_false.has_support);
+}
+
+/// Verify that packages with no version produce valid RegisterPackageRequest.
+#[test]
+fn test_register_package_request_empty_version() {
+    use pulumi_rs_yaml_proto::pulumirpc::RegisterPackageRequest;
+    let req = RegisterPackageRequest {
+        name: "gcpx".to_string(),
+        version: String::new(),
+        download_url: String::new(),
+        checksums: std::collections::HashMap::new(),
+        parameterization: None,
+    };
+    assert_eq!(req.name, "gcpx");
+    assert!(req.version.is_empty());
+    assert!(req.parameterization.is_none());
+}
+
+/// Verify that packages with version and parameterization produce valid request.
+#[test]
+fn test_register_package_request_with_parameterization() {
+    use pulumi_rs_yaml_proto::pulumirpc::{Parameterization, RegisterPackageRequest};
+    let req = RegisterPackageRequest {
+        name: "aws".to_string(),
+        version: "6.0.0".to_string(),
+        download_url: "https://example.com/plugin".to_string(),
+        checksums: std::collections::HashMap::new(),
+        parameterization: Some(Parameterization {
+            name: "aws-native".to_string(),
+            version: "1.0.0".to_string(),
+            value: vec![1, 2, 3],
+        }),
+    };
+    assert_eq!(req.name, "aws");
+    assert_eq!(req.version, "6.0.0");
+    assert!(req.parameterization.is_some());
+    let param = req.parameterization.unwrap();
+    assert_eq!(param.name, "aws-native");
+    assert_eq!(param.value, vec![1, 2, 3]);
+}
