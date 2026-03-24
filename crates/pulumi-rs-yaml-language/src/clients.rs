@@ -102,9 +102,7 @@ impl GrpcCallback {
             id: feature_id.to_string(),
         };
         let mut monitor = self.monitor.clone();
-        match block_on(&self.handle, async {
-            monitor.supports_feature(req).await
-        }) {
+        match block_on(&self.handle, async { monitor.supports_feature(req).await }) {
             Ok(resp) => resp.into_inner().has_support,
             Err(_) => false,
         }
