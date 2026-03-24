@@ -4,6 +4,7 @@ use crate::ast::template::*;
 use crate::diag::{unexpected_casing, Diagnostics};
 use crate::syntax::{ExprMeta, Span};
 use std::borrow::Cow;
+use std::collections::HashSet;
 
 /// Parses a YAML/JSON source string into a `TemplateDecl`.
 ///
@@ -407,12 +408,17 @@ fn parse_starlark_block(
     let mapping = match value.as_mapping() {
         Some(m) => m,
         None => {
-            diags.error(None, "starlark: must be a mapping", "");
+            diags.error(
+                None,
+                "starlark: must be a YAML mapping",
+                "Expected:\n  starlark:\n    functions:\n      my_func:\n        script: |\n          def my_func(x):\n              return x",
+            );
             return Vec::new();
         }
     };
 
     let mut result = Vec::new();
+    let mut seen_names: HashSet<String> = HashSet::new();
 
     for (key, val) in mapping {
         let key_str = match key.as_str() {
@@ -425,7 +431,11 @@ fn parse_starlark_block(
                 let funcs_map = match val.as_mapping() {
                     Some(m) => m,
                     None => {
-                        diags.error(None, "starlark.functions must be a mapping", "");
+                        diags.error(
+                            None,
+                            "starlark.functions must be a YAML mapping of function names to definitions",
+                            "Each function needs a name key and a 'script' field containing the Starlark source code",
+                        );
                         continue;
                     }
                 };
@@ -445,7 +455,10 @@ fn parse_starlark_block(
                                     "starlark function '{}' must be a mapping with 'script'",
                                     name
                                 ),
-                                "",
+                                format!(
+                                    "Expected:\n  {}:\n    script: |\n      def {}(arg):\n          return arg",
+                                    name, name
+                                ),
                             );
                             continue;
                         }
@@ -459,15 +472,52 @@ fn parse_starlark_block(
                     }
 
                     match script {
-                        Some(s) => result.push(StarlarkFunctionDecl {
-                            name: Cow::Owned(name),
-                            script: Cow::Owned(s),
-                        }),
+                        Some(s) => {
+                            // Detect duplicate function names
+                            if !seen_names.insert(name.clone()) {
+                                diags.error(
+                                    None,
+                                    format!("duplicate starlark function '{}'", name),
+                                    format!(
+                                        "Function '{}' is defined more than once in the starlark: block. \
+                                         Each function name must be unique. Remove or rename the duplicate.",
+                                        name
+                                    ),
+                                );
+                                continue;
+                            }
+
+                            // Warn if script contains Jinja-like syntax
+                            if s.contains("{{") || s.contains("{%") {
+                                diags.warning(
+                                    None,
+                                    format!(
+                                        "starlark function '{}' script may contain Jinja template syntax",
+                                        name
+                                    ),
+                                    "Jinja preprocessing runs before Starlark compilation. \
+                                     If your script contains '{{ }}' or '{% %}' patterns, \
+                                     wrap the script in {% raw %}...{% endraw %} to prevent \
+                                     Jinja from processing it:\n\n  \
+                                     script: |\n    {% raw %}\n    def my_func(x):\n        \
+                                     return x\n    {% endraw %}",
+                                );
+                            }
+
+                            result.push(StarlarkFunctionDecl {
+                                name: Cow::Owned(name),
+                                script: Cow::Owned(s),
+                            });
+                        }
                         None => {
                             diags.error(
                                 None,
                                 format!("starlark function '{}' is missing 'script'", name),
-                                "",
+                                format!(
+                                    "Add a 'script' field with the Starlark function definition:\n  \
+                                     {}:\n    script: |\n      def {}(input):\n          return input",
+                                    name, name
+                                ),
                             );
                         }
                     }
@@ -505,7 +555,7 @@ fn parse_starlark_call(
             diags.error(
                 None,
                 "the argument to fn::starlark must be an object with 'invoke' and 'input'",
-                "",
+                "Expected:\n  fn::starlark:\n    invoke: function_name\n    input: ${config.value}",
             );
             return args;
         }
@@ -531,7 +581,12 @@ fn parse_starlark_call(
     let invoke = match invoke {
         Some(i) => i,
         None => {
-            diags.error(None, "fn::starlark: missing 'invoke' (function name)", "");
+            diags.error(
+                None,
+                "fn::starlark: missing required 'invoke' field",
+                "'invoke' specifies which starlark function to call. \
+                 Available functions are defined in the top-level starlark: block.",
+            );
             return Expr::Object(meta, entries);
         }
     };
@@ -539,7 +594,12 @@ fn parse_starlark_call(
     let input = match input {
         Some(i) => i,
         None => {
-            diags.error(None, "fn::starlark: missing 'input'", "");
+            diags.error(
+                None,
+                "fn::starlark: missing required 'input' field",
+                "'input' is the value passed to the starlark function. \
+                 Use a literal, interpolation, or object:\n  input: ${config.myValue}",
+            );
             return Expr::Object(meta, entries);
         }
     };
