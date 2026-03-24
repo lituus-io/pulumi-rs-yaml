@@ -423,9 +423,7 @@ fn test_supports_feature_response_structure() {
     let resp = SupportsFeatureResponse { has_support: true };
     assert!(resp.has_support);
 
-    let resp_false = SupportsFeatureResponse {
-        has_support: false,
-    };
+    let resp_false = SupportsFeatureResponse { has_support: false };
     assert!(!resp_false.has_support);
 }
 
