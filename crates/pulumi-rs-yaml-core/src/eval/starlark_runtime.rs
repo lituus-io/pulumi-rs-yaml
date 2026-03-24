@@ -10,14 +10,11 @@
 //! Each `call()` invocation creates a transient `Module` + `Evaluator` on the
 //! current thread, so parallel evaluation via rayon is safe.
 
-use std::borrow::Cow;
 use std::collections::HashMap;
 
 use starlark::environment::{FrozenModule, Globals, Module};
 use starlark::eval::Evaluator as StarlarkEvaluator;
 use starlark::syntax::{AstModule, Dialect};
-use starlark::values::dict::DictRef;
-use starlark::values::list::ListRef;
 use starlark::values::{Value as StarlarkValue, ValueLike};
 
 use crate::ast::template::StarlarkFunctionDecl;
@@ -52,6 +49,21 @@ impl StarlarkRuntime {
         let globals = Globals::standard();
 
         for func in functions {
+            // Guard against duplicate function names (belt-and-suspenders;
+            // parser also checks, but compile() may be called directly).
+            if modules.contains_key(func.name.as_ref()) {
+                diags.error(
+                    None,
+                    format!("duplicate starlark function '{}'", func.name),
+                    format!(
+                        "Function '{}' is already defined. Each starlark function \
+                         name must be unique.",
+                        func.name
+                    ),
+                );
+                continue;
+            }
+
             let ast = match AstModule::parse(
                 &format!("{}.star", func.name),
                 func.script.to_string(),
@@ -61,8 +73,13 @@ impl StarlarkRuntime {
                 Err(e) => {
                     diags.error(
                         None,
-                        format!("starlark parse error in '{}': {}", func.name, e),
-                        "",
+                        format!("starlark syntax error in function '{}'", func.name),
+                        format!(
+                            "{}\n\nCheck the 'script' field for syntax issues. \
+                             Starlark uses Python-like syntax:\n  \
+                             def {}(arg):\n      return arg.upper()",
+                            e, func.name
+                        ),
                     );
                     continue;
                 }
@@ -74,8 +91,12 @@ impl StarlarkRuntime {
                 if let Err(e) = eval.eval_module(ast, &globals) {
                     diags.error(
                         None,
-                        format!("starlark compile error in '{}': {}", func.name, e),
-                        "",
+                        format!("starlark compilation failed for function '{}'", func.name),
+                        format!(
+                            "{}\n\nThe script must define a function named '{}'. \
+                             Ensure all referenced variables and builtins exist.",
+                            e, func.name
+                        ),
                     );
                     continue;
                 }
@@ -88,8 +109,15 @@ impl StarlarkRuntime {
                 Err(e) => {
                     diags.error(
                         None,
-                        format!("starlark freeze error in '{}': {:?}", func.name, e),
-                        "",
+                        format!(
+                            "starlark internal error: failed to freeze module for '{}'",
+                            func.name
+                        ),
+                        format!(
+                            "{:?}\n\nThis is an internal error. \
+                             Please report it with your Starlark script.",
+                            e
+                        ),
                     );
                 }
             }
@@ -117,10 +145,15 @@ impl StarlarkRuntime {
         let frozen = match self.modules.get(function_name) {
             Some(m) => m,
             None => {
+                let available: Vec<&str> = self.modules.keys().map(|s| s.as_str()).collect();
+                let suggestion = suggest_function_name(function_name, &available);
                 diags.error(
                     None,
-                    format!("starlark function '{}' not found", function_name),
-                    "",
+                    format!("starlark function '{}' is not defined", function_name),
+                    format!(
+                        "No function named '{}' was found in the starlark: block. {}",
+                        function_name, suggestion
+                    ),
                 );
                 return None;
             }
@@ -129,18 +162,25 @@ impl StarlarkRuntime {
         // Look up the function from the frozen module
         let owned_func = match frozen.get(function_name) {
             Ok(v) => v,
-            Err(e) => {
+            Err(_) => {
                 diags.error(
                     None,
                     format!(
-                        "starlark function '{}' not defined in script: {}",
-                        function_name, e
+                        "starlark script for '{}' does not export a function named '{}'",
+                        function_name, function_name
                     ),
-                    "",
+                    format!(
+                        "The script must define a function with a matching name:\n  \
+                         script: |\n    def {}(input):\n        return ...",
+                        function_name
+                    ),
                 );
                 return None;
             }
         };
+
+        // Warn about non-bridgeable types in the input
+        warn_non_bridgeable(input, function_name, diags);
 
         let module = Module::new();
         let mut eval = StarlarkEvaluator::new(&module);
@@ -160,10 +200,14 @@ impl StarlarkRuntime {
                     diags.error(
                         None,
                         format!(
-                            "starlark function '{}' returned unconvertible type: {}",
-                            function_name, e
+                            "starlark function '{}' returned a value that cannot be used in YAML",
+                            function_name
                         ),
-                        "",
+                        format!(
+                            "{}\n\nSupported return types: string, int, float, bool, \
+                             None, list, dict (with string keys)",
+                            e
+                        ),
                     );
                     None
                 }
@@ -171,12 +215,114 @@ impl StarlarkRuntime {
             Err(e) => {
                 diags.error(
                     None,
-                    format!("starlark runtime error in '{}': {}", function_name, e),
-                    "",
+                    format!(
+                        "starlark function '{}' failed during execution",
+                        function_name
+                    ),
+                    e.to_string(),
                 );
                 None
             }
         }
+    }
+}
+
+/// Computes the Levenshtein edit distance between two strings.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let (m, n) = (a.len(), b.len());
+    let mut dp = vec![vec![0usize; n + 1]; m + 1];
+    for (i, row) in dp.iter_mut().enumerate().take(m + 1) {
+        row[0] = i;
+    }
+    for j in 0..=n {
+        dp[0][j] = j;
+    }
+    for i in 1..=m {
+        for j in 1..=n {
+            let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
+            dp[i][j] = (dp[i - 1][j] + 1)
+                .min(dp[i][j - 1] + 1)
+                .min(dp[i - 1][j - 1] + cost);
+        }
+    }
+    dp[m][n]
+}
+
+/// Suggests the closest matching function name from available functions.
+fn suggest_function_name(name: &str, available: &[&str]) -> String {
+    if available.is_empty() {
+        return "No starlark functions are defined.".to_string();
+    }
+    let mut best_name = "";
+    let mut best_dist = usize::MAX;
+    for &candidate in available {
+        let dist = edit_distance(name, candidate);
+        if dist < best_dist {
+            best_dist = dist;
+            best_name = candidate;
+        }
+    }
+    let available_list = available.join(", ");
+    if best_dist <= 3 {
+        format!(
+            "Did you mean '{}'? Available functions: {}",
+            best_name, available_list
+        )
+    } else {
+        format!("Available functions: {}", available_list)
+    }
+}
+
+/// Emits warnings for non-bridgeable value types passed to Starlark.
+fn warn_non_bridgeable(val: &Value<'_>, function_name: &str, diags: &mut Diagnostics) {
+    match val {
+        Value::Resource(_) => {
+            diags.warning(
+                None,
+                format!(
+                    "fn::starlark '{}': input contains a Resource reference",
+                    function_name
+                ),
+                "Resource references cannot be passed to Starlark functions and will be \
+                 converted to None. Extract the specific property you need: ${resource.propertyName}",
+            );
+        }
+        Value::Asset(_) => {
+            diags.warning(
+                None,
+                format!(
+                    "fn::starlark '{}': input contains an Asset",
+                    function_name
+                ),
+                "Asset values cannot be passed to Starlark functions and will be converted to None.",
+            );
+        }
+        Value::Archive(_) => {
+            diags.warning(
+                None,
+                format!(
+                    "fn::starlark '{}': input contains an Archive",
+                    function_name
+                ),
+                "Archive values cannot be passed to Starlark functions and will be converted to None.",
+            );
+        }
+        Value::List(items) => {
+            for item in items {
+                warn_non_bridgeable(item, function_name, diags);
+            }
+        }
+        Value::Object(entries) => {
+            for (_, v) in entries {
+                warn_non_bridgeable(v, function_name, diags);
+            }
+        }
+        Value::Secret(inner) => {
+            warn_non_bridgeable(inner, function_name, diags);
+        }
+        _ => {}
     }
 }
 
@@ -222,46 +368,33 @@ fn value_to_starlark<'v>(val: &Value<'_>, heap: &'v starlark::values::Heap) -> S
 }
 
 /// Converts a Starlark result value to a pulumi `Value`.
+///
+/// Uses Starlark's built-in JSON serialization as the type bridge. This
+/// correctly handles all Starlark types that map to JSON: null, bool,
+/// int (all sizes including BigInt), float, string, list, dict, and
+/// tuple (→ JSON array). Non-serializable types (set, struct, function,
+/// range) produce a clear error instead of silent data loss.
 fn starlark_to_value(val: StarlarkValue<'_>) -> Result<Value<'static>, String> {
-    if val.is_none() {
-        return Ok(Value::Null);
+    match val.to_json_value() {
+        Ok(json) => Ok(Value::from_json(&json)),
+        Err(e) => {
+            let type_name = val.get_type();
+            Err(format!(
+                "cannot convert Starlark '{}' value to a Pulumi YAML value: {}\n\n\
+                 Supported return types: null, bool, int, float, string, list, \
+                 dict (with string keys).\n\
+                 Unsupported types (such as '{}') must be converted to a supported \
+                 type inside your Starlark function before returning.",
+                type_name, e, type_name
+            ))
+        }
     }
-    if let Some(b) = val.unpack_bool() {
-        return Ok(Value::Bool(b));
-    }
-    if let Some(i) = val.unpack_i32() {
-        return Ok(Value::Number(i as f64));
-    }
-    if let Some(s) = val.unpack_str() {
-        return Ok(Value::String(Cow::Owned(s.to_string())));
-    }
-    // Try list
-    if let Some(list) = ListRef::from_value(val) {
-        let items: Result<Vec<Value<'static>>, String> =
-            list.iter().map(|v| starlark_to_value(v)).collect();
-        return items.map(Value::List);
-    }
-    // Try dict
-    if let Some(dict) = DictRef::from_value(val) {
-        let entries: Result<Vec<(Cow<'static, str>, Value<'static>)>, String> = dict
-            .iter()
-            .map(|(k, v)| {
-                let key = k
-                    .unpack_str()
-                    .ok_or_else(|| format!("dict key must be a string, got {}", k.get_type()))?;
-                let value = starlark_to_value(v)?;
-                Ok((Cow::Owned(key.to_string()), value))
-            })
-            .collect();
-        return entries.map(Value::Object);
-    }
-    // Fallback: convert to string representation
-    Ok(Value::String(Cow::Owned(val.to_string())))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::borrow::Cow;
 
     fn make_func(name: &str, script: &str) -> StarlarkFunctionDecl<'static> {
         StarlarkFunctionDecl {
@@ -379,16 +512,16 @@ mod tests {
         match result {
             Some(Value::Object(entries)) => {
                 assert_eq!(entries.len(), 2);
-                assert_eq!(entries[0].0.as_ref(), "Name");
-                assert_eq!(
-                    entries[0].1,
-                    Value::String(Cow::Owned("my-resource".to_string()))
-                );
-                assert_eq!(entries[1].0.as_ref(), "Managed");
-                assert_eq!(
-                    entries[1].1,
-                    Value::String(Cow::Owned("pulumi".to_string()))
-                );
+                // JSON bridge uses sorted keys (BTreeMap), check by key lookup
+                let has_name = entries.iter().any(|(k, v)| {
+                    k.as_ref() == "Name"
+                        && *v == Value::String(Cow::Owned("my-resource".to_string()))
+                });
+                let has_managed = entries.iter().any(|(k, v)| {
+                    k.as_ref() == "Managed" && *v == Value::String(Cow::Owned("pulumi".to_string()))
+                });
+                assert!(has_name, "missing Name entry in {:?}", entries);
+                assert!(has_managed, "missing Managed entry in {:?}", entries);
             }
             other => panic!("expected Object, got {:?}", other),
         }

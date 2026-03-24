@@ -1445,7 +1445,12 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
                                 "fn::starlark invoked '{}' but no starlark: block is defined",
                                 call.invoke
                             ),
-                            "",
+                            format!(
+                                "Add a top-level starlark: block to define functions:\n  \
+                                 starlark:\n    functions:\n      {}:\n        script: |\n          \
+                                 def {}(input):\n              return input",
+                                call.invoke, call.invoke
+                            ),
                         );
                         None
                     }
