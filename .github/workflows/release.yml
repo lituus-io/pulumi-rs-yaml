@@ -192,6 +192,8 @@ jobs:
 
       - name: Build wheel
         working-directory: crates/pulumi-rs-yaml-python
+        env:
+          PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
         run: maturin build --release --target ${{ matrix.target }} ${{ matrix.maturin-args }} --out ../../dist
 
       - name: Upload wheel
