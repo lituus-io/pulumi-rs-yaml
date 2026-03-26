@@ -14,3 +14,7 @@ pulumi-rs-yaml-core = { path = "../pulumi-rs-yaml-core" }
 pyo3 = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
+
+[features]
+default = ["abi3"]
+abi3 = ["pyo3/abi3-py39"]

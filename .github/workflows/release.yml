@@ -108,7 +108,7 @@ jobs:
           name: binary-${{ matrix.name }}
           path: pulumi-yaml-${{ matrix.name }}.*
 
-  # ── Python wheel builds (5 platforms) ────────────────────────────────
+  # ── Python wheel builds (3 abi3 x86_64 + 6 version-specific aarch64) ─
 
   build-wheel:
     name: Wheel (${{ matrix.name }})
@@ -117,26 +117,55 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # ── x86_64: abi3 (single wheel per platform, Python 3.9+) ──
           - name: linux-x86_64
             runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            maturin-args: --zig --compatibility manylinux_2_28
-          - name: linux-aarch64
-            runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
+            python-version: "3.12"
             maturin-args: --zig --compatibility manylinux_2_28
           - name: macos-x86_64
             runner: macos-15
             target: x86_64-apple-darwin
-            maturin-args: ""
-          - name: macos-arm64
-            runner: macos-15
-            target: aarch64-apple-darwin
+            python-version: "3.12"
             maturin-args: ""
           - name: windows-x86_64
             runner: windows-latest
             target: x86_64-pc-windows-msvc
+            python-version: "3.12"
             maturin-args: ""
+
+          # ── aarch64: version-specific wheels ──
+          - name: linux-aarch64-cp312
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            python-version: "3.12"
+            maturin-args: --zig --compatibility manylinux_2_28 --interpreter python3.12 --no-default-features
+          - name: linux-aarch64-cp313
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            python-version: "3.13"
+            maturin-args: --zig --compatibility manylinux_2_28 --interpreter python3.13 --no-default-features
+          - name: linux-aarch64-cp314
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            python-version: "3.14"
+            maturin-args: --zig --compatibility manylinux_2_28 --interpreter python3.14 --no-default-features
+
+          - name: macos-arm64-cp312
+            runner: macos-15
+            target: aarch64-apple-darwin
+            python-version: "3.12"
+            maturin-args: --interpreter python3.12 --no-default-features
+          - name: macos-arm64-cp313
+            runner: macos-15
+            target: aarch64-apple-darwin
+            python-version: "3.13"
+            maturin-args: --interpreter python3.13 --no-default-features
+          - name: macos-arm64-cp314
+            runner: macos-15
+            target: aarch64-apple-darwin
+            python-version: "3.14"
+            maturin-args: --interpreter python3.14 --no-default-features
 
     steps:
       - uses: actions/checkout@v4
@@ -149,7 +178,8 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
 
       - name: Install maturin and zig (for Linux manylinux builds)
         run: pip install maturin ziglang
