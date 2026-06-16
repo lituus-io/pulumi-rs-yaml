@@ -19,9 +19,14 @@ impl SchemaLoader {
     /// Connect to the loader gRPC service at the given address.
     pub async fn connect(loader_target: &str) -> Result<Self, String> {
         let url = pulumi_rs_yaml_core::normalize_grpc_address(loader_target);
+        // Provider schemas (e.g. gcp classic, ~56 MB) exceed tonic's default
+        // 4 MiB decode cap — raise it so GetSchema succeeds and type checking /
+        // preview fidelity work. See core::MAX_GRPC_MESSAGE_BYTES.
         let client = codegen::loader_client::LoaderClient::connect(url)
             .await
-            .map_err(|e| format!("failed to connect to schema loader: {}", e))?;
+            .map_err(|e| format!("failed to connect to schema loader: {}", e))?
+            .max_decoding_message_size(pulumi_rs_yaml_core::MAX_GRPC_MESSAGE_BYTES)
+            .max_encoding_message_size(pulumi_rs_yaml_core::MAX_GRPC_MESSAGE_BYTES);
         Ok(Self {
             client,
             handle: Handle::current(),
