@@ -11,7 +11,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
 
 /// Converts a Rust `Value` to a Python object.
-pub fn value_to_py(py: Python<'_>, val: &Value<'_>) -> PyResult<PyObject> {
+pub fn value_to_py(py: Python<'_>, val: &Value<'_>) -> PyResult<Py<PyAny>> {
     match val {
         Value::Null => Ok(py.None()),
         Value::Bool(b) => Ok(PyBool::new(py, *b).to_owned().into_any().unbind()),
@@ -24,7 +24,7 @@ pub fn value_to_py(py: Python<'_>, val: &Value<'_>) -> PyResult<PyObject> {
         }
         Value::String(s) => Ok(PyString::new(py, s.as_ref()).into_any().unbind()),
         Value::List(items) => {
-            let py_items: Vec<PyObject> = items
+            let py_items: Vec<Py<PyAny>> = items
                 .iter()
                 .map(|item| value_to_py(py, item))
                 .collect::<PyResult<_>>()?;
@@ -53,29 +53,29 @@ pub fn py_to_value(obj: &Bound<'_, PyAny>) -> PyResult<Value<'static>> {
     if obj.is_none() {
         return Ok(Value::Null);
     }
-    if let Ok(b) = obj.downcast::<PyBool>() {
+    if let Ok(b) = obj.cast::<PyBool>() {
         return Ok(Value::Bool(b.is_true()));
     }
-    if let Ok(i) = obj.downcast::<PyInt>() {
+    if let Ok(i) = obj.cast::<PyInt>() {
         let n: i64 = i.extract()?;
         return Ok(Value::Number(n as f64));
     }
-    if let Ok(f) = obj.downcast::<PyFloat>() {
+    if let Ok(f) = obj.cast::<PyFloat>() {
         let n: f64 = f.extract()?;
         return Ok(Value::Number(n));
     }
-    if let Ok(s) = obj.downcast::<PyString>() {
+    if let Ok(s) = obj.cast::<PyString>() {
         let val: String = s.extract()?;
         return Ok(Value::String(Cow::Owned(val)));
     }
-    if let Ok(list) = obj.downcast::<PyList>() {
+    if let Ok(list) = obj.cast::<PyList>() {
         let items: Vec<Value<'static>> = list
             .iter()
             .map(|item| py_to_value(&item))
             .collect::<PyResult<_>>()?;
         return Ok(Value::List(items));
     }
-    if let Ok(dict) = obj.downcast::<PyDict>() {
+    if let Ok(dict) = obj.cast::<PyDict>() {
         let entries: Vec<(Cow<'static, str>, Value<'static>)> = dict
             .iter()
             .map(|(k, v)| {
@@ -106,7 +106,7 @@ pub fn py_dict_to_string_map(dict: &Bound<'_, PyDict>) -> PyResult<HashMap<Strin
 // =============================================================================
 
 /// Converts a single PropertyAccessor to a Python dict.
-fn accessor_to_py(py: Python<'_>, acc: &PropertyAccessor<'_>) -> PyResult<PyObject> {
+fn accessor_to_py(py: Python<'_>, acc: &PropertyAccessor<'_>) -> PyResult<Py<PyAny>> {
     let dict = PyDict::new(py);
     match acc {
         PropertyAccessor::Name(n) => {
@@ -126,8 +126,8 @@ fn accessor_to_py(py: Python<'_>, acc: &PropertyAccessor<'_>) -> PyResult<PyObje
 }
 
 /// Converts a PropertyAccess chain to a Python list of accessor dicts.
-fn access_to_py(py: Python<'_>, access: &PropertyAccess<'_>) -> PyResult<PyObject> {
-    let items: Vec<PyObject> = access
+fn access_to_py(py: Python<'_>, access: &PropertyAccess<'_>) -> PyResult<Py<PyAny>> {
+    let items: Vec<Py<PyAny>> = access
         .accessors
         .iter()
         .map(|a| accessor_to_py(py, a))
@@ -136,7 +136,7 @@ fn access_to_py(py: Python<'_>, access: &PropertyAccess<'_>) -> PyResult<PyObjec
 }
 
 /// Helper: create a single-arg builtin dict `{"t": tag, "arg": expr}`.
-fn single_arg_to_py(py: Python<'_>, tag: &str, arg: &Expr<'_>) -> PyResult<PyObject> {
+fn single_arg_to_py(py: Python<'_>, tag: &str, arg: &Expr<'_>) -> PyResult<Py<PyAny>> {
     let dict = PyDict::new(py);
     dict.set_item("t", tag)?;
     dict.set_item("arg", expr_to_py(py, arg)?)?;
@@ -144,7 +144,7 @@ fn single_arg_to_py(py: Python<'_>, tag: &str, arg: &Expr<'_>) -> PyResult<PyObj
 }
 
 /// Converts an `Expr<'src>` to a Python dict with `"t"` type discriminator.
-pub fn expr_to_py(py: Python<'_>, expr: &Expr<'_>) -> PyResult<PyObject> {
+pub fn expr_to_py(py: Python<'_>, expr: &Expr<'_>) -> PyResult<Py<PyAny>> {
     let dict = PyDict::new(py);
     match expr {
         Expr::Null(_) => {
@@ -177,7 +177,7 @@ pub fn expr_to_py(py: Python<'_>, expr: &Expr<'_>) -> PyResult<PyObject> {
         }
         Expr::Interpolate(_, parts) => {
             dict.set_item("t", "interp")?;
-            let py_parts: Vec<PyObject> = parts
+            let py_parts: Vec<Py<PyAny>> = parts
                 .iter()
                 .map(|part| interp_part_to_py(py, part))
                 .collect::<PyResult<_>>()?;
@@ -186,7 +186,7 @@ pub fn expr_to_py(py: Python<'_>, expr: &Expr<'_>) -> PyResult<PyObject> {
         }
         Expr::List(_, items) => {
             dict.set_item("t", "list")?;
-            let py_items: Vec<PyObject> = items
+            let py_items: Vec<Py<PyAny>> = items
                 .iter()
                 .map(|item| expr_to_py(py, item))
                 .collect::<PyResult<_>>()?;
@@ -195,7 +195,7 @@ pub fn expr_to_py(py: Python<'_>, expr: &Expr<'_>) -> PyResult<PyObject> {
         }
         Expr::Object(_, entries) => {
             dict.set_item("t", "obj")?;
-            let py_entries: Vec<PyObject> = entries
+            let py_entries: Vec<Py<PyAny>> = entries
                 .iter()
                 .map(|e| obj_prop_to_py(py, e))
                 .collect::<PyResult<_>>()?;
@@ -253,7 +253,7 @@ pub fn expr_to_py(py: Python<'_>, expr: &Expr<'_>) -> PyResult<PyObject> {
         Expr::RemoteArchive(_, a) => single_arg_to_py(py, "remoteArchive", a),
         Expr::AssetArchive(_, entries) => {
             dict.set_item("t", "assetArchive")?;
-            let py_entries: Vec<PyObject> = entries
+            let py_entries: Vec<Py<PyAny>> = entries
                 .iter()
                 .map(|(k, v)| {
                     let entry = PyDict::new(py);
@@ -275,7 +275,7 @@ pub fn expr_to_py(py: Python<'_>, expr: &Expr<'_>) -> PyResult<PyObject> {
 }
 
 /// Converts an InterpolationPart to a Python dict.
-fn interp_part_to_py(py: Python<'_>, part: &InterpolationPart<'_>) -> PyResult<PyObject> {
+fn interp_part_to_py(py: Python<'_>, part: &InterpolationPart<'_>) -> PyResult<Py<PyAny>> {
     let dict = PyDict::new(py);
     dict.set_item("text", part.text.as_ref())?;
     if let Some(ref access) = part.value {
@@ -287,7 +287,7 @@ fn interp_part_to_py(py: Python<'_>, part: &InterpolationPart<'_>) -> PyResult<P
 }
 
 /// Converts an ObjectProperty to a Python dict.
-fn obj_prop_to_py(py: Python<'_>, prop: &ObjectProperty<'_>) -> PyResult<PyObject> {
+fn obj_prop_to_py(py: Python<'_>, prop: &ObjectProperty<'_>) -> PyResult<Py<PyAny>> {
     let dict = PyDict::new(py);
     dict.set_item("k", expr_to_py(py, &prop.key)?)?;
     dict.set_item("v", expr_to_py(py, &prop.value)?)?;
@@ -295,7 +295,7 @@ fn obj_prop_to_py(py: Python<'_>, prop: &ObjectProperty<'_>) -> PyResult<PyObjec
 }
 
 /// Converts an InvokeExpr to a Python dict.
-fn invoke_to_py(py: Python<'_>, inv: &InvokeExpr<'_>) -> PyResult<PyObject> {
+fn invoke_to_py(py: Python<'_>, inv: &InvokeExpr<'_>) -> PyResult<Py<PyAny>> {
     let dict = PyDict::new(py);
     dict.set_item("t", "invoke")?;
     let canonical_token = canonicalize_type_token(inv.token.as_ref());
@@ -315,7 +315,7 @@ fn invoke_to_py(py: Python<'_>, inv: &InvokeExpr<'_>) -> PyResult<PyObject> {
 }
 
 /// Converts InvokeOptions to a Python dict.
-fn invoke_options_to_py(py: Python<'_>, opts: &InvokeOptions<'_>) -> PyResult<PyObject> {
+fn invoke_options_to_py(py: Python<'_>, opts: &InvokeOptions<'_>) -> PyResult<Py<PyAny>> {
     let dict = PyDict::new(py);
     if let Some(ref p) = opts.parent {
         dict.set_item("parent", expr_to_py(py, p)?)?;
@@ -339,7 +339,7 @@ fn invoke_options_to_py(py: Python<'_>, opts: &InvokeOptions<'_>) -> PyResult<Py
 pub fn resource_options_to_py(
     py: Python<'_>,
     opts: &ResourceOptionsDecl<'_>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let dict = PyDict::new(py);
     if let Some(ref d) = opts.depends_on {
         dict.set_item("dependsOn", expr_to_py(py, d)?)?;
@@ -416,10 +416,10 @@ pub fn resource_options_to_py(
 pub fn resource_properties_to_py(
     py: Python<'_>,
     props: &ResourceProperties<'_>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     match props {
         ResourceProperties::Map(entries) => {
-            let py_entries: Vec<PyObject> = entries
+            let py_entries: Vec<Py<PyAny>> = entries
                 .iter()
                 .map(|e| property_entry_to_py(py, e))
                 .collect::<PyResult<_>>()?;
@@ -430,7 +430,7 @@ pub fn resource_properties_to_py(
 }
 
 /// Converts a PropertyEntry to a Python dict.
-fn property_entry_to_py(py: Python<'_>, entry: &PropertyEntry<'_>) -> PyResult<PyObject> {
+fn property_entry_to_py(py: Python<'_>, entry: &PropertyEntry<'_>) -> PyResult<Py<PyAny>> {
     let dict = PyDict::new(py);
     dict.set_item("k", entry.key.as_ref())?;
     dict.set_item("v", expr_to_py(py, &entry.value)?)?;

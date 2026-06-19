@@ -17,7 +17,7 @@ use convert::{
 
 /// Parse a YAML template string and return its structure as a Python dict.
 #[pyfunction]
-fn parse_template(py: Python<'_>, source: &str) -> PyResult<PyObject> {
+fn parse_template(py: Python<'_>, source: &str) -> PyResult<Py<PyAny>> {
     let (template, diags) = pulumi_rs_yaml_core::ast::parse::parse_template(source, None);
 
     let dict = PyDict::new(py);
@@ -51,7 +51,7 @@ fn parse_template(py: Python<'_>, source: &str) -> PyResult<PyObject> {
 
 /// Load a multi-file project from a directory.
 #[pyfunction]
-fn load_project(py: Python<'_>, dir: &str) -> PyResult<PyObject> {
+fn load_project(py: Python<'_>, dir: &str) -> PyResult<Py<PyAny>> {
     let path = std::path::Path::new(dir);
 
     let discovery = pulumi_rs_yaml_core::multi_file::discover_project_files(path)
@@ -86,7 +86,7 @@ fn load_project(py: Python<'_>, dir: &str) -> PyResult<PyObject> {
 
 /// Discover all Pulumi.*.yaml files in a project directory.
 #[pyfunction]
-fn discover_project_files(py: Python<'_>, dir: &str) -> PyResult<PyObject> {
+fn discover_project_files(py: Python<'_>, dir: &str) -> PyResult<Py<PyAny>> {
     let path = std::path::Path::new(dir);
     let discovery = pulumi_rs_yaml_core::multi_file::discover_project_files(path)
         .map_err(|e| PyValueError::new_err(format!("Failed to discover project files: {}", e)))?;
@@ -182,7 +182,7 @@ fn preprocess_jinja(source: &str, filename: &str, context: &Bound<'_, PyDict>) -
 
 /// Evaluate a single builtin function by name.
 #[pyfunction]
-fn evaluate_builtin(py: Python<'_>, name: &str, args: PyObject) -> PyResult<PyObject> {
+fn evaluate_builtin(py: Python<'_>, name: &str, args: Py<PyAny>) -> PyResult<Py<PyAny>> {
     let mut diags = Diagnostics::new();
     let arg_val = py_to_value(args.bind(py))?;
 
@@ -278,7 +278,7 @@ fn create_execution_plan(
     py: Python<'_>,
     project_dir: &str,
     jinja_context: Option<&Bound<'_, PyDict>>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let path = std::path::Path::new(project_dir);
 
     // Build JinjaContext from optional dict
@@ -402,7 +402,7 @@ fn create_execution_plan(
     }
 
     // Walk order and serialize each node
-    let mut nodes: Vec<PyObject> = Vec::new();
+    let mut nodes: Vec<Py<PyAny>> = Vec::new();
     for name in order {
         let name_str = name.as_str();
 
@@ -474,7 +474,7 @@ fn create_execution_plan(
             if let Some(ref get) = res.resource.get {
                 let get_dict = PyDict::new(py);
                 get_dict.set_item("id", expr_to_py(py, &get.id)?)?;
-                let state_entries: Vec<PyObject> = get
+                let state_entries: Vec<Py<PyAny>> = get
                     .state
                     .iter()
                     .map(|e| {
@@ -495,7 +495,7 @@ fn create_execution_plan(
     }
 
     // Serialize outputs
-    let py_outputs: Vec<PyObject> = template
+    let py_outputs: Vec<Py<PyAny>> = template
         .outputs
         .iter()
         .map(|o| {
@@ -519,7 +519,7 @@ fn create_execution_plan(
     let py_diags = diags_to_py(py, &all_diags)?;
 
     // Build levels list (list of list of node names per level)
-    let py_levels: Vec<PyObject> = levels
+    let py_levels: Vec<Py<PyAny>> = levels
         .iter()
         .map(|level_names| {
             let py_names: Vec<&str> = level_names.iter().map(|s| s.as_str()).collect();
@@ -548,8 +548,8 @@ fn create_execution_plan(
 }
 
 /// Convert diagnostics to a Python list of dicts.
-fn diags_to_py(py: Python<'_>, diags: &Diagnostics) -> PyResult<PyObject> {
-    let list: Vec<PyObject> = diags
+fn diags_to_py(py: Python<'_>, diags: &Diagnostics) -> PyResult<Py<PyAny>> {
+    let list: Vec<Py<PyAny>> = diags
         .iter()
         .map(|entry| {
             let dict = PyDict::new(py);
@@ -572,8 +572,8 @@ fn diags_to_py(py: Python<'_>, diags: &Diagnostics) -> PyResult<PyObject> {
 fn classified_to_py(
     py: Python<'_>,
     classified: &[pulumi_rs_yaml_core::classify::ClassifiedDiagnostic],
-) -> PyResult<PyObject> {
-    let results: Vec<PyObject> = classified
+) -> PyResult<Py<PyAny>> {
+    let results: Vec<Py<PyAny>> = classified
         .iter()
         .map(|c| {
             let dict = PyDict::new(py);
@@ -598,7 +598,7 @@ fn classified_to_py(
 
 /// Validate a project and return classified diagnostics with structured data.
 #[pyfunction]
-fn validate_and_classify(py: Python<'_>, project_dir: &str) -> PyResult<PyObject> {
+fn validate_and_classify(py: Python<'_>, project_dir: &str) -> PyResult<Py<PyAny>> {
     let path = std::path::Path::new(project_dir);
     let (merged, load_diags) = pulumi_rs_yaml_core::multi_file::load_project(path, None);
 
@@ -625,7 +625,7 @@ fn type_check_project(
     py: Python<'_>,
     project_dir: &str,
     schema_dir: Option<&str>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let path = std::path::Path::new(project_dir);
     let (merged, load_diags) = pulumi_rs_yaml_core::multi_file::load_project(path, None);
 
@@ -671,7 +671,7 @@ fn complete_properties(
     py: Python<'_>,
     resource_type: &str,
     schema_dir: Option<&str>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let schema_store = if let Some(sd) = schema_dir {
         let schema_path = std::path::Path::new(sd);
         pulumi_rs_yaml_core::schema::SchemaStore::load(schema_path)
@@ -689,7 +689,7 @@ fn complete_properties(
     let items =
         pulumi_rs_yaml_core::completion::complete_resource_properties(&schema_store, &canonical);
 
-    let results: Vec<PyObject> = items
+    let results: Vec<Py<PyAny>> = items
         .iter()
         .map(|item| {
             let dict = PyDict::new(py);
@@ -716,7 +716,7 @@ fn get_resource_schema(
     py: Python<'_>,
     resource_type: &str,
     schema_dir: Option<&str>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let schema_store = if let Some(sd) = schema_dir {
         let schema_path = std::path::Path::new(sd);
         pulumi_rs_yaml_core::schema::SchemaStore::load(schema_path)

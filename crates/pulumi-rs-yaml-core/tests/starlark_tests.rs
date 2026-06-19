@@ -817,6 +817,7 @@ variables:
 // =========================================================================
 
 #[test]
+#[allow(clippy::approx_constant)] // 3.14159 is the literal the Starlark program returns
 fn test_starlark_returns_float() {
     let source = r#"
 name: test
@@ -923,6 +924,7 @@ variables:
 }
 
 #[test]
+#[allow(clippy::approx_constant)] // 3.14 is intentional test data, not a PI approximation
 fn test_starlark_returns_nested_dict_with_floats() {
     let source = r#"
 name: test
