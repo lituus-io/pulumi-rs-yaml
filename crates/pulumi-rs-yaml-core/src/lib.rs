@@ -26,3 +26,16 @@ pub fn normalize_grpc_address(addr: &str) -> String {
         format!("http://{}", addr)
     }
 }
+
+/// Maximum gRPC message size (encode + decode) for Pulumi engine / monitor /
+/// loader clients.
+///
+/// tonic defaults to a 4 MiB receive cap, but provider schemas exceed that —
+/// the `gcp` classic provider schema is ~56 MB — which surfaces as
+/// `OutOfRange: "decoded message length too large: found N bytes, the limit is
+/// 4194304 bytes"` and silently disables schema-based type checking / preview
+/// fidelity. Large resource registrations can hit the same cap. The Go Pulumi
+/// engine raises this limit (`rpcutil`), so we match it: apply
+/// `.max_decoding_message_size(MAX_GRPC_MESSAGE_BYTES)` (and the encoding
+/// counterpart) to every tonic client we build.
+pub const MAX_GRPC_MESSAGE_BYTES: usize = 512 * 1024 * 1024;
