@@ -37,14 +37,21 @@ impl GrpcCallback {
         let monitor_url = pulumi_rs_yaml_core::normalize_grpc_address(monitor_address);
         let engine_url = pulumi_rs_yaml_core::normalize_grpc_address(engine_address);
 
+        // Raise tonic's default 4 MiB message cap — large resource registrations
+        // / reads can exceed it. See core::MAX_GRPC_MESSAGE_BYTES.
+        let max = pulumi_rs_yaml_core::MAX_GRPC_MESSAGE_BYTES;
         let monitor =
             pulumirpc::resource_monitor_client::ResourceMonitorClient::connect(monitor_url)
                 .await
-                .map_err(|e| EngineError::Grpc(format!("failed to connect to monitor: {}", e)))?;
+                .map_err(|e| EngineError::Grpc(format!("failed to connect to monitor: {}", e)))?
+                .max_decoding_message_size(max)
+                .max_encoding_message_size(max);
 
         let engine = pulumirpc::engine_client::EngineClient::connect(engine_url)
             .await
-            .map_err(|e| EngineError::Grpc(format!("failed to connect to engine: {}", e)))?;
+            .map_err(|e| EngineError::Grpc(format!("failed to connect to engine: {}", e)))?
+            .max_decoding_message_size(max)
+            .max_encoding_message_size(max);
 
         Ok(Self {
             monitor,

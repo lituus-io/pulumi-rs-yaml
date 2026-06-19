@@ -33,3 +33,17 @@ terraform.json
 
 # Bundled binaries in Python package (populated at build time)
 crates/pulumi-rs-yaml-python/python/pulumi_yaml_rs/bin/pulumi-*
+
+# Native extension modules (built by maturin / cargo)
+*.so
+*.dylib
+*.pyd
+
+# Fuzzing: crash artifacts, slow-unit reports, and generated corpus.
+# Curated seed inputs (*.yaml, *.txt) are kept under version control.
+fuzz/artifacts/
+fuzz/slow-unit-*
+fuzz/corpus/**
+!fuzz/corpus/**/
+!fuzz/corpus/**/*.yaml
+!fuzz/corpus/**/*.txt
