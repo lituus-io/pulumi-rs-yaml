@@ -52,7 +52,8 @@ Fuzz tests run weekly in CI and can be triggered manually.
 
 | Version | Supported |
 |---------|-----------|
-| 0.2.x | Yes |
+| 0.5.x   | Yes       |
+| < 0.5   | No        |
 
 ## License
 
