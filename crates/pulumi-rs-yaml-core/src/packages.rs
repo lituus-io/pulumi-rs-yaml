@@ -381,6 +381,60 @@ pub fn canonicalize_type_token(type_name: &str) -> String {
     }
 }
 
+/// Canonicalizes a FUNCTION (invoke) token for provider calls.
+///
+/// Function shorthands expand differently from resource tokens. Hand-written
+/// providers register two-part invokes under the `index` MODULE — e.g. the
+/// `str` provider registers `str:index:replace` — so the resource rule's
+/// `str:index/replace:replace` is rejected at runtime with
+/// "Invoke 'index/replace:replace' not found". Bridged providers use the
+/// slashed function form for three-part tokens
+/// (`gcp:compute:getNetwork` → `gcp:compute/getNetwork:getNetwork`).
+///
+/// - `str:replace`            → `str:index:replace`
+/// - `gcp:compute:getNetwork` → `gcp:compute/getNetwork:getNetwork`
+/// - already-canonical (module contains '/') and `pulumi:` builtins are
+///   returned unchanged.
+pub fn canonicalize_function_token(token: &str) -> String {
+    let parts: Vec<&str> = token.split(':').collect();
+
+    // Already canonical if module contains '/'
+    if parts.len() == 3 && parts[1].contains('/') {
+        return token.to_string();
+    }
+
+    // Don't expand built-in Pulumi tokens
+    if parts.first() == Some(&"pulumi") {
+        return token.to_string();
+    }
+
+    match parts.len() {
+        2 => format!("{}:index:{}", parts[0], parts[1]),
+        3 => {
+            let lower_camel = to_lower_camel(parts[2]);
+            format!("{}:{}/{}:{}", parts[0], parts[1], lower_camel, parts[2])
+        }
+        _ => token.to_string(),
+    }
+}
+
+/// Candidate expansions for a FUNCTION token, most-specific first. Used by
+/// schema-backed resolution to try every form a provider may register.
+pub fn expand_function_token(token: &str) -> Vec<String> {
+    let mut candidates = vec![token.to_string()];
+    let canonical = canonicalize_function_token(token);
+    if !candidates.contains(&canonical) {
+        candidates.push(canonical);
+    }
+    // The resource-style expansion last: some SDK-generated schemas key
+    // functions with the slashed form even for two-part shorthands.
+    let resource_style = canonicalize_type_token(token);
+    if !candidates.contains(&resource_style) {
+        candidates.push(resource_style);
+    }
+    candidates
+}
+
 /// Collapses a canonical type token to its shortest display form.
 ///
 /// This is a partial inverse of `canonicalize_type_token()`:
@@ -781,5 +835,42 @@ resources:
         assert_eq!(packages.len(), 1);
         assert_eq!(packages[0].name, "aws");
         assert_eq!(packages[0].version, "5.0.0");
+    }
+
+    #[test]
+    fn test_canonicalize_function_token_two_parts_uses_index_module() {
+        // The live regression: hand-written providers register invokes under
+        // the `index` module — `str:index:replace` — while the resource rule
+        // produced `str:index/replace:replace` ("Invoke … not found").
+        assert_eq!(canonicalize_function_token("str:replace"), "str:index:replace");
+        assert_eq!(canonicalize_function_token("std:join"), "std:index:join");
+    }
+
+    #[test]
+    fn test_canonicalize_function_token_three_parts_slashed_form() {
+        assert_eq!(
+            canonicalize_function_token("gcp:compute:getNetwork"),
+            "gcp:compute/getNetwork:getNetwork"
+        );
+    }
+
+    #[test]
+    fn test_canonicalize_function_token_passthrough() {
+        assert_eq!(
+            canonicalize_function_token("gcp:compute/getNetwork:getNetwork"),
+            "gcp:compute/getNetwork:getNetwork"
+        );
+        assert_eq!(
+            canonicalize_function_token("pulumi:pulumi:getStack"),
+            "pulumi:pulumi:getStack"
+        );
+    }
+
+    #[test]
+    fn test_expand_function_token_candidate_order() {
+        let cands = expand_function_token("str:replace");
+        assert_eq!(cands[0], "str:replace"); // verbatim first
+        assert_eq!(cands[1], "str:index:replace"); // function-canonical
+        assert!(cands.contains(&"str:index/replace:replace".to_string())); // schema fallback
     }
 }

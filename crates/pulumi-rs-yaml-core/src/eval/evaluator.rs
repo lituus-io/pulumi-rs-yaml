@@ -15,7 +15,7 @@ use crate::eval::config::{self, RawConfig};
 use crate::eval::graph::{collect_expr_deps, topological_levels, topological_sort_with_deps};
 use crate::eval::resource::{ResolvedResourceOptions, ResourceState};
 use crate::eval::value::{Archive, Asset, Value};
-use crate::packages::canonicalize_type_token;
+use crate::packages::{canonicalize_function_token, canonicalize_type_token};
 use crate::schema::SchemaStore;
 
 /// Trait for receiving progress events during evaluation.
@@ -1691,7 +1691,10 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
         };
 
         let raw_token = invoke.token.as_ref();
-        let canonical_token = canonicalize_type_token(raw_token);
+        // Function tokens canonicalize differently from resource tokens:
+        // `str:replace` must become `str:index:replace` (the form providers
+        // register), not the resource rule's `str:index/replace:replace`.
+        let canonical_token = canonicalize_function_token(raw_token);
         let token = canonical_token.as_str();
 
         // Call the callback

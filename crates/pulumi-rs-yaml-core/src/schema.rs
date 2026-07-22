@@ -228,14 +228,15 @@ impl SchemaStore {
             return Some(Cow::Borrowed(token));
         }
 
-        // 2. Try heuristic canonicalization
-        let canonical = crate::packages::canonicalize_type_token(token);
+        // 2. Try heuristic canonicalization (function rule first, then the
+        // resource-style form some SDK-generated schemas use)
+        let canonical = crate::packages::canonicalize_function_token(token);
         if self.lookup_function(&canonical).is_some() {
             return Some(Cow::Owned(canonical));
         }
 
         // 3. Try all expansions
-        let expansions = crate::packages::expand_type_token(token);
+        let expansions = crate::packages::expand_function_token(token);
         for candidate in expansions {
             if self.lookup_function(&candidate).is_some() {
                 return Some(Cow::Owned(candidate));

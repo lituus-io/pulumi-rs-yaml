@@ -9,7 +9,7 @@ use crate::ast::expr::Expr;
 use crate::ast::property::{PropertyAccess, PropertyAccessor};
 use crate::ast::template::*;
 use crate::diag::Diagnostics;
-use crate::packages::canonicalize_type_token;
+use crate::packages::{canonicalize_function_token, canonicalize_type_token};
 use crate::schema::{SchemaPropertyType, SchemaStore};
 
 /// Result of type checking a template.
@@ -265,7 +265,7 @@ impl TypeChecker<'_> {
             .schema_store
             .resolve_function_token(&invoke.token)
             .map(|c| c.into_owned())
-            .unwrap_or_else(|| canonicalize_type_token(&invoke.token));
+            .unwrap_or_else(|| canonicalize_function_token(&invoke.token));
 
         let func_info = match self.schema_store.lookup_function(&canonical) {
             Some(info) => info,
