@@ -608,7 +608,12 @@ impl TemplatePreprocessor for JinjaPreprocessor<'_> {
 }
 
 /// Quick check for Jinja syntax markers (no allocation).
-fn has_jinja_syntax(s: &str) -> bool {
+///
+/// Detects expressions (`{{ }}`), blocks (`{% %}`), and comments (`{# #}`).
+/// Pulumi YAML's own interpolation is `${...}`, so any of these markers is
+/// unambiguously jinjanator syntax that must be rendered before the file
+/// reaches the Pulumi CLI's YAML parser.
+pub fn has_jinja_syntax(s: &str) -> bool {
     s.contains("{{") || s.contains("{%") || s.contains("{#")
 }
 
@@ -1497,6 +1502,19 @@ mod tests {
     #[test]
     fn test_has_jinja_block_syntax_set_variable() {
         assert!(has_jinja_block_syntax("{% set x = 5 %}\nname: test\n"));
+    }
+
+    #[test]
+    fn test_has_jinja_syntax_detects_expressions_blocks_comments() {
+        // The render-before-gate trigger must fire for a Pulumi.yaml that
+        // uses ONLY {{ }} interpolation (no {% %} blocks) — otherwise raw
+        // Jinja reaches the Pulumi CLI's YAML parser and fails to unmarshal.
+        assert!(has_jinja_syntax("name: {{ project }}"));
+        assert!(has_jinja_syntax("{% set x = 5 %}\nname: test"));
+        assert!(has_jinja_syntax("{# comment #}\nname: test"));
+        // Pulumi's own ${...} interpolation is NOT Jinja.
+        assert!(!has_jinja_syntax("name: ${project}"));
+        assert!(!has_jinja_syntax("name: plain\nruntime: yaml"));
     }
 
     #[test]

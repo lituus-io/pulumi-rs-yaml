@@ -105,10 +105,13 @@ fn discover_project_files(py: Python<'_>, dir: &str) -> PyResult<Py<PyAny>> {
     Ok(dict.into_any().unbind())
 }
 
-/// Check if a YAML source contains any Jinja block syntax ({% %}), including inline.
+/// Check if a YAML source contains any Jinja syntax — expressions ({{ }}),
+/// blocks ({% %}), or comments ({# #}). This is the render-before-gate
+/// trigger: a Pulumi.yaml using only `{{ var }}` interpolation (no block
+/// tags) still requires rendering before the Pulumi CLI parses it.
 #[pyfunction]
 fn has_jinja_blocks(source: &str) -> bool {
-    pulumi_rs_yaml_core::jinja::has_any_jinja_block_syntax(source)
+    pulumi_rs_yaml_core::jinja::has_jinja_syntax(source)
 }
 
 /// Strip Jinja block lines from YAML source.

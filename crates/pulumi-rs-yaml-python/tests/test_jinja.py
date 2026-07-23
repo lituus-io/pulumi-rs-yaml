@@ -20,7 +20,10 @@ resources:
 """
         assert has_jinja_blocks(source) is True
 
-    def test_has_jinja_blocks_false_expression_only(self):
+    def test_has_jinja_blocks_true_expression_only(self):
+        # Expression-only templates ({{ }} with no {% %} blocks) are still
+        # Jinja and MUST be detected — otherwise a consumer's render-before-
+        # gate skips them and raw Jinja reaches the Pulumi YAML parser.
         source = """\
 resources:
   bucket:
@@ -28,10 +31,17 @@ resources:
     properties:
       name: "{{ pulumi_project }}-bucket"
 """
-        assert has_jinja_blocks(source) is False
+        assert has_jinja_blocks(source) is True
+
+    def test_has_jinja_blocks_true_comment_only(self):
+        assert has_jinja_blocks("{# note #}\nname: test\n") is True
 
     def test_has_jinja_blocks_false_plain(self):
         assert has_jinja_blocks("name: test\nruntime: yaml\n") is False
+
+    def test_has_jinja_blocks_false_pulumi_interpolation(self):
+        # Pulumi's own ${...} interpolation is not Jinja.
+        assert has_jinja_blocks("name: ${project}-bucket\n") is False
 
 
 class TestStripJinjaBlocks:
