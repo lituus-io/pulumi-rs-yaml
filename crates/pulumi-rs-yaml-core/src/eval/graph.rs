@@ -84,6 +84,12 @@ fn topological_sort_inner<'a>(
         }
     }
 
+    // Variables may SHADOW a config key (Go parity: `variables: project:
+    // ${project}` with `project` in config is accepted — the interpolation
+    // inside the shadowing variable's own definition resolves to the config
+    // value). Track which variables shadow config so their self-edge can be
+    // dropped from the dependency graph below.
+    let mut config_shadows: HashSet<&str> = HashSet::new();
     for entry in &template.variables {
         let key = entry.key.as_ref();
         if key == "pulumi" {
@@ -91,14 +97,18 @@ fn topological_sort_inner<'a>(
             continue;
         }
         if let Some(existing_kind) = names.insert(key, "variable") {
-            diags.error(
-                None,
-                format!(
-                    "duplicate node name \"{}\": already defined as {}",
-                    key, existing_kind
-                ),
-                "",
-            );
+            if existing_kind == "config" {
+                config_shadows.insert(key);
+            } else {
+                diags.error(
+                    None,
+                    format!(
+                        "duplicate node name \"{}\": already defined as {}",
+                        key, existing_kind
+                    ),
+                    "",
+                );
+            }
         }
     }
 
@@ -145,6 +155,11 @@ fn topological_sort_inner<'a>(
     for entry in &template.variables {
         let mut node_deps = HashSet::new();
         walk_expr(&entry.value, &dep_collector, &mut node_deps);
+        // A config-shadowing variable's reference to its own name means the
+        // CONFIG value (Go parity) — never a self-cycle.
+        if config_shadows.contains(entry.key.as_ref()) {
+            node_deps.remove(entry.key.as_ref());
+        }
         deps.insert(entry.key.as_ref(), node_deps);
     }
 

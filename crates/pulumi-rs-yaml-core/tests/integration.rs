@@ -4959,6 +4959,10 @@ resources:
 
 #[test]
 fn test_conflict_config_and_variable() {
+    // Go parity: a variable may SHADOW a config key — accepted, and CONFIG
+    // wins for downstream ${key} references (verified against the Go host:
+    // out == "cfg-val"). See test_variable_shadowing_config_key_is_go_compatible
+    // for the ${self}-resolves-to-config semantics.
     let source = r#"
 runtime: yaml
 config:
@@ -4967,18 +4971,23 @@ config:
     default: cfg-val
 variables:
   foo: var-val
+outputs:
+  out: ${foo}
 "#;
     let mock = MockCallback::new();
     let (eval, has_errors) = eval_with_mock(source, mock);
     assert!(
-        has_errors,
-        "config and variable with same name should produce error"
+        !has_errors,
+        "config/variable shadowing is accepted (Go parity): {}",
+        eval.diags_display()
     );
-    let diag_text = eval.diags_display();
-    assert!(
-        diag_text.contains("duplicate") || diag_text.contains("already defined"),
-        "error should mention duplicate: {}",
-        diag_text
+    assert_eq!(
+        format!("{:?}", eval.get_output("out")),
+        format!(
+            "{:?}",
+            Some(Value::String(std::borrow::Cow::Borrowed("cfg-val")))
+        ),
+        "config wins downstream (Go parity)"
     );
 }
 
@@ -5848,4 +5857,41 @@ resources:
     // Exactly ONE register call reached the dead monitor; the rest
     // short-circuited instead of hanging.
     assert_eq!(eval.callback().calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_variable_shadowing_config_key_is_go_compatible() {
+    // Go parity (live pattern in bi-aia-b2b-ext): a variable may shadow a
+    // config key — `variables: project: ${project}` with `project` declared
+    // in config. The interpolation inside the shadowing variable resolves to
+    // the CONFIG value (no self-cycle), and downstream references evaluate.
+    // The Go language host accepts this; rs-yaml errored with
+    // `duplicate node name "project": already defined as config`.
+    let source = r#"
+name: test
+runtime: yaml
+config:
+  project:
+    type: string
+variables:
+  project: ${project}
+  derived: pfx-${project}
+outputs:
+  out: ${derived}
+"#;
+    let mut cfg = HashMap::new();
+    cfg.insert("test:project".to_string(), "my-proj".to_string());
+    let (eval, has_errors) = eval_with_mock_and_config(source, MockCallback::new(), cfg, &[]);
+    assert!(
+        !has_errors,
+        "shadowing must not error: {}",
+        eval.diags_display()
+    );
+    assert_eq!(
+        format!("{:?}", eval.get_output("out")),
+        format!(
+            "{:?}",
+            Some(Value::String(std::borrow::Cow::Borrowed("pfx-my-proj")))
+        ),
+    );
 }
