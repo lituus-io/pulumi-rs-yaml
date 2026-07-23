@@ -842,7 +842,10 @@ resources:
         // The live regression: hand-written providers register invokes under
         // the `index` module — `str:index:replace` — while the resource rule
         // produced `str:index/replace:replace` ("Invoke … not found").
-        assert_eq!(canonicalize_function_token("str:replace"), "str:index:replace");
+        assert_eq!(
+            canonicalize_function_token("str:replace"),
+            "str:index:replace"
+        );
         assert_eq!(canonicalize_function_token("std:join"), "std:index:join");
     }
 

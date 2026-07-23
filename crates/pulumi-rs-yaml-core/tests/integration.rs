@@ -5679,3 +5679,71 @@ resources:
         assert_eq!(eval.callback().registrations().len(), 4);
     }
 }
+
+#[test]
+fn test_component_resource_registers_as_remote_with_schema_token() {
+    // Live bug: a `packages:`-provided component (schema token
+    // `gcpcomponents:index:DbtCloudRunJob`, isComponent: true) was
+    // heuristically canonicalized to the resource form
+    // `gcpcomponents:index/dbtCloudRunJob:DbtCloudRunJob`, missing the
+    // schema lookup — so it registered as custom (remote=false) and the
+    // engine drove Check/Diff on the component provider (UNIMPLEMENTED)
+    // instead of Construct.
+    let schema_json = r#"{
+        "name": "gcpcomponents",
+        "version": "0.0.1",
+        "resources": {
+            "gcpcomponents:index:DbtCloudRunJob": {
+                "isComponent": true,
+                "inputProperties": {"name": {"type": "string"}},
+                "properties": {}
+            }
+        }
+    }"#;
+    let mut store = pulumi_rs_yaml_core::schema::SchemaStore::new();
+    pulumi_rs_yaml_core::schema::process_schema_response(
+        &mut store,
+        "gcpcomponents",
+        schema_json.as_bytes(),
+    )
+    .expect("schema parses");
+    let store: &'static _ = Box::leak(Box::new(store));
+
+    let source = r#"
+name: test
+runtime: yaml
+resources:
+  probe_job:
+    type: gcpcomponents:index:DbtCloudRunJob
+    properties:
+      name: diag-probe
+"#;
+    let (template, parse_diags) = parse_template(source, None);
+    assert!(!parse_diags.has_errors(), "parse errors: {}", parse_diags);
+    let template: &'static _ = Box::leak(Box::new(template));
+
+    let mock = MockCallback::new();
+    let registrations = mock.registrations.clone();
+    let mut eval = Evaluator::with_callback(
+        "test".to_string(),
+        "dev".to_string(),
+        "/tmp".to_string(),
+        false,
+        mock,
+    );
+    eval.schema_store = Some(store);
+    eval.evaluate_template(template, &HashMap::new(), &[]);
+    assert!(!eval.has_errors());
+
+    let regs = registrations.lock().unwrap();
+    let reg = regs
+        .iter()
+        .find(|r| r.name == "probe_job")
+        .expect("component registered");
+    assert_eq!(
+        reg.type_token, "gcpcomponents:index:DbtCloudRunJob",
+        "schema token form must be preserved for components"
+    );
+    assert!(reg.remote, "component must register as remote");
+    assert!(!reg.custom, "component must not register as custom");
+}

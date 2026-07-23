@@ -124,20 +124,12 @@ pub async fn run(
     let lock_packages = packages::search_package_decls(Path::new(program_directory));
     let referenced_pkgs = packages::get_referenced_packages(template, &lock_packages);
 
-    // 6. Load schemas from provider packages (if loader_target is available)
-    let schema_store = if let Some(addr) = loader_target {
-        match SchemaLoader::connect(addr).await {
-            Ok(loader) => Some(loader.fetch_and_build_store(&referenced_pkgs)),
-            Err(e) => {
-                eprintln!("warning: schema loader: {}", e);
-                None
-            }
-        }
-    } else {
-        None
-    };
-
-    // 7. Register packages and collect package refs
+    // 6. Register packages and collect package refs — BEFORE schema loading:
+    //    a git-sourced package (`packages:` entry) is only properly
+    //    materialized/parameterized by the engine once registered; a loader
+    //    GetSchema issued first can hit an unprimed plugin instance and get
+    //    an empty schema back (observed with component packages, which then
+    //    misregister as custom resources).
     //    Only attempt if the engine supports the packageRegistry feature
     //    (matches Go pulumi-yaml behavior via SupportsFeature check).
     let mut package_refs = HashMap::new();
@@ -165,6 +157,19 @@ pub async fn run(
             }
         }
     }
+
+    // 7. Load schemas from provider packages (if loader_target is available)
+    let schema_store = if let Some(addr) = loader_target {
+        match SchemaLoader::connect(addr).await {
+            Ok(loader) => Some(loader.fetch_and_build_store(&referenced_pkgs)),
+            Err(e) => {
+                eprintln!("warning: schema loader: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     // 8. Create evaluator
     let mut eval = Evaluator::with_callback(

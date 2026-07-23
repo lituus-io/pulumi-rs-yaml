@@ -624,9 +624,20 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
             },
         };
 
-        // Determine resource characteristics
+        // Determine resource characteristics.
+        // Schema-aware resolution first: the schema's own token is
+        // authoritative — component resources keep their component form
+        // (`pkg:index:Type`), which the heuristic resource-form rewrite
+        // (`pkg:index/type:Type`) would miss, misregistering the component
+        // as a custom resource (the engine then drives the Check/Diff
+        // lifecycle instead of Construct).
         let raw_type_token = resource.type_.as_ref();
-        let canonical_type = canonicalize_type_token(raw_type_token);
+        let canonical_type = self
+            .schema_store
+            .as_ref()
+            .and_then(|s| s.resolve_resource_token(raw_type_token))
+            .map(|c| c.into_owned())
+            .unwrap_or_else(|| canonicalize_type_token(raw_type_token));
         let type_token = canonical_type.as_str();
 
         // Token blocklist: block known-unsupported resource types (Go: packages.go:270-324)

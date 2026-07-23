@@ -50,6 +50,13 @@ impl SchemaLoader {
             match result {
                 Ok(resp) => {
                     let schema_bytes = resp.into_inner().schema;
+                    if schema_bytes.is_empty() {
+                        // An unprimed plugin can answer with an empty schema
+                        // instead of an error; storing nothing silently would
+                        // downgrade its components to custom resources later.
+                        eprintln!("warning: empty schema for package {} — skipped", pkg.name);
+                        continue;
+                    }
                     if let Err(e) =
                         schema::process_schema_response(&mut store, &pkg.name, &schema_bytes)
                     {
