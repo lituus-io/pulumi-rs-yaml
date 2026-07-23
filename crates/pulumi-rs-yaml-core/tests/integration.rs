@@ -5747,3 +5747,105 @@ resources:
     assert!(reg.remote, "component must register as remote");
     assert!(!reg.custom, "component must not register as custom");
 }
+
+#[test]
+fn test_monitor_shutdown_aborts_remaining_registrations() {
+    // Live bug: after a failed component Construct the engine reported
+    // "resource monitor shut down"; subsequent RegisterResource calls hung
+    // on the dead endpoint with no deadline and the build sat for 45+
+    // minutes. A terminal monitor failure must poison the failed resource
+    // and short-circuit every remaining registration.
+    use pulumi_rs_yaml_core::eval::callback::{InvokeResponse, RegisterResponse, ResourceCallback};
+    use pulumi_rs_yaml_core::eval::context::EngineError as CoreEngineError;
+    use pulumi_rs_yaml_core::eval::resource::ResolvedResourceOptions;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    struct DeadMonitorCallback {
+        calls: AtomicU32,
+    }
+
+    impl ResourceCallback for DeadMonitorCallback {
+        fn register_resource(
+            &self,
+            _type_token: &str,
+            _name: &str,
+            _custom: bool,
+            _remote: bool,
+            _inputs: HashMap<String, Value<'static>>,
+            _options: ResolvedResourceOptions,
+        ) -> Result<RegisterResponse, CoreEngineError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Err(CoreEngineError::Grpc(
+                "register failed: status: Unknown, message: \"resource monitor shut down\""
+                    .to_string(),
+            ))
+        }
+
+        fn read_resource(
+            &self,
+            _type_token: &str,
+            _name: &str,
+            _id: &str,
+            _parent_urn: &str,
+            _inputs: HashMap<String, Value<'static>>,
+            _provider_ref: &str,
+            _version: &str,
+        ) -> Result<RegisterResponse, CoreEngineError> {
+            unreachable!()
+        }
+
+        fn invoke(
+            &self,
+            _token: &str,
+            _args: HashMap<String, Value<'static>>,
+            _provider: &str,
+            _version: &str,
+            _parent: &str,
+            _depends_on: &[String],
+        ) -> Result<InvokeResponse, CoreEngineError> {
+            unreachable!()
+        }
+
+        fn register_outputs(
+            &self,
+            _urn: &str,
+            _outputs: HashMap<String, Value<'static>>,
+        ) -> Result<(), CoreEngineError> {
+            Ok(())
+        }
+
+        fn log(&self, _severity: i32, _message: &str) {}
+    }
+
+    let source = r#"
+name: test
+runtime: yaml
+resources:
+  first:
+    type: aws:s3:Bucket
+  second:
+    type: aws:s3:Bucket
+  third:
+    type: aws:s3:Bucket
+"#;
+    let (template, parse_diags) = parse_template(source, None);
+    assert!(!parse_diags.has_errors());
+    let template: &'static _ = Box::leak(Box::new(template));
+
+    let cb = DeadMonitorCallback {
+        calls: AtomicU32::new(0),
+    };
+    let eval = Evaluator::with_callback(
+        "test".to_string(),
+        "dev".to_string(),
+        "/tmp".to_string(),
+        false,
+        cb,
+    );
+    eval.evaluate_template(template, &HashMap::new(), &[]);
+
+    assert!(eval.has_errors());
+    // Exactly ONE register call reached the dead monitor; the rest
+    // short-circuited instead of hanging.
+    assert_eq!(eval.callback().calls.load(Ordering::SeqCst), 1);
+}

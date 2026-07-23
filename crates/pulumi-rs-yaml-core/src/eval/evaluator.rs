@@ -68,6 +68,10 @@ pub struct EvalState {
     pub stack_ref_cache: Mutex<HashMap<String, crate::eval::callback::RegisterResponse>>,
     /// Compiled Starlark runtime (None if no starlark functions defined).
     pub starlark_runtime: RwLock<Option<crate::eval::starlark_runtime::StarlarkRuntime>>,
+    /// Terminal-failure latch: set when the engine reports the resource
+    /// monitor has shut down. Further engine calls would hang on a dead
+    /// endpoint (no deadline), so evaluation short-circuits instead.
+    pub aborted: std::sync::atomic::AtomicBool,
 }
 
 // Compile-time assertion that EvalState is Send + Sync.
@@ -93,6 +97,7 @@ impl EvalState {
             default_providers: Mutex::new(HashMap::new()),
             stack_ref_cache: Mutex::new(HashMap::new()),
             starlark_runtime: RwLock::new(None),
+            aborted: std::sync::atomic::AtomicBool::new(false),
         }
     }
 }
@@ -567,6 +572,23 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
         let logical_name = entry.logical_name.as_ref();
         let resource = &entry.resource;
 
+        // Terminal-failure short-circuit: once the resource monitor has shut
+        // down, any further engine call hangs on the dead endpoint (observed
+        // live: a failed component Construct wedged the remaining
+        // registrations for 45+ minutes). Poison and bail instead.
+        if self
+            .state
+            .aborted
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            self.state
+                .poisoned
+                .write()
+                .unwrap()
+                .insert(logical_name.to_string());
+            return;
+        }
+
         // Use explicit name if set, otherwise fall back to logical key (Go compat)
         let resource_name = resource.name.as_deref().unwrap_or(logical_name);
 
@@ -892,6 +914,11 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
                         format!("failed to read resource '{}': {}", logical_name, e),
                         "",
                     );
+                    self.state
+                        .poisoned
+                        .write()
+                        .unwrap()
+                        .insert(logical_name.to_string());
                 }
             }
             return;
@@ -929,11 +956,29 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
                 );
             }
             Err(e) => {
+                let msg = e.to_string();
                 self.state.diags.lock().unwrap().error(
                     None,
-                    format!("failed to register resource '{}': {}", logical_name, e),
+                    format!("failed to register resource '{}': {}", logical_name, msg),
                     "",
                 );
+                // Poison so dependents fail fast instead of dereferencing a
+                // resource that never materialized.
+                self.state
+                    .poisoned
+                    .write()
+                    .unwrap()
+                    .insert(logical_name.to_string());
+                // The engine's terminal signal: nothing can register after
+                // this — latch the abort so remaining entries short-circuit.
+                if msg.contains("resource monitor shut down")
+                    || msg.contains("transport error")
+                    || msg.contains("connection refused")
+                {
+                    self.state
+                        .aborted
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
+                }
             }
         }
     }
