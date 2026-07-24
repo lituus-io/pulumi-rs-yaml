@@ -1903,3 +1903,139 @@ resources:
         result
     );
 }
+
+// ============================================================================
+// SECURITY: template-loader path containment (LFI / secret exfiltration)
+// ============================================================================
+
+#[cfg(test)]
+mod loader_security {
+    use super::*;
+
+    fn render_in(
+        project: &std::path::Path,
+        root: &std::path::Path,
+        src: &str,
+    ) -> Result<String, String> {
+        let config = HashMap::new();
+        let pd = project.to_str().unwrap();
+        let rd = root.to_str().unwrap();
+        let ctx = JinjaContext {
+            project_name: "p",
+            stack_name: "dev",
+            cwd: pd,
+            organization: "o",
+            root_directory: rd,
+            config: &config,
+            project_dir: pd,
+            undefined: UndefinedMode::Strict,
+            extra: &EMPTY_EXTRA,
+        };
+        let pre = JinjaPreprocessor::new(&ctx);
+        pre.preprocess(src, "Pulumi.yaml")
+            .map(|c| c.into_owned())
+            .map_err(|e| format!("{:?}", e))
+    }
+
+    fn scratch(tag: &str) -> std::path::PathBuf {
+        // Unique per-process, per-tag; canonicalized so containment compares
+        // against the real (symlink-resolved) temp root on macOS (/private/…).
+        let d = std::env::temp_dir().join(format!("rsyaml_sec_{}_{}", tag, std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d.canonicalize().unwrap()
+    }
+
+    #[test]
+    fn include_traversal_outside_root_is_blocked() {
+        let base = scratch("incl");
+        let project = base.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(base.join("secret.yaml"), "SECRET_XYZ\n").unwrap();
+        let src = "name: {% include '../secret.yaml' %}\nruntime: yaml\n";
+        let out = render_in(&project, &project, src);
+        // Must NOT leak the out-of-tree secret — either an error, or a render
+        // that doesn't contain it.
+        if let Ok(r) = &out {
+            assert!(
+                !r.contains("SECRET_XYZ"),
+                "LFI: out-of-tree file leaked: {r}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn deep_traversal_to_etc_is_blocked() {
+        let base = scratch("deep");
+        let project = base.join("a").join("b");
+        std::fs::create_dir_all(&project).unwrap();
+        // A real, readable yaml far outside the tree would be /etc-like; use a
+        // planted one at filesystem-ish depth to prove '..' chains can't escape.
+        std::fs::write(base.join("outside.yaml"), "OUTSIDE_SECRET\n").unwrap();
+        let src = "x: {% include '../../outside.yaml' %}\n";
+        let out = render_in(&project, &project, src);
+        if let Ok(r) = &out {
+            assert!(!r.contains("OUTSIDE_SECRET"), "traversal escaped: {r}");
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn symlink_escape_is_blocked() {
+        let base = scratch("sym");
+        let project = base.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(base.join("secret.yaml"), "SYMLINK_SECRET\n").unwrap();
+        // A symlink INSIDE the project pointing OUTSIDE it — canonicalize()
+        // resolves it, so containment must still reject.
+        #[cfg(unix)]
+        {
+            let link = project.join("link.yaml");
+            let _ = std::os::unix::fs::symlink(base.join("secret.yaml"), &link);
+            let src = "x: {% include 'link.yaml' %}\n";
+            let out = render_in(&project, &project, src);
+            if let Ok(r) = &out {
+                assert!(!r.contains("SYMLINK_SECRET"), "symlink escaped: {r}");
+            }
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn absolute_path_import_is_rejected() {
+        let base = scratch("abs");
+        let project = base.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(base.join("secret.yaml"), "ABS_SECRET\n").unwrap();
+        let abs = base.join("secret.yaml");
+        let src = format!("x: {{% include '{}' %}}\n", abs.display());
+        let out = render_in(&project, &project, &src);
+        if let Ok(r) = &out {
+            assert!(!r.contains("ABS_SECRET"), "absolute path read: {r}");
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn legitimate_in_tree_import_still_works() {
+        // The agent-q pattern: a shared environment.j2 at the project root,
+        // imported from a nested stack via '../'. Must STILL resolve.
+        let base = scratch("ok");
+        let child = base.join("storage");
+        std::fs::create_dir_all(&child).unwrap();
+        std::fs::write(
+            base.join("environment.j2"),
+            "{% set location = \"northamerica-northeast1\" %}",
+        )
+        .unwrap();
+        let src = "{% import '../environment.j2' as e %}location: {{ e.location }}\n";
+        // project_dir = child, root_directory = base (as BLI passes it).
+        let out = render_in(&child, &base, src).expect("legit import must render");
+        assert!(
+            out.contains("northamerica-northeast1"),
+            "in-tree import broke: {out}"
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+}

@@ -8,7 +8,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 // ---------------------------------------------------------------------------
@@ -958,6 +958,28 @@ fn register_template_loader(
     } else {
         root_directory.to_string()
     };
+    // Canonicalize the containment roots ONCE. A resolved template must stay
+    // within one of these after its own symlinks are resolved — otherwise a
+    // template controlled by an untrusted author (e.g. a PR's Pulumi.yaml)
+    // could `{% include '../../../secret.yaml' %}` to read and inline any
+    // yaml/j2 file on the host (LFI / secret exfiltration). SECURITY-CRITICAL.
+    let allowed_roots: Vec<PathBuf> = [base_dir.as_str(), root_dir.as_str()]
+        .iter()
+        .filter_map(|d| Path::new(d).canonicalize().ok())
+        .collect();
+
+    // Read a candidate only if it canonicalizes to a path CONTAINED in an
+    // allowed root. canonicalize() resolves `..` and symlinks first, so an
+    // escaping traversal or a symlink pointing outside the tree is rejected.
+    let read_if_contained = move |candidate: PathBuf| -> Option<String> {
+        let canonical = candidate.canonicalize().ok()?;
+        let contained = allowed_roots.iter().any(|root| canonical.starts_with(root));
+        if !contained {
+            return None;
+        }
+        std::fs::read_to_string(&canonical).ok()
+    };
+
     env.set_loader(move |name: &str| {
         // Only allow template-like extensions
         let allowed_extensions = [".j2", ".jinja", ".jinja2", ".yaml", ".yml"];
@@ -970,38 +992,29 @@ fn register_template_loader(
             return Ok(None);
         }
 
-        // Try relative to project_dir first (handles local and .. paths)
-        let resolved = Path::new(&base_dir).join(name);
-        if let Ok(canonical) = resolved.canonicalize() {
-            if let Ok(content) = std::fs::read_to_string(&canonical) {
+        // Try relative to project_dir first (handles local and .. paths that
+        // stay inside the tree, e.g. '../environment.j2' at the repo root).
+        if let Some(content) = read_if_contained(Path::new(&base_dir).join(name)) {
+            return Ok(Some(content));
+        }
+
+        // Fall back to root_directory (shared templates at repo root).
+        if root_dir != base_dir {
+            if let Some(content) = read_if_contained(Path::new(&root_dir).join(name)) {
                 return Ok(Some(content));
             }
         }
 
-        // Fall back to root_directory (handles shared templates at repo root)
-        if root_dir != base_dir {
-            let resolved = Path::new(&root_dir).join(name);
-            if let Ok(canonical) = resolved.canonicalize() {
-                if let Ok(content) = std::fs::read_to_string(&canonical) {
-                    return Ok(Some(content));
-                }
-            }
-        }
-
-        // Also try the template name stripped of leading ../ against root_directory.
-        // This handles the pattern where '../environment.j2' from a subdirectory
-        // should find 'environment.j2' at the project root.
+        // Also try the name stripped of leading ../ against root_directory —
+        // '../environment.j2' from a subdir resolving to the project root.
         let stripped = name.trim_start_matches("../").trim_start_matches("..\\");
         if stripped != name {
-            let resolved = Path::new(&root_dir).join(stripped);
-            if let Ok(canonical) = resolved.canonicalize() {
-                if let Ok(content) = std::fs::read_to_string(&canonical) {
-                    return Ok(Some(content));
-                }
+            if let Some(content) = read_if_contained(Path::new(&root_dir).join(stripped)) {
+                return Ok(Some(content));
             }
         }
 
-        Ok(None) // not found → let minijinja report the error
+        Ok(None) // not found (or escaped containment) → minijinja errors
     });
 }
 

@@ -932,3 +932,24 @@ resources:
         );
     }
 }
+
+// ============================================================================
+// SECURITY: v0.5.8–v0.5.11 code paths (this release line)
+// ============================================================================
+
+mod release_line_security {
+    use pulumi_rs_yaml_core::jinja::has_jinja_syntax;
+
+    /// The render-before-gate trigger must fire for EVERY Jinja marker
+    /// ({{ }}, {% %}, {# #}). A miss means a consumer skips rendering and
+    /// raw Jinja reaches the downstream parser — the class of bug fixed in
+    /// v0.5.11. Pulumi's own ${...} must NOT be treated as Jinja.
+    #[test]
+    fn jinja_detection_covers_all_markers() {
+        assert!(has_jinja_syntax("a {{ x }}"));
+        assert!(has_jinja_syntax("a {% if x %}y{% endif %}"));
+        assert!(has_jinja_syntax("a {# c #}"));
+        assert!(!has_jinja_syntax("a ${x}"));
+        assert!(!has_jinja_syntax("plain: yaml"));
+    }
+}
