@@ -1,0 +1,5 @@
+name: {{ app_name }}
+env: {% if enabled == 'true' %}prod{% endif %}
+app_name=demo
+enabled=true
+pulumi_project=override-attempt

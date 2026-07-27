@@ -33,6 +33,8 @@ jobs:
           - fuzz_converter
           - fuzz_yaml_bomb
           - fuzz_extra_context
+          - fuzz_starlark
+          - fuzz_parallel_eval
     steps:
       - uses: actions/checkout@v4
 

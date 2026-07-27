@@ -32,10 +32,11 @@ fuzz_target!(|data: &[u8]| {
     if pulumi_rs_yaml_core::jinja::has_jinja_block_syntax(input) {
         let stripped = pulumi_rs_yaml_core::jinja::strip_jinja_blocks(input);
 
-        // Stripped output should not contain block-level Jinja
+        // Stripped output must no longer be detected as containing
+        // standalone block-level Jinja
         assert!(
-            !stripped.contains("{% ") || stripped.contains("{%"),
-            "strip_jinja_blocks should remove block-level syntax"
+            !pulumi_rs_yaml_core::jinja::has_jinja_block_syntax(&stripped),
+            "strip_jinja_blocks must remove all standalone block-level syntax"
         );
     }
 
