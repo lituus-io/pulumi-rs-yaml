@@ -17,6 +17,7 @@ env:
 jobs:
   benchmark:
     name: Run Benchmarks
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,3 +39,73 @@ jobs:
           path: |
             bench-output.txt
             target/criterion/
+
+  benchmark-regression:
+    name: Benchmark Regression Check
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bench
+
+      - name: Install critcmp
+        run: cargo install critcmp --locked
+
+      - name: Benchmark merge-base (baseline)
+        run: |
+          git checkout "$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
+          cargo bench --workspace -- --save-baseline base
+
+      - name: Benchmark PR head
+        run: |
+          git checkout ${{ github.sha }}
+          cargo bench --workspace -- --save-baseline head
+
+      # Fail if any benchmark regressed beyond the noise threshold (25%).
+      # Same-runner back-to-back runs keep hardware variance low, but shared
+      # runners are still noisy — the threshold is deliberately generous.
+      - name: Compare against baseline
+        run: |
+          critcmp base head | tee critcmp.txt
+          python3 - <<'EOF'
+          import json, subprocess, sys
+
+          export = subprocess.run(
+              ["critcmp", "--export", "base"], capture_output=True, text=True, check=True
+          )
+          base = {
+              name: bench["criterion_estimates_v1"]["mean"]["point_estimate"]
+              for name, bench in json.loads(export.stdout)["benchmarks"].items()
+          }
+          export = subprocess.run(
+              ["critcmp", "--export", "head"], capture_output=True, text=True, check=True
+          )
+          head = {
+              name: bench["criterion_estimates_v1"]["mean"]["point_estimate"]
+              for name, bench in json.loads(export.stdout)["benchmarks"].items()
+          }
+
+          THRESHOLD = 1.25
+          regressions = []
+          for name, base_mean in base.items():
+              head_mean = head.get(name)
+              if head_mean is not None and head_mean > base_mean * THRESHOLD:
+                  regressions.append(
+                      f"{name}: {base_mean:.0f}ns -> {head_mean:.0f}ns "
+                      f"({head_mean / base_mean:.2f}x)"
+                  )
+
+          if regressions:
+              print("benchmark regressions beyond 25% threshold:")
+              print("\n".join(regressions))
+              sys.exit(1)
+          print(f"no regressions beyond 25% across {len(base)} benchmarks")
+          EOF
