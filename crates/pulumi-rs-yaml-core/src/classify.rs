@@ -1,7 +1,12 @@
 //! Error classification for structured diagnostic reporting.
 //!
-//! Classifies diagnostics into machine-readable categories by inspecting
-//! the existing structured data (not regex on message text).
+//! Classifies diagnostics into machine-readable categories by substring
+//! matching on lowercased diagnostic summaries, then extracting structured
+//! extras (bad_ref, best_match, cycle_path) from the matched text.
+//!
+//! Caveat: because matching is text-based, rewording a diagnostic message
+//! elsewhere in the crate can silently change its category to `Unknown` —
+//! keep the phrases matched below in sync with the emitting sites.
 
 /// Machine-readable error categories.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

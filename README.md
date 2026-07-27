@@ -58,7 +58,7 @@ cd fuzz
 cargo +nightly fuzz run fuzz_yaml_parser -- -max_total_time=60
 ```
 
-Targets: `fuzz_yaml_parser`, `fuzz_interpolation`, `fuzz_jinja`, `fuzz_builtins`, `fuzz_converter`, `fuzz_yaml_bomb`.
+Targets: `fuzz_yaml_parser`, `fuzz_interpolation`, `fuzz_jinja`, `fuzz_builtins`, `fuzz_converter`, `fuzz_yaml_bomb`, `fuzz_extra_context`, `fuzz_starlark`, `fuzz_parallel_eval`.
 
 ## Security
 
