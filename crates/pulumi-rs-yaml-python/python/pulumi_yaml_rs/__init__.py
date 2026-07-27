@@ -8,6 +8,10 @@ from pulumi_yaml_rs._native import (
     preprocess_jinja,
     evaluate_builtin,
     create_execution_plan,
+    validate_and_classify,
+    type_check_project,
+    complete_properties,
+    get_resource_schema,
 )
 from pulumi_yaml_rs._find_binary import find_language_binary, find_converter_binary
 
@@ -21,6 +25,10 @@ __all__ = [
     "preprocess_jinja",
     "evaluate_builtin",
     "create_execution_plan",
+    "validate_and_classify",
+    "type_check_project",
+    "complete_properties",
+    "get_resource_schema",
     "find_language_binary",
     "find_converter_binary",
 ]
