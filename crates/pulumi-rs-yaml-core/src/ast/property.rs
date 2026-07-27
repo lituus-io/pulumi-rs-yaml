@@ -23,10 +23,13 @@ pub enum PropertyAccessor<'src> {
 impl PropertyAccess<'_> {
     /// Returns the root name of the access chain.
     pub fn root_name(&self) -> Result<&str, &'static str> {
-        match &self.accessors[0] {
-            PropertyAccessor::Name(n) => Ok(n.as_ref()),
-            PropertyAccessor::StringSubscript(n) => Ok(n.as_ref()),
-            PropertyAccessor::IntSubscript(_) => Err("root cannot be integer subscript"),
+        // An empty interpolation (`${}`) parses to zero accessors — indexing
+        // would panic here mid-evaluation.
+        match self.accessors.first() {
+            Some(PropertyAccessor::Name(n)) => Ok(n.as_ref()),
+            Some(PropertyAccessor::StringSubscript(n)) => Ok(n.as_ref()),
+            Some(PropertyAccessor::IntSubscript(_)) => Err("root cannot be integer subscript"),
+            None => Err("empty property access"),
         }
     }
 }
@@ -174,6 +177,12 @@ mod tests {
         let (rest, access) = parse_property_access(input, None, &mut diags);
         assert!(!diags.has_errors(), "unexpected errors: {}", diags);
         (rest.to_string(), access.unwrap())
+    }
+
+    #[test]
+    fn test_empty_access_root_name_errors() {
+        let access = PropertyAccess { accessors: vec![] };
+        assert_eq!(access.root_name(), Err("empty property access"));
     }
 
     #[test]
