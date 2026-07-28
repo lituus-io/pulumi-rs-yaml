@@ -8,6 +8,7 @@ pub mod jinja;
 pub mod multi_file;
 pub mod packages;
 pub mod pcl_gen;
+pub mod resource_graph;
 pub mod schema;
 pub mod source;
 pub mod syntax;
