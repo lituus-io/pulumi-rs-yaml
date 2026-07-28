@@ -97,10 +97,16 @@ jobs:
       - name: Package binaries (Windows ARM cross)
         if: matrix.name == 'windows-arm64'
         run: |
+          set -euo pipefail
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/pulumi-language-yaml.exe dist/ || true
-          cp target/${{ matrix.target }}/release/pulumi-converter-yaml.exe dist/ || true
-          cd dist && zip ../pulumi-yaml-${{ matrix.name }}.zip * || tar czf ../pulumi-yaml-${{ matrix.name }}.tar.gz *
+          for bin in pulumi-language-yaml pulumi-converter-yaml; do
+            test -f "target/${{ matrix.target }}/release/${bin}.exe" || {
+              echo "error: missing ${bin}.exe for ${{ matrix.target }}" >&2
+              exit 1
+            }
+            cp "target/${{ matrix.target }}/release/${bin}.exe" dist/
+          done
+          cd dist && zip ../pulumi-yaml-${{ matrix.name }}.zip ./*
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

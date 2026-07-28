@@ -16,11 +16,11 @@ Do **not** open public issues for security vulnerabilities.
 ### Static analysis
 
 - **Clippy** runs with `-D warnings` on every push/PR.
-- Security-focused Clippy lints (`unwrap_used`, `expect_used`, `panic`) run in the security workflow.
+- Security-focused Clippy lints (`unwrap_used`, `expect_used`, `panic`) run in the security workflow as advisory warnings (`-W`); they surface findings but do not fail the build.
 
 ### Fuzz testing
 
-Six fuzz targets cover the attack surface:
+Nine fuzz targets cover the attack surface:
 
 | Target | Coverage |
 |--------|----------|
@@ -30,6 +30,9 @@ Six fuzz targets cover the attack surface:
 | `fuzz_builtins` | Built-in function evaluation (fn::select, fn::join, etc.) |
 | `fuzz_converter` | YAML-to-PCL converter |
 | `fuzz_yaml_bomb` | Exponential expansion / billion laughs detection |
+| `fuzz_extra_context` | Jinja extra context vars and builtin-override protection |
+| `fuzz_starlark` | Starlark compilation and `fn::starlark` evaluation |
+| `fuzz_parallel_eval` | Parallel vs. sequential evaluator differential testing |
 
 Fuzz tests run weekly in CI and can be triggered manually.
 

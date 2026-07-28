@@ -77,6 +77,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
 
+  msrv:
+    name: MSRV (1.85)
+    runs-on: ubuntu-latest
+    needs: fmt
+    steps:
+      - uses: actions/checkout@v4
+      # dtolnay/rust-toolchain exports RUSTUP_TOOLCHAIN, which overrides the
+      # rust-toolchain.toml pin — so the pinned MSRV must be requested here
+      # explicitly or it is never exercised in CI.
+      - uses: dtolnay/rust-toolchain@1.85
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --all-targets
+
   python-test:
     name: Python Tests
     runs-on: ubuntu-latest
