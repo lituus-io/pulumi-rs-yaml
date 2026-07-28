@@ -177,7 +177,7 @@ contract runtime hooks can publish to post-deploy.
 CREATE TABLE IF NOT EXISTS infra.lineage_nodes (
   id STRING NOT NULL,
   kind STRING, name STRING,
-  bq_project STRING, dataset STRING, table STRING, column STRING,
+  bq_project STRING, dataset STRING, `table` STRING, `column` STRING,
   data_type STRING, mode STRING, description STRING,
   defined_by_urn STRING, source_file STRING,
   organization STRING, project STRING, stack STRING,
@@ -241,9 +241,8 @@ CREATE PROPERTY GRAPH infra.FullGraph
 ```sql
 -- Cross-stack column lineage: everything a column ultimately derives from.
 GRAPH infra.FullGraph
-MATCH (c:DataObject)-[f:flows]->{1,6}(src:DataObject)
+MATCH (c:DataObject)-[f:flows WHERE f.relationship = 'column_derives_from']->{1,6}(src:DataObject)
 WHERE c.id = 'bq://data-proj/marts/refined_revenue#boosted'
-  AND f.relationship = 'column_derives_from'
 RETURN src.id, src.stack
 ```
 

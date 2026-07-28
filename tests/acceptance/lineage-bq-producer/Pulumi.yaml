@@ -28,7 +28,7 @@ resources:
       tableId: revenue_view
       deletionProtection: false
       view:
-        query: "SELECT o.order_id, o.amount_cents / 100 AS revenue FROM `{{ env.gcp_project }}.pulumi_rs_lineage_test.orders` o"
+        query: "SELECT o.order_id, o.amount_cents / 100 AS revenue, o.amount_cents AS cents_raw FROM `{{ env.gcp_project }}.pulumi_rs_lineage_test.orders` o"
         useLegacySql: false
     options:
       dependsOn:
