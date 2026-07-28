@@ -5,8 +5,22 @@ edition = "2021"
 description = "Core library for pulumi-rs-yaml: parser, AST, evaluator"
 license.workspace = true
 
+[features]
+default = ["sql-lineage"]
+# SQL parsing + table/column lineage extraction (adds the polyglot-sql
+# parser; opt out with --no-default-features for a smaller build).
+sql-lineage = ["dep:polyglot-sql"]
+
 [dependencies]
 pulumi-rs-yaml-proto = { path = "../pulumi-rs-yaml-proto" }
+# Exact pin: 0.x API, single integration boundary in sql_lineage/sql.rs.
+# default-features off drops `stacker` (whose build deps need rustc>=1.88,
+# above our 1.85 MSRV) and the 30+ dialects we don't use.
+polyglot-sql = { version = "=0.6.2", default-features = false, features = [
+    "dialect-bigquery",
+    "semantic",
+    "generate",
+], optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
