@@ -1722,6 +1722,7 @@ version = "0.5.15"
 dependencies = [
  "pulumi-rs-yaml-core",
  "pyo3",
+ "serde",
  "serde_json",
  "serde_yaml",
 ]

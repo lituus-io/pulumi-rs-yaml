@@ -799,9 +799,136 @@ fn export_dependency_graph(
     jinja_context: Option<&Bound<'_, PyDict>>,
     schema_dir: Option<&str>,
 ) -> PyResult<Py<PyAny>> {
+    let (merged, project_name, stack_name, organization_name) =
+        load_graph_project(project_dir, stack, organization, jinja_context)?;
+    let template = merged.as_template_decl();
+
+    let schema_store = if let Some(sd) = schema_dir {
+        let schema_path = std::path::Path::new(sd);
+        pulumi_rs_yaml_core::schema::SchemaStore::load(schema_path).ok()
+    } else {
+        None
+    };
+
+    let opts = pulumi_rs_yaml_core::resource_graph::GraphExportOptions {
+        organization: &organization_name,
+        project: &project_name,
+        stack: &stack_name,
+        source_map: Some(merged.source_map()),
+        schema_store: schema_store.as_ref(),
+    };
+    let (graph, diags) =
+        pulumi_rs_yaml_core::resource_graph::export_resource_graph(&template, &opts);
+    if diags.has_errors() {
+        return Err(PyValueError::new_err(format!(
+            "Failed to export dependency graph: {}",
+            diags
+        )));
+    }
+
+    graph_value_to_py(py, &graph, &diags)
+}
+
+/// Export the stack's SQL lineage graph (data objects layered on the
+/// infrastructure graph).
+///
+/// Returns a dict with `schema_version`, `organization`, `project`,
+/// `stack`, `nodes`, `edges`, and `diagnostics`. Node ids are
+/// cloud-scoped (`bq://project/dataset/table#column`) so exports from
+/// independent stacks join automatically; `defined_by` edges reference
+/// the infrastructure graph's URNs.
+#[pyfunction]
+#[pyo3(signature = (project_dir, stack, organization="", jinja_context=None, schema_dir=None, default_bq_project=None))]
+fn export_sql_lineage(
+    py: Python<'_>,
+    project_dir: &str,
+    stack: &str,
+    organization: &str,
+    jinja_context: Option<&Bound<'_, PyDict>>,
+    schema_dir: Option<&str>,
+    default_bq_project: Option<&str>,
+) -> PyResult<Py<PyAny>> {
+    let (merged, project_name, stack_name, organization_name) =
+        load_graph_project(project_dir, stack, organization, jinja_context)?;
+    let template = merged.as_template_decl();
+
+    let schema_store = if let Some(sd) = schema_dir {
+        let schema_path = std::path::Path::new(sd);
+        pulumi_rs_yaml_core::schema::SchemaStore::load(schema_path).ok()
+    } else {
+        None
+    };
+    let graph_opts = pulumi_rs_yaml_core::resource_graph::GraphExportOptions {
+        organization: &organization_name,
+        project: &project_name,
+        stack: &stack_name,
+        source_map: Some(merged.source_map()),
+        schema_store: schema_store.as_ref(),
+    };
+    let (infra, infra_diags) =
+        pulumi_rs_yaml_core::resource_graph::export_resource_graph(&template, &graph_opts);
+    if infra_diags.has_errors() {
+        return Err(PyValueError::new_err(format!(
+            "Failed to export dependency graph: {}",
+            infra_diags
+        )));
+    }
+
+    let lineage_opts = pulumi_rs_yaml_core::sql_lineage::SqlLineageOptions {
+        organization: &organization_name,
+        project: &project_name,
+        stack: &stack_name,
+        project_dir: Some(std::path::Path::new(project_dir)),
+        default_bq_project,
+        source_map: Some(merged.source_map()),
+        extra_sql_sources: &[],
+    };
+    let (lineage, diags) =
+        pulumi_rs_yaml_core::sql_lineage::export_sql_lineage(&template, &infra, &lineage_opts);
+    if diags.has_errors() {
+        return Err(PyValueError::new_err(format!(
+            "Failed to export SQL lineage: {}",
+            diags
+        )));
+    }
+
+    graph_value_to_py(py, &lineage, &diags)
+}
+
+/// Serializes an exported graph to native Python dicts and attaches
+/// the diagnostics list.
+fn graph_value_to_py<T: serde::Serialize>(
+    py: Python<'_>,
+    graph: &T,
+    diags: &Diagnostics,
+) -> PyResult<Py<PyAny>> {
+    let json = serde_json::to_value(graph)
+        .map_err(|e| PyValueError::new_err(format!("Failed to serialize graph: {}", e)))?;
+    let result = json_to_py(py, &json)?;
+    let dict = result
+        .bind(py)
+        .cast::<PyDict>()
+        .map_err(|e| PyValueError::new_err(format!("graph did not serialize to a dict: {}", e)))?;
+    dict.set_item("diagnostics", diags_to_py(py, diags)?)?;
+    Ok(result)
+}
+
+/// Shared project-loading preamble for the graph exporters: jinja
+/// context split, project-name pre-pass, multi-file load. Returns
+/// (merged, project_name, stack_name, organization_name).
+fn load_graph_project(
+    project_dir: &str,
+    stack: &str,
+    organization: &str,
+    jinja_context: Option<&Bound<'_, PyDict>>,
+) -> PyResult<(
+    pulumi_rs_yaml_core::multi_file::MergedTemplate,
+    String,
+    String,
+    String,
+)> {
     let path = std::path::Path::new(project_dir);
 
-    // Build JinjaContext from optional dict (same split as create_execution_plan).
     let ctx_map: HashMap<String, String> = match jinja_context {
         Some(d) => py_dict_to_string_map(d)?,
         None => HashMap::new(),
@@ -887,42 +1014,8 @@ fn export_dependency_graph(
             load_diags
         )));
     }
-
     let project_name = merged.name().unwrap_or("unknown").to_string();
-    let template = merged.as_template_decl();
-
-    let schema_store = if let Some(sd) = schema_dir {
-        let schema_path = std::path::Path::new(sd);
-        pulumi_rs_yaml_core::schema::SchemaStore::load(schema_path).ok()
-    } else {
-        None
-    };
-
-    let opts = pulumi_rs_yaml_core::resource_graph::GraphExportOptions {
-        organization: &organization_name,
-        project: &project_name,
-        stack: &stack_name,
-        source_map: Some(merged.source_map()),
-        schema_store: schema_store.as_ref(),
-    };
-    let (graph, diags) =
-        pulumi_rs_yaml_core::resource_graph::export_resource_graph(&template, &opts);
-    if diags.has_errors() {
-        return Err(PyValueError::new_err(format!(
-            "Failed to export dependency graph: {}",
-            diags
-        )));
-    }
-
-    let json = serde_json::to_value(&graph)
-        .map_err(|e| PyValueError::new_err(format!("Failed to serialize graph: {}", e)))?;
-    let result = json_to_py(py, &json)?;
-    let dict = result
-        .bind(py)
-        .cast::<PyDict>()
-        .map_err(|e| PyValueError::new_err(format!("graph did not serialize to a dict: {}", e)))?;
-    dict.set_item("diagnostics", diags_to_py(py, &diags)?)?;
-    Ok(result)
+    Ok((merged, project_name, stack_name, organization_name))
 }
 
 /// The native Python module.
@@ -938,6 +1031,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(evaluate_builtin, m)?)?;
     m.add_function(wrap_pyfunction!(create_execution_plan, m)?)?;
     m.add_function(wrap_pyfunction!(export_dependency_graph, m)?)?;
+    m.add_function(wrap_pyfunction!(export_sql_lineage, m)?)?;
     m.add_function(wrap_pyfunction!(validate_and_classify, m)?)?;
     m.add_function(wrap_pyfunction!(type_check_project, m)?)?;
     m.add_function(wrap_pyfunction!(complete_properties, m)?)?;
