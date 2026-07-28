@@ -99,10 +99,18 @@ jobs:
           }
 
           THRESHOLD = 1.25
+          # Relative threshold alone flags nanosecond-scale benchmarks whose
+          # timings shift by fractions of a ns from code alignment alone —
+          # require the absolute delta to clear a noise floor too.
+          MIN_DELTA_NS = 100.0
           regressions = []
           for name, base_mean in base.items():
               head_mean = head.get(name)
-              if head_mean is not None and head_mean > base_mean * THRESHOLD:
+              if (
+                  head_mean is not None
+                  and head_mean > base_mean * THRESHOLD
+                  and head_mean - base_mean > MIN_DELTA_NS
+              ):
                   regressions.append(
                       f"{name}: {base_mean:.0f}ns -> {head_mean:.0f}ns "
                       f"({head_mean / base_mean:.2f}x)"
