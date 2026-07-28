@@ -59,15 +59,18 @@ jobs:
       - name: Install critcmp
         run: cargo install critcmp --locked
 
+      # Target the criterion bench directly: `cargo bench --workspace` would
+      # forward the criterion-only --save-baseline flag to every crate's
+      # default libtest bench harness, which rejects it.
       - name: Benchmark merge-base (baseline)
         run: |
           git checkout "$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
-          cargo bench --workspace -- --save-baseline base
+          cargo bench -p pulumi-rs-yaml-core --bench core_bench -- --save-baseline base
 
       - name: Benchmark PR head
         run: |
           git checkout ${{ github.sha }}
-          cargo bench --workspace -- --save-baseline head
+          cargo bench -p pulumi-rs-yaml-core --bench core_bench -- --save-baseline head
 
       # Fail if any benchmark regressed beyond the noise threshold (25%).
       # Same-runner back-to-back runs keep hardware variance low, but shared
