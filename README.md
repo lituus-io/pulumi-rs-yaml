@@ -60,6 +60,113 @@ cargo +nightly fuzz run fuzz_yaml_parser -- -max_total_time=60
 
 Targets: `fuzz_yaml_parser`, `fuzz_interpolation`, `fuzz_jinja`, `fuzz_builtins`, `fuzz_converter`, `fuzz_yaml_bomb`, `fuzz_extra_context`, `fuzz_starlark`, `fuzz_parallel_eval`.
 
+## Dependency graph export (BigQuery Graph)
+
+Export a stack's static resource dependency graph — nodes and typed edges keyed
+by engine-format URNs — for loading into a shared graph store such as
+[BigQuery Graph](https://cloud.google.com/bigquery/docs/graph-intro). Each
+stack exports independently; exports union into the same tables and join
+cross-stack via the ID contract (see the `resource_graph` module docs in
+`pulumi-rs-yaml-core` for the full specification).
+
+```bash
+# Single JSON document to stdout
+pulumi-language-yaml graph --stack prod --organization my-org --dir ./my-project
+
+# BigQuery-ingestable NDJSON (nodes.ndjson + edges.ndjson)
+pulumi-language-yaml graph --stack prod --organization my-org \
+  --format ndjson --out ./graph-export
+```
+
+```python
+from pulumi_yaml_rs import export_dependency_graph
+graph = export_dependency_graph("./my-project", "prod", "my-org")
+```
+
+### Loading into BigQuery
+
+```sql
+CREATE TABLE IF NOT EXISTS infra.nodes (
+  id STRING NOT NULL,
+  kind STRING, logical_name STRING, name STRING,
+  type_token STRING, package STRING,
+  parent_id STRING, component_id STRING, source_file STRING,
+  literal_properties JSON,
+  organization STRING, project STRING, stack STRING,
+  PRIMARY KEY (id) NOT ENFORCED
+);
+
+CREATE TABLE IF NOT EXISTS infra.edges (
+  source_id STRING NOT NULL,
+  target_id STRING NOT NULL,
+  relationship STRING NOT NULL,
+  property_paths ARRAY<STRING>,
+  organization STRING, project STRING, stack STRING,
+  PRIMARY KEY (source_id, target_id, relationship) NOT ENFORCED,
+  FOREIGN KEY (source_id) REFERENCES infra.nodes (id) NOT ENFORCED
+);
+```
+
+Refresh one stack's subgraph by deleting its rows (`WHERE stack = ... AND
+project = ...`) then loading the new NDJSON:
+
+```bash
+bq load --source_format=NEWLINE_DELIMITED_JSON infra.nodes graph-export/nodes.ndjson
+bq load --source_format=NEWLINE_DELIMITED_JSON infra.edges graph-export/edges.ndjson
+```
+
+### Cross-stack identity linking
+
+Explicit `pulumi:pulumi:StackReference` consumption is exported directly as
+`consumes_stack_output` edges targeting the producer stack's output-node ids.
+For resources linked only by cloud naming (e.g. a BigQuery dataset declared in
+stack A and tables in stacks B/C that reference it by literal
+`project` + `datasetId`), derive edges from `literal_properties` — the match
+rules per resource family live in SQL, not in the exporter:
+
+```sql
+MERGE infra.edges e
+USING (
+  SELECT t.id AS source_id, d.id AS target_id,
+         'references' AS relationship, ['derived:identity'] AS property_paths,
+         t.organization, t.project, t.stack
+  FROM infra.nodes t
+  JOIN infra.nodes d
+    ON d.type_token = 'gcp:bigquery/dataset:Dataset'
+   AND t.type_token = 'gcp:bigquery/table:Table'
+   AND JSON_VALUE(t.literal_properties, '$.project')  = JSON_VALUE(d.literal_properties, '$.project')
+   AND JSON_VALUE(t.literal_properties, '$.datasetId') = JSON_VALUE(d.literal_properties, '$.datasetId')
+) s
+ON e.source_id = s.source_id AND e.target_id = s.target_id AND e.relationship = s.relationship
+WHEN NOT MATCHED THEN
+  INSERT (source_id, target_id, relationship, property_paths, organization, project, stack)
+  VALUES (s.source_id, s.target_id, s.relationship, s.property_paths, s.organization, s.project, s.stack)
+```
+
+### Property graph and GQL
+
+```sql
+CREATE PROPERTY GRAPH infra.InfraGraph
+  NODE TABLES (
+    infra.nodes KEY (id)
+      LABEL Entity PROPERTIES (id, kind, logical_name, type_token, project, stack)
+  )
+  EDGE TABLES (
+    infra.edges KEY (source_id, target_id, relationship)
+      SOURCE KEY (source_id) REFERENCES nodes (id)
+      DESTINATION KEY (target_id) REFERENCES nodes (id)
+      LABEL depends PROPERTIES (relationship, project, stack)
+  );
+```
+
+```sql
+-- Everything (in any stack) that reaches stack A's dataset:
+GRAPH infra.InfraGraph
+MATCH (consumer:Entity)-[d:depends]->{1,4}(ds:Entity)
+WHERE ds.type_token = 'gcp:bigquery/dataset:Dataset' AND ds.stack = 'prod'
+RETURN consumer.id, consumer.stack, ds.id
+```
+
 ## Security
 
 See [SECURITY.md](SECURITY.md) for vulnerability reporting and security details.
