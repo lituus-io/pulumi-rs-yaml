@@ -458,6 +458,52 @@ fn bench_jinja_preprocess_multi_file(c: &mut Criterion) {
     });
 }
 
+#[cfg(feature = "sql-lineage")]
+fn bench_sql_lineage_export(c: &mut Criterion) {
+    use pulumi_rs_yaml_core::resource_graph::{export_resource_graph, GraphExportOptions};
+    use pulumi_rs_yaml_core::sql_lineage::{export_sql_lineage, SqlLineageOptions};
+
+    // 20 views, each reading 2 tables with explicit projections.
+    let mut yaml = String::from(
+        "name: bench\nruntime: yaml\nconfig:\n  gcp:project:\n    value: bench-proj\nresources:\n",
+    );
+    for i in 0..20 {
+        yaml.push_str(&format!(
+            "  view{i}:\n    type: gcp:bigquery:Table\n    properties:\n      datasetId: marts\n      tableId: view_{i}\n      view:\n        query: \"SELECT a.id, b.value AS v FROM `bench-proj.raw.t{i}` a JOIN `bench-proj.raw.u{i}` b ON a.id = b.id\"\n",
+        ));
+    }
+    let (template, _) = pulumi_rs_yaml_core::ast::parse::parse_template(&yaml, None);
+    let template = Box::leak(Box::new(template));
+    let graph_opts = GraphExportOptions {
+        organization: "org",
+        project: "bench",
+        stack: "dev",
+        source_map: None,
+        schema_store: None,
+    };
+    let (infra, _) = export_resource_graph(template, &graph_opts);
+    let infra = Box::leak(Box::new(infra));
+
+    c.bench_function("sql_lineage_20_views", |b| {
+        b.iter(|| {
+            let opts = SqlLineageOptions {
+                organization: "org",
+                project: "bench",
+                stack: "dev",
+                project_dir: None,
+                default_bq_project: None,
+                source_map: None,
+                extra_sql_sources: &[],
+            };
+            let (lineage, _) = export_sql_lineage(template, infra, &opts);
+            std::hint::black_box(lineage.edges.len())
+        })
+    });
+}
+
+#[cfg(not(feature = "sql-lineage"))]
+fn bench_sql_lineage_export(_c: &mut Criterion) {}
+
 criterion_group!(
     benches,
     bench_parse_simple,
@@ -475,5 +521,6 @@ criterion_group!(
     bench_merge_10_files_50_resources,
     bench_discover_project_files,
     bench_jinja_preprocess_multi_file,
+    bench_sql_lineage_export,
 );
 criterion_main!(benches);

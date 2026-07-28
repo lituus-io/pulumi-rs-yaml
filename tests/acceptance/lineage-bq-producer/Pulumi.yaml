@@ -1,0 +1,60 @@
+name: lineage-bq-producer
+runtime: yaml
+description: Lineage acceptance — producer stack with dataset, described table, view, and routine.
+resources:
+  dataset:
+    type: gcp:bigquery:Dataset
+    properties:
+      datasetId: pulumi_rs_lineage_test
+      project: "{{ env.gcp_project }}"
+      location: US
+      deleteContentsOnDestroy: true
+  orders:
+    type: gcp:bigquery:Table
+    properties:
+      project: "{{ env.gcp_project }}"
+      datasetId: pulumi_rs_lineage_test
+      tableId: orders
+      deletionProtection: false
+      schema: '[{"name":"order_id","type":"STRING","description":"Order key"},{"name":"amount_cents","type":"INTEGER","description":"Amount in cents"}]'
+    options:
+      dependsOn:
+        - ${dataset}
+  revenueView:
+    type: gcp:bigquery:Table
+    properties:
+      project: "{{ env.gcp_project }}"
+      datasetId: pulumi_rs_lineage_test
+      tableId: revenue_view
+      deletionProtection: false
+      view:
+        query: "SELECT o.order_id, o.amount_cents / 100 AS revenue FROM `{{ env.gcp_project }}.pulumi_rs_lineage_test.orders` o"
+        useLegacySql: false
+    options:
+      dependsOn:
+        - ${orders}
+  summary:
+    type: gcp:bigquery:Table
+    properties:
+      project: "{{ env.gcp_project }}"
+      datasetId: pulumi_rs_lineage_test
+      tableId: summary
+      deletionProtection: false
+      schema: '[{"name":"order_id","type":"STRING"},{"name":"amount_cents","type":"INTEGER"}]'
+    options:
+      dependsOn:
+        - ${dataset}
+  refreshRoutine:
+    type: gcp:bigquery:Routine
+    properties:
+      project: "{{ env.gcp_project }}"
+      datasetId: pulumi_rs_lineage_test
+      routineId: refresh_summary
+      routineType: PROCEDURE
+      language: SQL
+      definitionBody: "INSERT INTO `{{ env.gcp_project }}.pulumi_rs_lineage_test.summary` SELECT order_id, amount_cents FROM `{{ env.gcp_project }}.pulumi_rs_lineage_test.orders`"
+    options:
+      dependsOn:
+        - ${summary}
+outputs:
+  datasetId: ${dataset.datasetId}

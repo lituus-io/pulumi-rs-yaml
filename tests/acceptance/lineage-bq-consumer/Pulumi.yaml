@@ -1,0 +1,14 @@
+name: lineage-bq-consumer
+runtime: yaml
+description: Lineage acceptance — consumer stack refining the producer's view by fully-qualified name (pure cloud-name linking, no StackReference).
+resources:
+  boostedView:
+    type: gcp:bigquery:Table
+    properties:
+      project: "{{ env.gcp_project }}"
+      datasetId: pulumi_rs_lineage_test
+      tableId: boosted_view
+      deletionProtection: false
+      view:
+        query: "SELECT r.order_id, r.revenue * 2 AS boosted FROM `{{ env.gcp_project }}.pulumi_rs_lineage_test.revenue_view` r"
+        useLegacySql: false

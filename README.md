@@ -143,6 +143,61 @@ WHEN NOT MATCHED THEN
   VALUES (s.source_id, s.target_id, s.relationship, s.property_paths, s.organization, s.project, s.stack)
 ```
 
+### SQL lineage layer
+
+`--lineage` adds a second graph layer extracting BigQuery data objects and
+their lineage from SQL carried by views, materialized views, routines, jobs,
+scheduled queries, and dbt models — inline or via `fn::readFile`:
+
+```bash
+pulumi-language-yaml graph --stack prod --lineage \
+  --format ndjson --out ./graph-export
+# writes lineage_nodes.ndjson + lineage_edges.ndjson alongside nodes/edges
+```
+
+```python
+from pulumi_yaml_rs import export_sql_lineage
+lineage = export_sql_lineage("./my-project", "prod", "my-org")
+```
+
+Node ids are **cloud-scoped** — `bq://{project}/{dataset}/{table}` and
+`bq://{project}/{dataset}/{table}#{column}` — so a table declared in stack A
+and read by SQL in stacks B/C carries the same id from every side and the
+union self-links at project, table, and column level with no derivation step.
+`defined_by` edges join data objects to the infrastructure graph's URNs.
+Edges carry `resolution` (`declared` > `parsed` > `structural` > `heuristic`)
+and column nodes carry type/mode/description from table schemas.
+
+Components may declare lineage directly through an output named `lineage`
+(or `*Lineage`) containing JSON
+`{"produces": [...], "consumes": [...], "columnLineage": [...]}` — the same
+contract runtime hooks can publish to post-deploy.
+
+```sql
+CREATE TABLE IF NOT EXISTS infra.lineage_nodes (
+  id STRING NOT NULL,
+  kind STRING, name STRING,
+  bq_project STRING, dataset STRING, table STRING, column STRING,
+  data_type STRING, mode STRING, description STRING,
+  defined_by_urn STRING, source_file STRING,
+  organization STRING, project STRING, stack STRING,
+  PRIMARY KEY (id) NOT ENFORCED
+);
+
+CREATE TABLE IF NOT EXISTS infra.lineage_edges (
+  source_id STRING NOT NULL,
+  target_id STRING NOT NULL,
+  relationship STRING NOT NULL,
+  resolution STRING, sql_role STRING, sql_provenance STRING, via STRING,
+  organization STRING, project STRING, stack STRING,
+  PRIMARY KEY (source_id, target_id, relationship) NOT ENFORCED,
+  FOREIGN KEY (source_id) REFERENCES infra.lineage_nodes (id) NOT ENFORCED
+);
+```
+
+Refresh per stack with the same `DELETE WHERE stack/project` + `bq load` flow
+as the infrastructure tables.
+
 ### Property graph and GQL
 
 ```sql
@@ -157,6 +212,39 @@ CREATE PROPERTY GRAPH infra.InfraGraph
       DESTINATION KEY (target_id) REFERENCES nodes (id)
       LABEL depends PROPERTIES (relationship, project, stack)
   );
+```
+
+With the lineage layer loaded, extend the graph to span both layers so one
+GQL query traverses from a column through its table into the infrastructure
+URN and onward:
+
+```sql
+CREATE PROPERTY GRAPH infra.FullGraph
+  NODE TABLES (
+    infra.nodes KEY (id)
+      LABEL Entity PROPERTIES (id, kind, logical_name, type_token, project, stack),
+    infra.lineage_nodes KEY (id)
+      LABEL DataObject PROPERTIES (id, kind, name, bq_project, dataset, stack)
+  )
+  EDGE TABLES (
+    infra.edges KEY (source_id, target_id, relationship)
+      SOURCE KEY (source_id) REFERENCES nodes (id)
+      DESTINATION KEY (target_id) REFERENCES nodes (id)
+      LABEL depends PROPERTIES (relationship, project, stack),
+    infra.lineage_edges KEY (source_id, target_id, relationship)
+      SOURCE KEY (source_id) REFERENCES lineage_nodes (id)
+      DESTINATION KEY (target_id) REFERENCES lineage_nodes (id)
+      LABEL flows PROPERTIES (relationship, resolution, stack)
+  );
+```
+
+```sql
+-- Cross-stack column lineage: everything a column ultimately derives from.
+GRAPH infra.FullGraph
+MATCH (c:DataObject)-[f:flows]->{1,6}(src:DataObject)
+WHERE c.id = 'bq://data-proj/marts/refined_revenue#boosted'
+  AND f.relationship = 'column_derives_from'
+RETURN src.id, src.stack
 ```
 
 ```sql
