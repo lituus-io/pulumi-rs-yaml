@@ -69,7 +69,9 @@ jobs:
 
       - name: Benchmark PR head
         run: |
-          git checkout ${{ github.sha }}
+          # benching at the merge-base can rewrite Cargo.lock; discard it so
+          # the checkout of the PR head doesn't abort on a dirty tree
+          git checkout -f ${{ github.sha }}
           cargo bench -p pulumi-rs-yaml-core --bench core_bench -- --save-baseline head
 
       # Fail if any benchmark regressed beyond the noise threshold (25%).
