@@ -369,7 +369,7 @@ pub fn classify_expression(expr: &str) -> ExprClassification {
 /// Finds the end of a `{{ ... }}` expression, handling nested strings and braces.
 /// `start` is the byte offset of the first `{` in `{{`.
 /// Returns the byte offset AFTER the closing `}}`, or `None` if not found.
-fn find_expression_end(source: &str, start: usize) -> Option<usize> {
+pub(crate) fn find_expression_end(source: &str, start: usize) -> Option<usize> {
     let bytes = source.as_bytes();
     let len = bytes.len();
     let mut i = start + 2; // skip opening {{
@@ -882,10 +882,45 @@ fn resolve_readfile_markers(rendered: &str, cache: &ReadFileCache) -> Option<Str
     Some(result)
 }
 
+/// SECURITY: resolves `path` relative to `project_dir` with containment.
+///
+/// Rejects absolute paths; canonicalizes the project directory and the
+/// joined candidate (resolving `..` AND symlinks to their real targets
+/// BEFORE the containment check — preserve that ordering); rejects
+/// anything that escapes the project directory. Shared by the Jinja
+/// `readFile()` function and static analyzers reading referenced files
+/// (e.g. `fn::readFile` SQL in the lineage exporter).
+pub(crate) fn resolve_contained_path(
+    project_dir: &str,
+    path: &str,
+) -> Result<std::path::PathBuf, String> {
+    if Path::new(path).is_absolute() {
+        return Err(format!(
+            "readFile: absolute paths are not allowed: '{}'",
+            path
+        ));
+    }
+    let project_canonical = Path::new(project_dir)
+        .canonicalize()
+        .map_err(|e| format!("readFile: failed to resolve project directory: {}", e))?;
+    let resolved = project_canonical
+        .join(path)
+        .canonicalize()
+        .map_err(|e| format!("readFile: failed to resolve '{}': {}", path, e))?;
+    if !resolved.starts_with(&project_canonical) {
+        return Err(format!(
+            "readFile: path '{}' escapes project directory",
+            path
+        ));
+    }
+    Ok(resolved)
+}
+
 /// Registers the `readFile(path)` function in the minijinja environment.
 ///
 /// Security: rejects absolute paths and path traversals that escape
-/// the project directory (e.g. `../../../etc/passwd`).
+/// the project directory (e.g. `../../../etc/passwd`) — see
+/// [`resolve_contained_path`].
 fn register_readfile_function(
     env: &mut minijinja::Environment<'_>,
     project_dir: &str,
@@ -895,31 +930,9 @@ fn register_readfile_function(
     env.add_function(
         "readFile",
         move |path: String| -> Result<String, minijinja::Error> {
-            // Reject absolute paths
-            if Path::new(&path).is_absolute() {
-                return Err(minijinja::Error::new(
-                    minijinja::ErrorKind::InvalidOperation,
-                    format!("readFile: absolute paths are not allowed: '{}'", path),
-                ));
-            }
-            let project_canonical = Path::new(&project_dir).canonicalize().map_err(|e| {
-                minijinja::Error::new(
-                    minijinja::ErrorKind::InvalidOperation,
-                    format!("readFile: failed to resolve project directory: {}", e),
-                )
+            let resolved = resolve_contained_path(&project_dir, &path).map_err(|msg| {
+                minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, msg)
             })?;
-            let resolved = project_canonical.join(&path).canonicalize().map_err(|e| {
-                minijinja::Error::new(
-                    minijinja::ErrorKind::InvalidOperation,
-                    format!("readFile: failed to resolve '{}': {}", path, e),
-                )
-            })?;
-            if !resolved.starts_with(&project_canonical) {
-                return Err(minijinja::Error::new(
-                    minijinja::ErrorKind::InvalidOperation,
-                    format!("readFile: path '{}' escapes project directory", path),
-                ));
-            }
 
             let content = std::fs::read_to_string(&resolved).map_err(|e| {
                 minijinja::Error::new(

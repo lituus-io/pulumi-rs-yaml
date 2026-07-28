@@ -5,6 +5,7 @@ pub mod config_types;
 pub mod diag;
 pub mod eval;
 pub mod jinja;
+pub(crate) mod literal_resolve;
 pub mod multi_file;
 pub mod packages;
 pub mod pcl_gen;
