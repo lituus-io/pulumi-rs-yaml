@@ -71,7 +71,6 @@ variables:
     );
 
     let (template, _parse_diags) = pulumi_rs_yaml_core::ast::parse::parse_template(&yaml_source, None);
-    let template: &'static _ = Box::leak(Box::new(template));
     let eval = pulumi_rs_yaml_core::eval::evaluator::Evaluator::new(
         "fuzz".to_string(),
         "dev".to_string(),
@@ -80,5 +79,5 @@ variables:
     );
     let raw_config = HashMap::new();
     // Must not panic
-    eval.evaluate_template(template, &raw_config, &[]);
+    eval.evaluate_template(&template, &raw_config, &[]);
 });

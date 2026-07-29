@@ -1532,6 +1532,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "polyglot-sql"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "009cbd62f8c82de46697221ee66b0cf3a6dacbda16f8c5a2ce25853940073bd5"
+dependencies = [
+ "polyglot-sql-ast-derive",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "polyglot-sql-ast-derive"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3250a6ffcd1d39670eb532e2b1877ad430799c49cb91b243d63c9425b868161"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
+]
+
+[[package]]
 name = "portable-atomic"
 version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1620,7 +1644,7 @@ dependencies = [
 
 [[package]]
 name = "pulumi-rs-yaml-converter"
-version = "0.5.15"
+version = "0.5.16"
 dependencies = [
  "base64",
  "heck",
@@ -1640,12 +1664,13 @@ dependencies = [
 
 [[package]]
 name = "pulumi-rs-yaml-core"
-version = "0.5.15"
+version = "0.5.16"
 dependencies = [
  "base64",
  "criterion",
  "hcl-rs",
  "minijinja",
+ "polyglot-sql",
  "pretty_assertions",
  "prost-types",
  "pulumi-rs-yaml-proto",
@@ -1664,7 +1689,7 @@ dependencies = [
 
 [[package]]
 name = "pulumi-rs-yaml-language"
-version = "0.5.15"
+version = "0.5.16"
 dependencies = [
  "base64",
  "ctrlc",
@@ -1684,7 +1709,7 @@ dependencies = [
 
 [[package]]
 name = "pulumi-rs-yaml-proto"
-version = "0.5.15"
+version = "0.5.16"
 dependencies = [
  "prost",
  "prost-types",
@@ -1693,10 +1718,11 @@ dependencies = [
 
 [[package]]
 name = "pulumi-rs-yaml-python"
-version = "0.5.15"
+version = "0.5.16"
 dependencies = [
  "pulumi-rs-yaml-core",
  "pyo3",
+ "serde",
  "serde_json",
  "serde_yaml",
 ]

@@ -20,7 +20,7 @@ Do **not** open public issues for security vulnerabilities.
 
 ### Fuzz testing
 
-Nine fuzz targets cover the attack surface:
+Eleven fuzz targets cover the attack surface:
 
 | Target | Coverage |
 |--------|----------|
@@ -33,6 +33,8 @@ Nine fuzz targets cover the attack surface:
 | `fuzz_extra_context` | Jinja extra context vars and builtin-override protection |
 | `fuzz_starlark` | Starlark compilation and `fn::starlark` evaluation |
 | `fuzz_parallel_eval` | Parallel vs. sequential evaluator differential testing |
+| `fuzz_resource_graph` | Dependency-graph export: determinism, ordering, URN construction |
+| `fuzz_sql_lineage` | SQL lineage export and the SQL parser boundary |
 
 Fuzz tests run weekly in CI and can be triggered manually.
 
@@ -49,7 +51,8 @@ Fuzz tests run weekly in CI and can be triggered manually.
 - YAML parsing uses `serde_yaml` (safe by default, no arbitrary deserialization).
 - Jinja block syntax is validated before template rendering.
 - Interpolation expressions are parsed with a bounded recursive descent parser.
-- `readFile()` is restricted to the project directory (no path traversal).
+- `readFile()` is restricted to the project directory (no path traversal), including static SQL reads by the lineage exporter.
+- SQL handed to the parser is bounded by size and bracket-nesting depth, and parsed on a worker thread with a large explicit stack — deep recursion cannot abort the process under `panic = "abort"`.
 
 ## Supported Versions
 

@@ -64,3 +64,15 @@ doc = false
 name = "fuzz_starlark"
 path = "fuzz_targets/fuzz_starlark.rs"
 doc = false
+
+[[bin]]
+name = "fuzz_resource_graph"
+path = "fuzz_targets/fuzz_resource_graph.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_sql_lineage"
+path = "fuzz_targets/fuzz_sql_lineage.rs"
+test = false
+doc = false

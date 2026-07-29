@@ -5,12 +5,15 @@ pub mod config_types;
 pub mod diag;
 pub mod eval;
 pub mod jinja;
+pub(crate) mod literal_resolve;
 pub mod multi_file;
 pub mod packages;
 pub mod pcl_gen;
 pub mod resource_graph;
 pub mod schema;
 pub mod source;
+#[cfg(feature = "sql-lineage")]
+pub mod sql_lineage;
 pub mod syntax;
 pub mod type_check;
 

@@ -1,0 +1,26 @@
+name: lineage-bq-component
+runtime: yaml
+description: Lineage acceptance — static-export fixture proving component-body SQL extraction and declared-lineage outputs.
+components:
+  AuditView:
+    inputs:
+      suffix:
+        type: string
+    resources:
+      audit:
+        type: gcp:bigquery:Table
+        properties:
+          project: "{{ env.gcp_project }}"
+          datasetId: pulumi_rs_lineage_test
+          tableId: audit_view
+          deletionProtection: false
+          view:
+            query: "SELECT order_id FROM `{{ env.gcp_project }}.pulumi_rs_lineage_test.orders`"
+            useLegacySql: false
+    outputs:
+      auditLineage: '{"produces":[{"project":"{{ env.gcp_project }}","dataset":"pulumi_rs_lineage_test","table":"audit_view"}],"consumes":[{"project":"{{ env.gcp_project }}","dataset":"pulumi_rs_lineage_test","table":"orders"}]}'
+resources:
+  wrapper:
+    type: lineage-bq-component:index:AuditView
+    properties:
+      suffix: prod

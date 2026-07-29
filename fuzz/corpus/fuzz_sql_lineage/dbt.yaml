@@ -1,0 +1,21 @@
+name: seed
+runtime: yaml
+resources:
+  proj:
+    type: gcpx:dbt:Project
+    properties:
+      gcpProject: p
+      dataset: d
+      sources:
+        s:
+          dataset: raw
+          tables:
+            - t
+  m:
+    type: gcpx:dbt:Model
+    properties:
+      name: m1
+      context: ${proj.context}
+      sql: "SELECT * FROM {{ source('s', 't') }}"
+outputs:
+  pipelineLineage: '{"produces":[{"project":"p","dataset":"d","table":"m1"}],"consumes":[{"project":"p","dataset":"raw","table":"t"}]}'

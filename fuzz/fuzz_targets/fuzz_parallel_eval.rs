@@ -28,7 +28,6 @@ fuzz_target!(|data: &[u8]| {
     }
 
     // Leak template to satisfy 'static lifetime requirement
-    let template: &'static _ = Box::leak(Box::new(template));
     let raw_config = HashMap::new();
 
     // Run 1: Sequential evaluation (baseline)
@@ -42,7 +41,7 @@ fuzz_target!(|data: &[u8]| {
             false,
             mock_seq,
         );
-        eval_seq.evaluate_template(template, &raw_config, &[]);
+        eval_seq.evaluate_template(&template, &raw_config, &[]);
         let errors = eval_seq.has_errors();
         let count = eval_seq.callback().registrations().len();
         (errors, count)
@@ -63,7 +62,7 @@ fuzz_target!(|data: &[u8]| {
         mock_par,
     );
     eval_par.parallel = 4;
-    eval_par.evaluate_template(template, &raw_config, &[]);
+    eval_par.evaluate_template(&template, &raw_config, &[]);
     let par_errors = eval_par.has_errors();
     let par_reg_count = eval_par.callback().registrations().len();
 
