@@ -1,0 +1,12 @@
+name: graph-bq-table-literal
+runtime: yaml
+description: Graph-export acceptance — consumer stack referencing the shared dataset by literal identity (project + datasetId), no StackReference.
+resources:
+  eventsTable:
+    type: gcp:bigquery:Table
+    properties:
+      datasetId: pulumi_rs_graph_test
+      project: "{{ env.gcp_project }}"
+      tableId: events
+      deletionProtection: false
+      schema: '[{"name":"id","type":"STRING"},{"name":"ts","type":"TIMESTAMP"}]'

@@ -1,6 +1,7 @@
 mod clients;
 mod component_provider;
 pub(crate) mod exec;
+pub(crate) mod graph_cmd;
 mod runner;
 mod schema_loader;
 mod server;
@@ -30,6 +31,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(1);
             }
         }
+    }
+
+    // Check for graph subcommand: pulumi-language-yaml graph --stack <s> [...]
+    if args.len() > 1 && args[1] == "graph" {
+        std::process::exit(graph_cmd::run_graph(&args[2..]));
     }
 
     // Parse arguments: the last non-flag argument is the engine address

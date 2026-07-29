@@ -4,6 +4,7 @@
 //! into a single `walk_expr` function + zero-sized-type visitors.
 
 use crate::ast::expr::{Expr, InvokeExpr};
+use crate::ast::property::PropertyAccess;
 use crate::ast::template::{ResourceDecl, ResourceProperties};
 
 /// Expression visitor trait. Each impl is a zero-sized type that
@@ -20,6 +21,11 @@ pub trait ExprVisitor {
 
     /// Called for each `fn::invoke` expression. Default: no-op.
     fn visit_invoke<'a>(&self, _invoke: &'a InvokeExpr<'a>, _acc: &mut Self::Acc<'a>) {}
+
+    /// Called with the full accessor chain of each property access
+    /// (both bare symbols and interpolation parts). Default: no-op —
+    /// visitors that only need root names ignore this.
+    fn visit_access<'a>(&self, _access: &'a PropertyAccess<'a>, _acc: &mut Self::Acc<'a>) {}
 }
 
 /// Walk an expression tree, calling visitor methods at each leaf node.
@@ -29,6 +35,7 @@ pub fn walk_expr<'a, V: ExprVisitor>(expr: &'a Expr<'a>, visitor: &V, acc: &mut 
             if let Ok(root) = access.root_name() {
                 visitor.visit_symbol(root, acc);
             }
+            visitor.visit_access(access, acc);
         }
         Expr::Interpolate(_, parts) => {
             for part in parts {
@@ -36,6 +43,7 @@ pub fn walk_expr<'a, V: ExprVisitor>(expr: &'a Expr<'a>, visitor: &V, acc: &mut 
                     if let Ok(root) = access.root_name() {
                         visitor.visit_interpolation_ref(root, acc);
                     }
+                    visitor.visit_access(access, acc);
                 }
             }
         }
@@ -223,4 +231,101 @@ pub struct InvokeInfo<'a> {
     pub token: &'a str,
     pub version: Option<&'a str>,
     pub plugin_download_url: Option<&'a str>,
+}
+
+/// Collects full property-access chains (for typed dependency-graph
+/// export, where the accessed path matters, not just the root name).
+pub struct AccessCollector;
+
+impl ExprVisitor for AccessCollector {
+    type Acc<'a> = Vec<&'a PropertyAccess<'a>>;
+
+    fn visit_symbol<'a>(&self, _root: &'a str, _acc: &mut Self::Acc<'a>) {}
+    fn visit_interpolation_ref<'a>(&self, _root: &'a str, _acc: &mut Self::Acc<'a>) {}
+
+    fn visit_access<'a>(&self, access: &'a PropertyAccess<'a>, acc: &mut Self::Acc<'a>) {
+        acc.push(access);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::parse::parse_template;
+    use crate::ast::property::PropertyAccessor;
+
+    fn collect_accesses(yaml: &str) -> Vec<String> {
+        let (template, diags) = parse_template(yaml, None);
+        assert!(!diags.has_errors(), "parse failed: {}", diags);
+        let mut acc = Vec::new();
+        for entry in &template.resources {
+            walk_resource(&entry.resource, &AccessCollector, &mut acc);
+        }
+        for output in &template.outputs {
+            walk_expr(&output.value, &AccessCollector, &mut acc);
+        }
+        acc.iter().map(|a| a.to_string()).collect()
+    }
+
+    #[test]
+    fn access_collector_bare_symbol() {
+        let accesses = collect_accesses(
+            "name: t\nruntime: yaml\nresources:\n  a:\n    type: test:A\n  b:\n    type: test:B\n    properties:\n      ref: ${a.id}\n",
+        );
+        assert_eq!(accesses, vec!["a.id"]);
+    }
+
+    #[test]
+    fn access_collector_interpolation_parts() {
+        let accesses = collect_accesses(
+            "name: t\nruntime: yaml\nresources:\n  a:\n    type: test:A\n  b:\n    type: test:B\n    properties:\n      ref: \"x-${a.id}-y-${a.name}\"\n",
+        );
+        assert_eq!(accesses, vec!["a.id", "a.name"]);
+    }
+
+    #[test]
+    fn access_collector_full_chain_with_subscripts() {
+        let accesses = collect_accesses(
+            "name: t\nruntime: yaml\nresources:\n  sref:\n    type: pulumi:pulumi:StackReference\n  b:\n    type: test:B\n    properties:\n      ref: ${sref.outputs[\"datasetId\"]}\n",
+        );
+        assert_eq!(accesses, vec!["sref.outputs[\"datasetId\"]"]);
+        // Verify the accessor chain is fully surfaced, not just the root
+        let (template, _) = parse_template(
+            "name: t\nruntime: yaml\nresources:\n  b:\n    type: test:B\n    properties:\n      ref: ${sref.outputs[\"k\"]}\n",
+            None,
+        );
+        let mut acc = Vec::new();
+        for entry in &template.resources {
+            walk_resource(&entry.resource, &AccessCollector, &mut acc);
+        }
+        let access = acc.first().expect("one access");
+        assert!(matches!(
+            access.accessors.first(),
+            Some(PropertyAccessor::Name(n)) if n == "sref"
+        ));
+        assert!(matches!(
+            access.accessors.get(1),
+            Some(PropertyAccessor::Name(n)) if n == "outputs"
+        ));
+        assert!(matches!(
+            access.accessors.get(2),
+            Some(PropertyAccessor::StringSubscript(k)) if k == "k"
+        ));
+    }
+
+    #[test]
+    fn access_collector_recurses_into_invoke_and_containers() {
+        let accesses = collect_accesses(
+            "name: t\nruntime: yaml\nresources:\n  a:\n    type: test:A\n  b:\n    type: test:B\n    properties:\n      list:\n        - ${a.one}\n      obj:\n        nested: ${a.two}\n",
+        );
+        assert_eq!(accesses, vec!["a.one", "a.two"]);
+    }
+
+    #[test]
+    fn access_collector_outputs_and_options() {
+        let accesses = collect_accesses(
+            "name: t\nruntime: yaml\nresources:\n  a:\n    type: test:A\n  b:\n    type: test:B\n    options:\n      dependsOn:\n        - ${a}\noutputs:\n  out: ${b.id}\n",
+        );
+        assert_eq!(accesses, vec!["a", "b.id"]);
+    }
 }

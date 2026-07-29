@@ -436,3 +436,38 @@ fn property_entry_to_py(py: Python<'_>, entry: &PropertyEntry<'_>) -> PyResult<P
     dict.set_item("v", expr_to_py(py, &entry.value)?)?;
     Ok(dict.into_any().unbind())
 }
+
+/// Converts a `serde_json::Value` into native Python objects
+/// (None/bool/int/float/str/list/dict).
+pub fn json_to_py(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyAny>> {
+    use serde_json::Value as J;
+    match value {
+        J::Null => Ok(py.None()),
+        J::Bool(b) => Ok(PyBool::new(py, *b).to_owned().into_any().unbind()),
+        J::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Ok(i.into_pyobject(py)?.into_any().unbind())
+            } else if let Some(u) = n.as_u64() {
+                Ok(u.into_pyobject(py)?.into_any().unbind())
+            } else {
+                let f = n.as_f64().unwrap_or(f64::NAN);
+                Ok(f.into_pyobject(py)?.into_any().unbind())
+            }
+        }
+        J::String(s) => Ok(PyString::new(py, s).into_any().unbind()),
+        J::Array(items) => {
+            let py_items: Vec<Py<PyAny>> = items
+                .iter()
+                .map(|item| json_to_py(py, item))
+                .collect::<PyResult<_>>()?;
+            Ok(PyList::new(py, &py_items)?.into_any().unbind())
+        }
+        J::Object(entries) => {
+            let dict = PyDict::new(py);
+            for (k, v) in entries {
+                dict.set_item(k, json_to_py(py, v)?)?;
+            }
+            Ok(dict.into_any().unbind())
+        }
+    }
+}

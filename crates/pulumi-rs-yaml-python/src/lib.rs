@@ -11,7 +11,7 @@ use pulumi_rs_yaml_core::eval::builtins;
 use pulumi_rs_yaml_core::eval::value::Value;
 
 use convert::{
-    expr_to_py, py_dict_to_string_map, py_to_value, resource_options_to_py,
+    expr_to_py, json_to_py, py_dict_to_string_map, py_to_value, resource_options_to_py,
     resource_properties_to_py, value_to_py,
 };
 
@@ -782,6 +782,149 @@ fn get_resource_schema(
     }
 }
 
+/// Export the stack's static resource dependency graph.
+///
+/// Returns a dict with `schema_version`, `organization`, `project`,
+/// `stack`, `nodes`, `edges`, and `diagnostics`. Node `id`s follow the
+/// engine URN format so exports from independent stacks join in a
+/// shared graph store; see the core `resource_graph` module docs for
+/// the full ID contract.
+#[pyfunction]
+#[pyo3(signature = (project_dir, stack, organization="", jinja_context=None, schema_dir=None))]
+fn export_dependency_graph(
+    py: Python<'_>,
+    project_dir: &str,
+    stack: &str,
+    organization: &str,
+    jinja_context: Option<&Bound<'_, PyDict>>,
+    schema_dir: Option<&str>,
+) -> PyResult<Py<PyAny>> {
+    let path = std::path::Path::new(project_dir);
+
+    // Build JinjaContext from optional dict (same split as create_execution_plan).
+    let ctx_map: HashMap<String, String> = match jinja_context {
+        Some(d) => py_dict_to_string_map(d)?,
+        None => HashMap::new(),
+    };
+    // Explicit params win over jinja_context entries.
+    let stack_name = if stack.is_empty() {
+        ctx_map.get("stack_name").cloned().unwrap_or_default()
+    } else {
+        stack.to_string()
+    };
+    if stack_name.is_empty() {
+        return Err(PyValueError::new_err(
+            "stack is required: exported node ids embed the stack name",
+        ));
+    }
+    let organization_name = if organization.is_empty() {
+        ctx_map.get("organization").cloned().unwrap_or_default()
+    } else {
+        organization.to_string()
+    };
+    let project_dir_str = project_dir.to_string();
+    let cwd = ctx_map
+        .get("cwd")
+        .cloned()
+        .unwrap_or(project_dir_str.clone());
+    let root_directory = ctx_map
+        .get("root_directory")
+        .cloned()
+        .unwrap_or(project_dir_str.clone());
+    let config_map: HashMap<String, String> = ctx_map
+        .iter()
+        .filter(|(k, _)| k.starts_with("config."))
+        .map(|(k, v)| (k.trim_start_matches("config.").to_string(), v.clone()))
+        .collect();
+    let special_keys = [
+        "project_name",
+        "stack_name",
+        "cwd",
+        "organization",
+        "root_directory",
+        "project_dir",
+    ];
+    let extra_map: HashMap<String, String> = ctx_map
+        .iter()
+        .filter(|(k, _)| !special_keys.contains(&k.as_str()) && !k.starts_with("config."))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+
+    // Extract project name from the main file (strip {% %} blocks first).
+    let project_name_owned = {
+        let files = pulumi_rs_yaml_core::multi_file::discover_project_files(path).map_err(|e| {
+            PyValueError::new_err(format!("Failed to discover project files: {}", e))
+        })?;
+        let raw = std::fs::read_to_string(&files.main_file)
+            .map_err(|e| PyValueError::new_err(format!("Failed to read main file: {}", e)))?;
+        let stripped = pulumi_rs_yaml_core::jinja::strip_jinja_blocks(&raw);
+        let (tmpl, _) = pulumi_rs_yaml_core::ast::parse::parse_template(&stripped, None);
+        tmpl.name
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "unknown".to_string())
+    };
+
+    let jinja_ctx = pulumi_rs_yaml_core::jinja::JinjaContext {
+        project_name: &project_name_owned,
+        stack_name: &stack_name,
+        cwd: &cwd,
+        organization: &organization_name,
+        root_directory: &root_directory,
+        config: &config_map,
+        project_dir,
+        undefined: pulumi_rs_yaml_core::jinja::UndefinedMode::Strict,
+        extra: &extra_map,
+    };
+    let jinja_opt = if jinja_context.is_some() {
+        Some(&jinja_ctx)
+    } else {
+        None
+    };
+    let (merged, load_diags) = pulumi_rs_yaml_core::multi_file::load_project(path, jinja_opt);
+    if load_diags.has_errors() {
+        return Err(PyValueError::new_err(format!(
+            "Failed to load project: {}",
+            load_diags
+        )));
+    }
+
+    let project_name = merged.name().unwrap_or("unknown").to_string();
+    let template = merged.as_template_decl();
+
+    let schema_store = if let Some(sd) = schema_dir {
+        let schema_path = std::path::Path::new(sd);
+        pulumi_rs_yaml_core::schema::SchemaStore::load(schema_path).ok()
+    } else {
+        None
+    };
+
+    let opts = pulumi_rs_yaml_core::resource_graph::GraphExportOptions {
+        organization: &organization_name,
+        project: &project_name,
+        stack: &stack_name,
+        source_map: Some(merged.source_map()),
+        schema_store: schema_store.as_ref(),
+    };
+    let (graph, diags) =
+        pulumi_rs_yaml_core::resource_graph::export_resource_graph(&template, &opts);
+    if diags.has_errors() {
+        return Err(PyValueError::new_err(format!(
+            "Failed to export dependency graph: {}",
+            diags
+        )));
+    }
+
+    let json = serde_json::to_value(&graph)
+        .map_err(|e| PyValueError::new_err(format!("Failed to serialize graph: {}", e)))?;
+    let result = json_to_py(py, &json)?;
+    let dict = result
+        .bind(py)
+        .cast::<PyDict>()
+        .map_err(|e| PyValueError::new_err(format!("graph did not serialize to a dict: {}", e)))?;
+    dict.set_item("diagnostics", diags_to_py(py, &diags)?)?;
+    Ok(result)
+}
+
 /// The native Python module.
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -794,6 +937,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(preprocess_jinja, m)?)?;
     m.add_function(wrap_pyfunction!(evaluate_builtin, m)?)?;
     m.add_function(wrap_pyfunction!(create_execution_plan, m)?)?;
+    m.add_function(wrap_pyfunction!(export_dependency_graph, m)?)?;
     m.add_function(wrap_pyfunction!(validate_and_classify, m)?)?;
     m.add_function(wrap_pyfunction!(type_check_project, m)?)?;
     m.add_function(wrap_pyfunction!(complete_properties, m)?)?;

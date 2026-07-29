@@ -1,0 +1,33 @@
+name: graph-bq-dataset
+runtime: yaml
+description: Graph-export acceptance — producer stack declaring a BigQuery dataset.
+# GCP project comes from the GOOGLE_PROJECT env var (provider default);
+# the dataset's `project` property is Jinja-rendered from JINJA_VAR_GCP_PROJECT
+# so it lands in the exported graph's literal_properties for identity linking.
+resources:
+  dataset:
+    type: gcp:bigquery:Dataset
+    properties:
+      datasetId: pulumi_rs_graph_test
+      project: "{{ env.gcp_project }}"
+      location: US
+      friendlyName: graph-export-test
+      deleteContentsOnDestroy: true
+  auditBucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: pulumi-rs-graph-test-audit
+      location: US
+      forceDestroy: true
+      uniformBucketLevelAccess: true
+  auditMarker:
+    type: gcp:storage:BucketObject
+    properties:
+      bucket: ${auditBucket.name}
+      name: marker.txt
+      content: graph-export acceptance marker
+    options:
+      parent: ${auditBucket}
+outputs:
+  datasetId: ${dataset.datasetId}
+  datasetProject: ${dataset.project}

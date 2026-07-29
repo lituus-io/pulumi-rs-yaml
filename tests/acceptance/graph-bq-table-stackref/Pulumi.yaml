@@ -1,0 +1,16 @@
+name: graph-bq-table-stackref
+runtime: yaml
+description: Graph-export acceptance — consumer stack referencing the shared dataset through a StackReference to the producer's outputs.
+resources:
+  upstream:
+    type: pulumi:pulumi:StackReference
+    properties:
+      name: organization/graph-bq-dataset/prod
+  clicksTable:
+    type: gcp:bigquery:Table
+    properties:
+      datasetId: ${upstream.outputs["datasetId"]}
+      project: "{{ env.gcp_project }}"
+      tableId: clicks
+      deletionProtection: false
+      schema: '[{"name":"id","type":"STRING"},{"name":"url","type":"STRING"}]'
