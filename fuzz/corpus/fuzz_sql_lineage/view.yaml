@@ -1,0 +1,14 @@
+name: seed
+runtime: yaml
+config:
+  gcp:project:
+    value: p
+resources:
+  v:
+    type: gcp:bigquery:Table
+    properties:
+      datasetId: d
+      tableId: v
+      schema: '[{"name":"id","type":"STRING"}]'
+      view:
+        query: "SELECT a.id, b.x AS y FROM `p.d.t1` a JOIN `p.d.t2` b ON a.id = b.id"

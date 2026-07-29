@@ -35,6 +35,8 @@ jobs:
           - fuzz_extra_context
           - fuzz_starlark
           - fuzz_parallel_eval
+          - fuzz_resource_graph
+          - fuzz_sql_lineage
     steps:
       - uses: actions/checkout@v4
 

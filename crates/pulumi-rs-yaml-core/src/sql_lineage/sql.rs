@@ -9,6 +9,111 @@ use polyglot_sql::{DialectType, Expression};
 /// `panic = "abort"` — no unwinding safety net exists).
 const MAX_SQL_BYTES: usize = 1024 * 1024;
 
+/// Maximum bracket-nesting depth handed to the parser.
+///
+/// SECURITY: the parser is recursive descent and overflows the stack on
+/// deeply nested expressions; with `panic = "abort"` an overflow aborts
+/// the whole process, so hostile or macro-expanded SQL must be rejected
+/// *before* parsing. Frame sizes differ hugely between profiles
+/// (unoptimized builds overflow around depth 14 on a default stack,
+/// optimized builds tolerate far more), so parsing additionally runs on
+/// a worker thread with an explicit large stack — see
+/// [`in_parser_thread`]. polyglot's own `stacker` feature would grow
+/// the stack dynamically, but its build dependencies exceed this
+/// workspace's 1.85 MSRV.
+const MAX_NESTING_DEPTH: u32 = 64;
+
+/// Stack size for the parser worker thread. Sized so the depth guard,
+/// not the stack, is the binding limit in every build profile.
+const PARSER_STACK_BYTES: usize = 64 * 1024 * 1024;
+
+/// Runs a parser closure on a thread with a large explicit stack.
+///
+/// SECURITY: keeps deep-recursion overflows away from the caller's
+/// stack. Only owned, `Send` fact structs cross the boundary — parser
+/// AST nodes never escape the worker.
+fn in_parser_thread<T, F>(f: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    std::thread::Builder::new()
+        .stack_size(PARSER_STACK_BYTES)
+        .name("sql-lineage-parser".to_string())
+        .spawn(f)
+        .map_err(|e| format!("failed to spawn SQL parser thread: {}", e))?
+        .join()
+        .map_err(|_| "SQL parser thread terminated unexpectedly".to_string())
+}
+
+/// Returns the maximum bracket-nesting depth outside string literals
+/// and comments.
+fn max_nesting_depth(sql: &str) -> u32 {
+    let bytes = sql.as_bytes();
+    let mut depth: u32 = 0;
+    let mut max = 0u32;
+    let mut i = 0usize;
+    let mut quote: Option<u8> = None;
+    while i < bytes.len() {
+        let b = bytes[i];
+        match quote {
+            Some(q) => {
+                if b == q {
+                    quote = None;
+                }
+                i += 1;
+            }
+            None => match b {
+                b'\'' | b'"' | b'`' => {
+                    quote = Some(b);
+                    i += 1;
+                }
+                b'-' if bytes.get(i + 1) == Some(&b'-') => {
+                    while i < bytes.len() && bytes[i] != b'\n' {
+                        i += 1;
+                    }
+                }
+                b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                    i += 2;
+                    while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                        i += 1;
+                    }
+                    i = (i + 2).min(bytes.len());
+                }
+                b'(' | b'[' => {
+                    depth += 1;
+                    max = max.max(depth);
+                    i += 1;
+                }
+                b')' | b']' => {
+                    depth = depth.saturating_sub(1);
+                    i += 1;
+                }
+                _ => i += 1,
+            },
+        }
+    }
+    max
+}
+
+/// Pre-flight guard shared by every parser entry point.
+fn guard(sql: &str) -> Result<(), String> {
+    if sql.len() > MAX_SQL_BYTES {
+        return Err(format!(
+            "SQL exceeds {} bytes; skipped by static lineage",
+            MAX_SQL_BYTES
+        ));
+    }
+    let depth = max_nesting_depth(sql);
+    if depth > MAX_NESTING_DEPTH {
+        return Err(format!(
+            "SQL nesting depth {} exceeds {}; skipped by static lineage",
+            depth, MAX_NESTING_DEPTH
+        ));
+    }
+    Ok(())
+}
+
 /// Table-level facts for one statement.
 #[derive(Debug, Default)]
 pub(crate) struct StatementFacts {
@@ -31,24 +136,31 @@ pub(crate) struct SelectFacts {
     pub has_unexpanded_star: bool,
 }
 
-pub(crate) fn parse_bigquery(sql: &str) -> Result<Vec<Expression>, String> {
-    if sql.len() > MAX_SQL_BYTES {
-        return Err(format!(
-            "SQL exceeds {} bytes; skipped by static lineage",
-            MAX_SQL_BYTES
-        ));
-    }
-    polyglot_sql::parse(sql, DialectType::BigQuery).map_err(|e| e.to_string())
+/// Parses and extracts table-level facts for one statement entirely
+/// inside the parser worker thread (AST never crosses the boundary).
+pub(crate) fn statement_facts_for(sql: &str) -> Result<Vec<StatementFacts>, String> {
+    guard(sql)?;
+    let owned = sql.to_string();
+    in_parser_thread(move || {
+        polyglot_sql::parse(&owned, DialectType::BigQuery)
+            .map_err(|e| e.to_string())
+            .map(|stmts| {
+                stmts
+                    .iter()
+                    .map(|stmt| statement_facts(stmt, &owned))
+                    .collect()
+            })
+    })?
 }
 
 /// Analyzes a single SELECT-shaped statement for table + column facts.
 pub(crate) fn analyze_select(sql: &str) -> Result<SelectFacts, String> {
-    if sql.len() > MAX_SQL_BYTES {
-        return Err(format!(
-            "SQL exceeds {} bytes; skipped by static lineage",
-            MAX_SQL_BYTES
-        ));
-    }
+    guard(sql)?;
+    let owned = sql.to_string();
+    in_parser_thread(move || analyze_select_inner(&owned))?
+}
+
+fn analyze_select_inner(sql: &str) -> Result<SelectFacts, String> {
     let analysis = analyze_query(
         sql,
         AnalyzeQueryOptions {
@@ -105,7 +217,7 @@ fn tableref_name(t: &polyglot_sql::expressions::TableRef) -> String {
 /// Extracts table-level facts from one parsed statement. `raw` is the
 /// statement's source text (used for CALL detection, which parses as an
 /// opaque command).
-pub(crate) fn statement_facts(stmt: &Expression, raw: &str) -> StatementFacts {
+fn statement_facts(stmt: &Expression, raw: &str) -> StatementFacts {
     let mut facts = StatementFacts::default();
 
     match stmt {
@@ -318,40 +430,24 @@ mod tests {
 
     #[test]
     fn statement_facts_insert_and_merge() {
-        let stmts = parse_bigquery("INSERT INTO `p.mart.daily` SELECT dt FROM `p.raw.events`")
+        let facts = statement_facts_for("INSERT INTO `p.mart.daily` SELECT dt FROM `p.raw.events`")
             .expect("parsed");
-        let facts = statement_facts(
-            &stmts[0],
-            "INSERT INTO `p.mart.daily` SELECT dt FROM `p.raw.events`",
-        );
-        assert_eq!(facts.writes, vec!["p.mart.daily"]);
-        assert_eq!(facts.reads, vec!["p.raw.events"]);
+        assert_eq!(facts[0].writes, vec!["p.mart.daily"]);
+        assert_eq!(facts[0].reads, vec!["p.raw.events"]);
     }
 
     #[test]
     fn statement_facts_call() {
         let raw = "CALL `p.ds.refresh_mart`()";
-        let facts = match parse_bigquery(raw) {
-            Ok(stmts) if !stmts.is_empty() => statement_facts(&stmts[0], raw),
-            _ => {
-                // Even when CALL fails to parse, textual detection works
-                // through the degradation path.
-                let mut f = StatementFacts::default();
-                let trimmed = raw.trim_start();
-                if trimmed[..4].eq_ignore_ascii_case("call") {
-                    f.calls.push(
-                        trimmed[4..]
-                            .trim_start()
-                            .split(['(', ' '])
-                            .next()
-                            .unwrap_or("")
-                            .replace('`', ""),
-                    );
-                }
-                f
+        if let Ok(facts) = statement_facts_for(raw) {
+            if let Some(first) = facts.first() {
+                assert_eq!(first.calls, vec!["p.ds.refresh_mart"]);
+                return;
             }
-        };
-        assert_eq!(facts.calls, vec!["p.ds.refresh_mart"]);
+        }
+        // If the dialect rejects CALL entirely, the heuristic path still
+        // surfaces the routine name.
+        assert!(heuristic_table_refs(raw).contains(&"p.ds.refresh_mart".to_string()));
     }
 
     #[test]
@@ -374,7 +470,30 @@ mod tests {
     #[test]
     fn oversized_sql_skipped() {
         let big = format!("SELECT '{}'", "x".repeat(MAX_SQL_BYTES));
-        assert!(parse_bigquery(&big).is_err());
+        assert!(statement_facts_for(&big).is_err());
         assert!(analyze_select(&big).is_err());
+    }
+
+    #[test]
+    fn deeply_nested_sql_rejected_before_parsing() {
+        // SECURITY: the parser would overflow the stack (fatal under
+        // panic=abort), so the depth guard must reject first.
+        let deep = format!(
+            "SELECT {}1{}",
+            "(".repeat(MAX_NESTING_DEPTH as usize + 10),
+            ")".repeat(MAX_NESTING_DEPTH as usize + 10)
+        );
+        assert!(statement_facts_for(&deep).is_err());
+        assert!(analyze_select(&deep).is_err());
+        // Reasonable nesting still parses.
+        let ok = "SELECT ((((1)))) AS v FROM `p.d.t`";
+        assert!(analyze_select(ok).is_ok());
+    }
+
+    #[test]
+    fn depth_counter_ignores_strings_and_comments() {
+        assert_eq!(max_nesting_depth("SELECT '((((' -- ((((\n"), 0);
+        assert_eq!(max_nesting_depth("SELECT /* (((( */ (1)"), 1);
+        assert_eq!(max_nesting_depth("SELECT ((1))"), 2);
     }
 }

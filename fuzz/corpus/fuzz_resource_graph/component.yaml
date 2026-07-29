@@ -1,0 +1,19 @@
+name: seed
+runtime: yaml
+components:
+  W:
+    inputs:
+      x:
+        type: string
+    resources:
+      inner:
+        type: t:m:Inner
+resources:
+  a:
+    type: t:m:A
+  w:
+    type: seed:index:W
+    properties:
+      x: ${a.id}
+outputs:
+  o: ${a.id}

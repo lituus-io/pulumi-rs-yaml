@@ -1227,14 +1227,13 @@ fn script_lineage(
     let statements = sql::split_statements(text);
     let mut any_parsed = false;
     for stmt_text in &statements {
-        match sql::parse_bigquery(stmt_text) {
-            Ok(stmts) => {
+        match sql::statement_facts_for(stmt_text) {
+            Ok(all_facts) => {
                 any_parsed = true;
-                for stmt in &stmts {
-                    let facts = sql::statement_facts(stmt, stmt_text);
+                for facts in &all_facts {
                     emit_statement_facts(
                         ctx,
-                        &facts,
+                        facts,
                         subject_id,
                         default_project.as_deref(),
                         default_dataset.as_deref(),

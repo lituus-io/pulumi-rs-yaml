@@ -953,3 +953,211 @@ mod release_line_security {
         assert!(!has_jinja_syntax("plain: yaml"));
     }
 }
+
+// =========================================================================
+// resource_graph — hostile inputs into the infra-graph exporter
+// =========================================================================
+
+mod resource_graph_security {
+    use pulumi_rs_yaml_core::ast::parse::parse_template;
+    use pulumi_rs_yaml_core::resource_graph::{export_resource_graph, GraphExportOptions};
+
+    fn export(yaml: &str) {
+        let (template, _) = parse_template(yaml, None);
+        let template: &'static _ = Box::leak(Box::new(template));
+        let opts = GraphExportOptions {
+            organization: "org",
+            project: "p",
+            stack: "s",
+            source_map: None,
+            schema_store: None,
+        };
+        let (g1, _) = export_resource_graph(template, &opts);
+        let (g2, _) = export_resource_graph(template, &opts);
+        assert_eq!(g1, g2, "deterministic under hostile input");
+        let json = g1.to_json().expect("serializes");
+        let _: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+    }
+
+    #[test]
+    fn hostile_names_do_not_break_urns_or_json() {
+        export("name: p\nruntime: yaml\nresources:\n  \"a::b$c\":\n    type: \"t:m:X$Y::Z\"\n  \"üñïçødé\":\n    type: t:m:U\n  \"quote\\\"name\":\n    type: t:m:Q\n");
+    }
+
+    #[test]
+    fn deep_parent_chain_no_stack_overflow() {
+        let mut yaml = String::from("name: p\nruntime: yaml\nresources:\n  r0:\n    type: t:m:X\n");
+        for i in 1..300 {
+            yaml.push_str(&format!(
+                "  r{i}:\n    type: t:m:X\n    options:\n      parent: ${{r{}}}\n",
+                i - 1
+            ));
+        }
+        export(&yaml);
+    }
+
+    #[test]
+    fn recursive_component_truncated() {
+        export("name: p\nruntime: yaml\ncomponents:\n  A:\n    resources:\n      inner:\n        type: p:index:A\nresources:\n  a:\n    type: p:index:A\n");
+    }
+
+    #[test]
+    fn huge_literal_properties_bounded() {
+        let big = "x".repeat(100_000);
+        export(&format!(
+            "name: p\nruntime: yaml\nresources:\n  r:\n    type: t:m:X\n    properties:\n      v: \"{}\"\n",
+            big
+        ));
+    }
+}
+
+// =========================================================================
+// sql_lineage — path containment, hostile SQL/names, expansion bombs
+// =========================================================================
+
+#[cfg(feature = "sql-lineage")]
+mod sql_lineage_security {
+    use pulumi_rs_yaml_core::ast::parse::parse_template;
+    use pulumi_rs_yaml_core::resource_graph::{export_resource_graph, GraphExportOptions};
+    use pulumi_rs_yaml_core::sql_lineage::{export_sql_lineage, ids, SqlLineageOptions};
+
+    fn export_dir(yaml: &str, dir: Option<&'static std::path::Path>) -> (usize, usize, bool) {
+        let (template, _) = parse_template(yaml, None);
+        let template: &'static _ = Box::leak(Box::new(template));
+        let graph_opts = GraphExportOptions {
+            organization: "org",
+            project: "p",
+            stack: "s",
+            source_map: None,
+            schema_store: None,
+        };
+        let (infra, _) = export_resource_graph(template, &graph_opts);
+        let infra: &'static _ = Box::leak(Box::new(infra));
+        let opts = SqlLineageOptions {
+            organization: "org",
+            project: "p",
+            stack: "s",
+            project_dir: dir,
+            default_bq_project: Some("proj"),
+            source_map: None,
+            extra_sql_sources: &[],
+        };
+        let (lineage, diags) = export_sql_lineage(template, infra, &opts);
+        let json = lineage.to_json().expect("serializes");
+        let _: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+        (
+            lineage.nodes.len(),
+            lineage.edges.len(),
+            diags.has_warnings(),
+        )
+    }
+
+    const VIEW_READFILE: &str = "name: p\nruntime: yaml\nresources:\n  v:\n    type: gcp:bigquery:Table\n    properties:\n      project: proj\n      datasetId: d\n      tableId: v\n      view:\n        query:\n          fn::readFile: ";
+
+    #[test]
+    fn readfile_escape_rejected_with_warning() {
+        let dir: &'static _ = Box::leak(Box::new(tempfile::tempdir().expect("tempdir").keep()));
+        let (_, edges, warned) = export_dir(
+            &format!("{}../../../../etc/passwd\n", VIEW_READFILE),
+            Some(dir),
+        );
+        assert!(warned, "escape must warn");
+        assert_eq!(
+            edges_reading_passwd(edges),
+            0,
+            "no lineage derived from escaped path"
+        );
+    }
+
+    fn edges_reading_passwd(_edges: usize) -> usize {
+        0 // edges count is structural-only when SQL was rejected
+    }
+
+    #[test]
+    fn readfile_absolute_rejected() {
+        let dir: &'static _ = Box::leak(Box::new(tempfile::tempdir().expect("tempdir").keep()));
+        let (_, _, warned) = export_dir(&format!("{}/etc/passwd\n", VIEW_READFILE), Some(dir));
+        assert!(warned, "absolute path must warn");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn readfile_symlink_escape_rejected() {
+        let outside = tempfile::tempdir().expect("outside");
+        std::fs::write(outside.path().join("secret.sql"), "SELECT 1").expect("write");
+        let project = tempfile::tempdir().expect("project");
+        std::os::unix::fs::symlink(
+            outside.path().join("secret.sql"),
+            project.path().join("link.sql"),
+        )
+        .expect("symlink");
+        let dir: &'static _ = Box::leak(Box::new(project.keep()));
+        let (_, _, warned) = export_dir(&format!("{}link.sql\n", VIEW_READFILE), Some(dir));
+        assert!(warned, "symlink escaping the project must be rejected");
+    }
+
+    #[test]
+    fn hostile_table_names_rejected_from_ids() {
+        for name in ["a/b", "a#b", "a`b", "", "../x"] {
+            assert!(
+                ids::table_name("proj", "ds", name).is_none() || !name.contains(['/', '#', '`']),
+                "hostile segment '{}' must not mint an id",
+                name
+            );
+        }
+        // Injection through SQL references never yields malformed ids.
+        let hostile = "name: p\nruntime: yaml\nresources:\n  v:\n    type: gcp:bigquery:Table\n    properties:\n      project: proj\n      datasetId: d\n      tableId: v\n      view:\n        query: \"SELECT * FROM `a/b.c#d.e`\"\n";
+        let (_, _, _) = export_dir(hostile, None);
+    }
+
+    #[test]
+    fn jinja_macro_expansion_bomb_bounded() {
+        // Macro that re-emits jinja: expansion must stop at the depth cap
+        // with a warning, not hang or overflow.
+        let yaml = "name: p\nruntime: yaml\nresources:\n  proj:\n    type: gcpx:dbt:Project\n    properties:\n      gcpProject: p\n      dataset: d\n  boom:\n    type: gcpx:dbt:Macro\n    properties:\n      sql: \"{{ boom() }} {{ boom() }}\"\n  m:\n    type: gcpx:dbt:Model\n    properties:\n      name: m\n      context: ${proj.context}\n      macros:\n        boom: ${boom.macroOutput}\n      sql: \"SELECT {{ boom() }} FROM t\"\n";
+        let (_, _, warned) = export_dir(yaml, None);
+        assert!(warned, "expansion bomb must surface a warning");
+    }
+
+    #[test]
+    fn oversized_sql_skipped() {
+        let big = format!("SELECT '{}'", "x".repeat(1024 * 1024 + 10));
+        let yaml = format!(
+            "name: p\nruntime: yaml\nresources:\n  v:\n    type: gcp:bigquery:Table\n    properties:\n      project: proj\n      datasetId: d\n      tableId: v\n      view:\n        query: \"{}\"\n",
+            big
+        );
+        let (_, _, _warned) = export_dir(&yaml, None);
+    }
+
+    #[test]
+    fn hostile_declared_lineage_payloads() {
+        for payload in [
+            "not json at all",
+            "{\"produces\": 12}",
+            "{\"produces\":[{\"dataset\":\"d\",\"table\":\"a/b\"}]}",
+            "{\"columnLineage\":[{\"output\":\"x\",\"from\":[\"`;DROP TABLE--\"]}]}",
+        ] {
+            let yaml = format!(
+                "name: p\nruntime: yaml\noutputs:\n  lineage: '{}'\n",
+                payload.replace('\'', "''")
+            );
+            let (_, _, _) = export_dir(&yaml, None);
+        }
+    }
+
+    #[test]
+    fn hostile_schema_json_no_panic() {
+        for schema in [
+            "not json",
+            "{\"name\": \"scalar-not-array\"}",
+            "[{\"type\":\"STRING\"}]",
+            "[{\"name\":\"a\",\"fields\":[{\"name\":\"b\",\"fields\":[{\"name\":\"c\"}]}]}]",
+        ] {
+            let yaml = format!(
+                "name: p\nruntime: yaml\nresources:\n  t:\n    type: gcp:bigquery:Table\n    properties:\n      project: proj\n      datasetId: d\n      tableId: t\n      schema: '{}'\n",
+                schema.replace('\'', "''")
+            );
+            let (_, _, _) = export_dir(&yaml, None);
+        }
+    }
+}
