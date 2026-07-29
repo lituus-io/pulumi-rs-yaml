@@ -90,6 +90,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace --all-targets
 
+  no-default-features:
+    name: Build without optional features
+    runs-on: ubuntu-latest
+    needs: fmt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # The sql-lineage feature pulls in a SQL parser worth ~half the
+      # language host's size; keep the opt-out compiling.
+      - run: cargo check -p pulumi-rs-yaml-core --no-default-features
+      - run: cargo check -p pulumi-rs-yaml-language --no-default-features
+      - run: cargo check -p pulumi-rs-yaml-python --no-default-features
+
   python-test:
     name: Python Tests
     runs-on: ubuntu-latest

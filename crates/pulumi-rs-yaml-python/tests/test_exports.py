@@ -25,6 +25,13 @@ def test_all_native_functions_are_reexported():
     assert not missing, f"native functions missing from __all__: {missing}"
 
 
+# export_sql_lineage is gated behind the optional `sql-lineage` build
+# feature, so __all__ may legitimately list it while _native lacks it.
+OPTIONAL_EXPORTS = {"export_sql_lineage"}
+
+
 def test_all_entries_are_importable():
     for name in pulumi_yaml_rs.__all__:
+        if name in OPTIONAL_EXPORTS and not hasattr(_native, name):
+            continue
         assert hasattr(pulumi_yaml_rs, name), f"__all__ lists {name} but it is not importable"

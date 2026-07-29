@@ -39,6 +39,14 @@ cargo build --release
 
 Binaries are at `target/release/pulumi-language-yaml` and `target/release/pulumi-converter-yaml`.
 
+The SQL lineage layer bundles a SQL parser, roughly half the language host's
+size. Build without it for a smaller binary (the `graph --lineage` flag is then
+unavailable):
+
+```bash
+cargo build --release -p pulumi-rs-yaml-language --no-default-features
+```
+
 ## Test
 
 ```bash

@@ -9,9 +9,16 @@ license.workspace = true
 name = "pulumi-language-yaml"
 path = "src/main.rs"
 
+[features]
+default = ["sql-lineage"]
+# Forwards the core feature: `--no-default-features` builds a language
+# host without the SQL parser (the `graph --lineage` flag is then
+# unavailable) for a substantially smaller binary.
+sql-lineage = ["pulumi-rs-yaml-core/sql-lineage"]
+
 [dependencies]
 pulumi-rs-yaml-proto = { path = "../pulumi-rs-yaml-proto" }
-pulumi-rs-yaml-core = { path = "../pulumi-rs-yaml-core" }
+pulumi-rs-yaml-core = { path = "../pulumi-rs-yaml-core", default-features = false }
 tonic = { workspace = true }
 prost = { workspace = true }
 prost-types = { workspace = true }

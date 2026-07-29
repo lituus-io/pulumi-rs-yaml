@@ -24,6 +24,7 @@ use std::path::PathBuf;
 
 use pulumi_rs_yaml_core::multi_file;
 use pulumi_rs_yaml_core::resource_graph::{export_resource_graph, GraphExportOptions};
+#[cfg(feature = "sql-lineage")]
 use pulumi_rs_yaml_core::sql_lineage::{export_sql_lineage, SqlLineageOptions};
 
 const USAGE: &str = "usage: pulumi-language-yaml graph --stack <stack> \
@@ -195,6 +196,14 @@ pub fn run_graph(args: &[String]) -> i32 {
         return 1;
     }
 
+    #[cfg(not(feature = "sql-lineage"))]
+    let lineage: Option<()> = if parsed.lineage {
+        eprintln!("error: --lineage requires the sql-lineage feature (not built in)");
+        return 1;
+    } else {
+        None
+    };
+    #[cfg(feature = "sql-lineage")]
     let lineage = if parsed.lineage {
         let lineage_opts = SqlLineageOptions {
             organization: &parsed.organization,
@@ -221,6 +230,9 @@ pub fn run_graph(args: &[String]) -> i32 {
         OutputFormat::Json => {
             // Without --lineage the output is byte-identical to prior
             // releases; with it, one `sql_lineage` root key is added.
+            #[cfg(not(feature = "sql-lineage"))]
+            let rendered = graph.to_json();
+            #[cfg(feature = "sql-lineage")]
             let rendered = match &lineage {
                 None => graph.to_json(),
                 Some(lineage) => serde_json::to_value(&graph)
@@ -261,6 +273,7 @@ pub fn run_graph(args: &[String]) -> i32 {
                 eprintln!("error: {}", e);
                 return 1;
             }
+            #[cfg(feature = "sql-lineage")]
             if let Some(lineage) = &lineage {
                 if let Err(e) = write_lineage_ndjson(out_dir, lineage) {
                     eprintln!("error: {}", e);
@@ -272,6 +285,7 @@ pub fn run_graph(args: &[String]) -> i32 {
     }
 }
 
+#[cfg(feature = "sql-lineage")]
 fn write_lineage_ndjson(
     out_dir: &std::path::Path,
     lineage: &pulumi_rs_yaml_core::sql_lineage::SqlLineageGraph<'_>,
