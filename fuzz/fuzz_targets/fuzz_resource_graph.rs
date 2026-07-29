@@ -21,8 +21,9 @@ fuzz_target!(|data: &[u8]| {
         return;
     }
 
+    // No Box::leak: the exporter borrows for any lifetime, so a local
+    // binding suffices and LeakSanitizer stays meaningful.
     let (template, _diags) = pulumi_rs_yaml_core::ast::parse::parse_template(input, None);
-    let template: &'static _ = Box::leak(Box::new(template));
 
     let opts = GraphExportOptions {
         organization: "org",
@@ -31,8 +32,8 @@ fuzz_target!(|data: &[u8]| {
         source_map: None,
         schema_store: None,
     };
-    let (graph1, _) = export_resource_graph(template, &opts);
-    let (graph2, _) = export_resource_graph(template, &opts);
+    let (graph1, _) = export_resource_graph(&template, &opts);
+    let (graph2, _) = export_resource_graph(&template, &opts);
 
     // Determinism: identical inputs produce identical graphs.
     assert_eq!(graph1, graph2, "export must be deterministic");

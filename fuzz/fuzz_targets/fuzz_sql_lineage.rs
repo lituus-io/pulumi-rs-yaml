@@ -30,9 +30,9 @@ fuzz_target!(|data: &[u8]| {
     let _ = ids::parse_table_reference(input, Some("proj"), Some("ds"));
     let _ = ids::table_name(input, input, input);
 
-    // Full pipeline: treat the input as a template...
+    // Full pipeline: treat the input as a template. No Box::leak — the
+    // exporters borrow for any lifetime, so LeakSanitizer stays useful.
     let (template, _diags) = pulumi_rs_yaml_core::ast::parse::parse_template(input, None);
-    let template: &'static _ = Box::leak(Box::new(template));
     let graph_opts = GraphExportOptions {
         organization: "org",
         project: "fuzz",
@@ -40,8 +40,7 @@ fuzz_target!(|data: &[u8]| {
         source_map: None,
         schema_store: None,
     };
-    let (infra, _) = export_resource_graph(template, &graph_opts);
-    let infra: &'static _ = Box::leak(Box::new(infra));
+    let (infra, _) = export_resource_graph(&template, &graph_opts);
     let opts = SqlLineageOptions {
         organization: "org",
         project: "fuzz",
@@ -51,8 +50,8 @@ fuzz_target!(|data: &[u8]| {
         source_map: None,
         extra_sql_sources: &[],
     };
-    let (lineage1, _) = export_sql_lineage(template, infra, &opts);
-    let (lineage2, _) = export_sql_lineage(template, infra, &opts);
+    let (lineage1, _) = export_sql_lineage(&template, &infra, &opts);
+    let (lineage2, _) = export_sql_lineage(&template, &infra, &opts);
     assert_eq!(lineage1, lineage2, "lineage export must be deterministic");
     let json = lineage1.to_json().expect("lineage serializes");
     let _: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
@@ -64,9 +63,7 @@ fuzz_target!(|data: &[u8]| {
         serde_yaml::to_string(&input).unwrap_or_else(|_| "''".to_string())
     );
     let (view_template, _) = pulumi_rs_yaml_core::ast::parse::parse_template(&view_yaml, None);
-    let view_template: &'static _ = Box::leak(Box::new(view_template));
-    let (view_infra, _) = export_resource_graph(view_template, &graph_opts);
-    let view_infra: &'static _ = Box::leak(Box::new(view_infra));
-    let (view_lineage, _) = export_sql_lineage(view_template, view_infra, &opts);
+    let (view_infra, _) = export_resource_graph(&view_template, &graph_opts);
+    let (view_lineage, _) = export_sql_lineage(&view_template, &view_infra, &opts);
     let _ = view_lineage.to_json().expect("view lineage serializes");
 });
