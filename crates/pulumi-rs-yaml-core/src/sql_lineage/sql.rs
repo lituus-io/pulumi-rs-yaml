@@ -9,29 +9,20 @@ use polyglot_sql::{DialectType, Expression};
 /// `panic = "abort"` — no unwinding safety net exists).
 const MAX_SQL_BYTES: usize = 1024 * 1024;
 
-/// Maximum bracket-nesting depth handed to the parser.
+/// Stack size for the parser worker thread.
 ///
-/// SECURITY: the parser is recursive descent and overflows the stack on
-/// deeply nested expressions; with `panic = "abort"` an overflow aborts
-/// the whole process, so hostile or macro-expanded SQL must be rejected
-/// *before* parsing. Frame sizes differ hugely between profiles
-/// (unoptimized builds overflow around depth 14 on a default stack,
-/// optimized builds tolerate far more), so parsing additionally runs on
-/// a worker thread with an explicit large stack — see
-/// [`in_parser_thread`]. polyglot's own `stacker` feature would grow
-/// the stack dynamically, but its build dependencies exceed this
-/// workspace's 1.85 MSRV.
-const MAX_NESTING_DEPTH: u32 = 64;
-
-/// Stack size for the parser worker thread. Sized so the depth guard,
-/// not the stack, is the binding limit in every build profile.
+/// SECURITY: polyglot's `stacker` feature grows the parser's stack on
+/// demand, so deeply nested SQL no longer overflows (verified to nesting
+/// depth 500 in unoptimized builds, where the default stack failed
+/// around depth 14). Parsing still runs on a dedicated thread so that
+/// any residual deep recursion is isolated from the caller's stack —
+/// under `panic = "abort"` an overflow would abort the whole process.
 const PARSER_STACK_BYTES: usize = 64 * 1024 * 1024;
 
 /// Runs a parser closure on a thread with a large explicit stack.
 ///
-/// SECURITY: keeps deep-recursion overflows away from the caller's
-/// stack. Only owned, `Send` fact structs cross the boundary — parser
-/// AST nodes never escape the worker.
+/// Only owned, `Send` fact structs cross the boundary — parser AST nodes
+/// never escape the worker.
 fn in_parser_thread<T, F>(f: F) -> Result<T, String>
 where
     T: Send + 'static,
@@ -46,69 +37,12 @@ where
         .map_err(|_| "SQL parser thread terminated unexpectedly".to_string())
 }
 
-/// Returns the maximum bracket-nesting depth outside string literals
-/// and comments.
-fn max_nesting_depth(sql: &str) -> u32 {
-    let bytes = sql.as_bytes();
-    let mut depth: u32 = 0;
-    let mut max = 0u32;
-    let mut i = 0usize;
-    let mut quote: Option<u8> = None;
-    while i < bytes.len() {
-        let b = bytes[i];
-        match quote {
-            Some(q) => {
-                if b == q {
-                    quote = None;
-                }
-                i += 1;
-            }
-            None => match b {
-                b'\'' | b'"' | b'`' => {
-                    quote = Some(b);
-                    i += 1;
-                }
-                b'-' if bytes.get(i + 1) == Some(&b'-') => {
-                    while i < bytes.len() && bytes[i] != b'\n' {
-                        i += 1;
-                    }
-                }
-                b'/' if bytes.get(i + 1) == Some(&b'*') => {
-                    i += 2;
-                    while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
-                        i += 1;
-                    }
-                    i = (i + 2).min(bytes.len());
-                }
-                b'(' | b'[' => {
-                    depth += 1;
-                    max = max.max(depth);
-                    i += 1;
-                }
-                b')' | b']' => {
-                    depth = depth.saturating_sub(1);
-                    i += 1;
-                }
-                _ => i += 1,
-            },
-        }
-    }
-    max
-}
-
 /// Pre-flight guard shared by every parser entry point.
 fn guard(sql: &str) -> Result<(), String> {
     if sql.len() > MAX_SQL_BYTES {
         return Err(format!(
             "SQL exceeds {} bytes; skipped by static lineage",
             MAX_SQL_BYTES
-        ));
-    }
-    let depth = max_nesting_depth(sql);
-    if depth > MAX_NESTING_DEPTH {
-        return Err(format!(
-            "SQL nesting depth {} exceeds {}; skipped by static lineage",
-            depth, MAX_NESTING_DEPTH
         ));
     }
     Ok(())
@@ -475,25 +409,13 @@ mod tests {
     }
 
     #[test]
-    fn deeply_nested_sql_rejected_before_parsing() {
-        // SECURITY: the parser would overflow the stack (fatal under
-        // panic=abort), so the depth guard must reject first.
-        let deep = format!(
-            "SELECT {}1{}",
-            "(".repeat(MAX_NESTING_DEPTH as usize + 10),
-            ")".repeat(MAX_NESTING_DEPTH as usize + 10)
-        );
-        assert!(statement_facts_for(&deep).is_err());
-        assert!(analyze_select(&deep).is_err());
-        // Reasonable nesting still parses.
+    fn deeply_nested_sql_parses_without_overflow() {
+        // SECURITY REGRESSION TEST: this input aborted the process before
+        // `stacker` + the parser worker thread were in place (unoptimized
+        // builds overflowed around nesting depth 14).
+        let deep = format!("SELECT {}1{}", "(".repeat(400), ")".repeat(400));
+        assert!(analyze_select(&deep).is_ok(), "deep nesting must not abort");
         let ok = "SELECT ((((1)))) AS v FROM `p.d.t`";
         assert!(analyze_select(ok).is_ok());
-    }
-
-    #[test]
-    fn depth_counter_ignores_strings_and_comments() {
-        assert_eq!(max_nesting_depth("SELECT '((((' -- ((((\n"), 0);
-        assert_eq!(max_nesting_depth("SELECT /* (((( */ (1)"), 1);
-        assert_eq!(max_nesting_depth("SELECT ((1))"), 2);
     }
 }

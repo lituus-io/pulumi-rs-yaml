@@ -41,7 +41,25 @@ lto = true
 codegen-units = 1
 strip = "symbols"
 panic = "abort"
+debug = 0
+overflow-checks = false
+
+# Size-optimize the parser-heavy dependencies; our own hot code stays at
+# opt-level 3. polyglot_sql alone is ~46% of the binary's .text section.
+[profile.release.package.polyglot-sql]
+opt-level = "z"
+
+[profile.release.package.starlark]
+opt-level = "s"
+
+# Mirrored onto the bench profile so the benchmark regression gate measures the
+# same codegen the shipped binary uses.
+[profile.bench.package.polyglot-sql]
+opt-level = "z"
+
+[profile.bench.package.starlark]
+opt-level = "s"
 
 [profile.release-small]
 inherits = "release"
-opt-level = "z"
+opt-level = "s"

@@ -38,6 +38,9 @@ struct GraphArgs {
     format: OutputFormat,
     out: Option<PathBuf>,
     lineage: bool,
+    /// Only read by the lineage exporter; parsed regardless so the flag is
+    /// still validated in builds without the `sql-lineage` feature.
+    #[cfg_attr(not(feature = "sql-lineage"), allow(dead_code))]
     default_bq_project: Option<String>,
 }
 
@@ -197,12 +200,10 @@ pub fn run_graph(args: &[String]) -> i32 {
     }
 
     #[cfg(not(feature = "sql-lineage"))]
-    let lineage: Option<()> = if parsed.lineage {
+    if parsed.lineage {
         eprintln!("error: --lineage requires the sql-lineage feature (not built in)");
         return 1;
-    } else {
-        None
-    };
+    }
     #[cfg(feature = "sql-lineage")]
     let lineage = if parsed.lineage {
         let lineage_opts = SqlLineageOptions {

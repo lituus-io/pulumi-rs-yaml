@@ -39,13 +39,25 @@ cargo build --release
 
 Binaries are at `target/release/pulumi-language-yaml` and `target/release/pulumi-converter-yaml`.
 
-The SQL lineage layer bundles a SQL parser, roughly half the language host's
-size. Build without it for a smaller binary (the `graph --lineage` flag is then
-unavailable):
+Release binaries are size-tuned: the SQL parser and Starlark are compiled at
+`opt-level = "s"`/`"z"` while the evaluator stays at `opt-level = 3`, and the
+converter no longer links the SQL parser at all.
+
+| Binary | Size |
+|---|---|
+| `pulumi-language-yaml` | ~9.5 MB |
+| `pulumi-language-yaml --no-default-features` | ~6.9 MB |
+| `pulumi-converter-yaml` | ~1.6 MB |
+
+The SQL lineage layer accounts for the difference; build without it when size
+matters more than the `graph --lineage` flag:
 
 ```bash
 cargo build --release -p pulumi-rs-yaml-language --no-default-features
 ```
+
+The `release-small` profile (`opt-level = "z"` everywhere, ~8.2 MB full-featured)
+trades evaluator throughput for a further reduction.
 
 ## Test
 
