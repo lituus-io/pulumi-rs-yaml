@@ -78,17 +78,62 @@ jobs:
       - run: cargo test --workspace
 
   msrv:
-    name: MSRV (1.85)
+    name: MSRV (1.90)
     runs-on: ubuntu-latest
     needs: fmt
     steps:
       - uses: actions/checkout@v4
       # dtolnay/rust-toolchain exports RUSTUP_TOOLCHAIN, which overrides the
       # rust-toolchain.toml pin — so the pinned MSRV must be requested here
-      # explicitly or it is never exercised in CI.
-      - uses: dtolnay/rust-toolchain@1.85
+      # explicitly or it is never exercised in CI. 1.90 is the floor because
+      # polyglot-sql's `stacker` feature needs >= 1.88.
+      - uses: dtolnay/rust-toolchain@1.90
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace --all-targets
+
+  no-default-features:
+    name: Build without optional features
+    runs-on: ubuntu-latest
+    needs: fmt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # The sql-lineage feature pulls in a SQL parser worth ~half the
+      # language host's size; keep the opt-out compiling.
+      - run: cargo check -p pulumi-rs-yaml-core --no-default-features
+      - run: cargo check -p pulumi-rs-yaml-language --no-default-features
+      - run: cargo check -p pulumi-rs-yaml-python --no-default-features
+      - run: cargo check -p pulumi-rs-yaml-converter --no-default-features
+
+  binary-size:
+    name: Binary size
+    runs-on: ubuntu-latest
+    needs: fmt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: size
+      # Reports sizes so a dependency can never again silently double the
+      # binary unnoticed. Informational: it prints, it does not gate.
+      - name: Build and report sizes
+        run: |
+          cargo build --release -p pulumi-rs-yaml-language -p pulumi-rs-yaml-converter
+          full_host=$(stat -c%s target/release/pulumi-language-yaml)
+          conv=$(stat -c%s target/release/pulumi-converter-yaml)
+          cargo build --release -p pulumi-rs-yaml-language --no-default-features
+          slim_host=$(stat -c%s target/release/pulumi-language-yaml)
+          {
+            echo "### Release binary sizes"
+            echo ""
+            echo "| Binary | Bytes | MiB |"
+            echo "|---|---:|---:|"
+            printf '| pulumi-language-yaml (full) | %s | %.2f |\n' "$full_host" "$(echo "scale=4; $full_host/1048576" | bc)"
+            printf '| pulumi-language-yaml (--no-default-features) | %s | %.2f |\n' "$slim_host" "$(echo "scale=4; $slim_host/1048576" | bc)"
+            printf '| pulumi-converter-yaml | %s | %.2f |\n' "$conv" "$(echo "scale=4; $conv/1048576" | bc)"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   python-test:
     name: Python Tests

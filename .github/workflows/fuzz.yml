@@ -47,7 +47,7 @@ jobs:
         with:
           key: fuzz-${{ matrix.target }}
 
-      # rust-toolchain.toml pins 1.85 for this repo, but cargo-fuzz needs a
+      # rust-toolchain.toml pins an older MSRV for this repo, but cargo-fuzz needs a
       # newer rustc to build — install it with the nightly toolchain
       # explicitly (same pattern as cargo-audit in security.yml).
       - name: Install cargo-fuzz

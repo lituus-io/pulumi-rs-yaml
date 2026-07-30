@@ -1,6 +1,6 @@
 [package]
 name = "pulumi-rs-yaml-core"
-version = "0.5.16"
+version = "0.5.17"
 edition = "2021"
 description = "Core library for pulumi-rs-yaml: parser, AST, evaluator"
 license.workspace = true
@@ -14,22 +14,23 @@ sql-lineage = ["dep:polyglot-sql"]
 [dependencies]
 pulumi-rs-yaml-proto = { path = "../pulumi-rs-yaml-proto" }
 # Exact pin: 0.x API, single integration boundary in sql_lineage/sql.rs.
-# default-features off drops `stacker` (whose build deps need rustc>=1.88,
-# above our 1.85 MSRV) and the 30+ dialects we don't use.
+# default-features off drops the 30+ dialects we don't use. `stacker` IS
+# enabled: it grows the parser's stack dynamically, so deeply nested SQL
+# cannot overflow (verified to depth 500 in debug builds, where the default
+# stack overflowed around depth 14). It requires rustc >= 1.88.
 polyglot-sql = { version = "=0.6.2", default-features = false, features = [
     "dialect-bigquery",
     "semantic",
     "generate",
+    "stacker",
 ], optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 prost-types = { workspace = true }
 thiserror = { workspace = true }
-semver = { workspace = true }
 base64 = { workspace = true }
 minijinja = { workspace = true }
-tokio = { workspace = true }
 uuid = { workspace = true }
 rand = { workspace = true }
 hcl-rs = { workspace = true }

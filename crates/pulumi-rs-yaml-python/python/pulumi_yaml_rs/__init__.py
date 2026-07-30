@@ -9,12 +9,17 @@ from pulumi_yaml_rs._native import (
     evaluate_builtin,
     create_execution_plan,
     export_dependency_graph,
-    export_sql_lineage,
     validate_and_classify,
     type_check_project,
     complete_properties,
     get_resource_schema,
 )
+
+try:  # optional: requires the `sql-lineage` build feature
+    from pulumi_yaml_rs._native import export_sql_lineage
+except ImportError:  # pragma: no cover - feature-disabled builds
+    export_sql_lineage = None
+
 from pulumi_yaml_rs._find_binary import find_language_binary, find_converter_binary
 
 __all__ = [

@@ -1,6 +1,6 @@
 [package]
 name = "pulumi-rs-yaml-python"
-version = "0.5.16"
+version = "0.5.17"
 edition = "2021"
 description = "Python bindings for pulumi-rs-yaml via PyO3"
 license.workspace = true
@@ -10,12 +10,13 @@ name = "pulumi_yaml_rs"
 crate-type = ["cdylib"]
 
 [dependencies]
-pulumi-rs-yaml-core = { path = "../pulumi-rs-yaml-core" }
+pulumi-rs-yaml-core = { path = "../pulumi-rs-yaml-core", default-features = false }
 pyo3 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 
 [features]
-default = ["abi3"]
+default = ["abi3", "sql-lineage"]
+sql-lineage = ["pulumi-rs-yaml-core/sql-lineage"]
 abi3 = ["pyo3/abi3-py39"]

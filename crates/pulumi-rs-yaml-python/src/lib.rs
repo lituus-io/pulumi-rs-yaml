@@ -832,11 +832,14 @@ fn export_dependency_graph(
 /// Export the stack's SQL lineage graph (data objects layered on the
 /// infrastructure graph).
 ///
+/// Only present when built with the `sql-lineage` feature (the default).
+///
 /// Returns a dict with `schema_version`, `organization`, `project`,
 /// `stack`, `nodes`, `edges`, and `diagnostics`. Node ids are
 /// cloud-scoped (`bq://project/dataset/table#column`) so exports from
 /// independent stacks join automatically; `defined_by` edges reference
 /// the infrastructure graph's URNs.
+#[cfg(feature = "sql-lineage")]
 #[pyfunction]
 #[pyo3(signature = (project_dir, stack, organization="", jinja_context=None, schema_dir=None, default_bq_project=None))]
 fn export_sql_lineage(
@@ -1031,6 +1034,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(evaluate_builtin, m)?)?;
     m.add_function(wrap_pyfunction!(create_execution_plan, m)?)?;
     m.add_function(wrap_pyfunction!(export_dependency_graph, m)?)?;
+    #[cfg(feature = "sql-lineage")]
     m.add_function(wrap_pyfunction!(export_sql_lineage, m)?)?;
     m.add_function(wrap_pyfunction!(validate_and_classify, m)?)?;
     m.add_function(wrap_pyfunction!(type_check_project, m)?)?;
