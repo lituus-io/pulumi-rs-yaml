@@ -6,18 +6,3 @@ rustflags = ["-C", "target-feature=+crt-static"]
 
 [target.aarch64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]
-
-# Linker-level dead-code elimination and identical-code folding. rustc already
-# passes --gc-sections for most ELF targets; --icf=all and -dead_strip are the
-# additions that actually move the needle.
-[target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "link-arg=-Wl,--gc-sections", "-C", "link-arg=-Wl,--icf=all"]
-
-[target.aarch64-unknown-linux-gnu]
-rustflags = ["-C", "link-arg=-Wl,--gc-sections", "-C", "link-arg=-Wl,--icf=all"]
-
-[target.x86_64-apple-darwin]
-rustflags = ["-C", "link-arg=-Wl,-dead_strip"]
-
-[target.aarch64-apple-darwin]
-rustflags = ["-C", "link-arg=-Wl,-dead_strip"]

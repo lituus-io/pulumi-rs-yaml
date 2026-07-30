@@ -118,7 +118,14 @@ jobs:
           key: size
       # Reports sizes so a dependency can never again silently double the
       # binary unnoticed. Informational: it prints, it does not gate.
+      #
+      # RUSTFLAGS is cleared deliberately: an env-level RUSTFLAGS makes cargo
+      # ignore `target.*.rustflags` from .cargo/config.toml, so the rest of CI
+      # never exercises the real release link configuration. Clearing it here
+      # means this job links exactly like release.yml does.
       - name: Build and report sizes
+        env:
+          RUSTFLAGS: ""
         run: |
           cargo build --release -p pulumi-rs-yaml-language -p pulumi-rs-yaml-converter
           full_host=$(stat -c%s target/release/pulumi-language-yaml)

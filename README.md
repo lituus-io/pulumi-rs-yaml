@@ -40,8 +40,7 @@ cargo build --release
 Binaries are at `target/release/pulumi-language-yaml` and `target/release/pulumi-converter-yaml`.
 
 Release binaries are size-tuned: the SQL parser and Starlark are compiled at
-`opt-level = "s"`/`"z"` while the evaluator stays at `opt-level = 3`, and the
-converter no longer links the SQL parser at all.
+`opt-level = "z"`/`"s"` while the evaluator stays at `opt-level = 3`.
 
 | Binary | Size |
 |---|---|
