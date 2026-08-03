@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Fuzz target: YAML bomb / resource exhaustion
 //!
 //! Specifically targets denial-of-service vectors:

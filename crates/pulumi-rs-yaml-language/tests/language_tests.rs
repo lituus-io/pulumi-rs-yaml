@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Integration tests for the language host server and related components.
 //!
 //! These tests validate Pack, GeneratePackage, template loading, and

@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Type checker for Pulumi YAML templates.
 //!
 //! Validates resource properties, required inputs, invoke arguments,

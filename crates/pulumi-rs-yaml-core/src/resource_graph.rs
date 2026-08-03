@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Static resource dependency-graph export for external graph stores
 //! (e.g. BigQuery Graph property graphs).
 //!

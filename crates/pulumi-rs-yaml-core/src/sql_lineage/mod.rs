@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! SQL lineage extraction — a data-object graph layered on the
 //! infrastructure graph.
 //!

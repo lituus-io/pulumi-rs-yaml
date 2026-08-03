@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 """
 End-to-end test: Pulumi engine + Rust pulumi-language-yaml + real GCP resource.
 

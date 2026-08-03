@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Jinja2 template pre-processing with GAT-based architecture.
 //!
 //! This module provides a `TemplatePreprocessor` trait with two implementations:

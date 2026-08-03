@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 """Integration test: pip install -> console_script -> binary exec flow.
 
 Validates:

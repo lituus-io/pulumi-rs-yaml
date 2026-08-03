@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Static resolution: property lookup by dot-path, SQL text
 //! materialization (inline literals and contained `fn::readFile`),
 //! BigQuery entity identity, and table-schema normalization.

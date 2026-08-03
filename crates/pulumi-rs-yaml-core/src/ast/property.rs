@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 use crate::diag::Diagnostics;
 use crate::syntax::Span;
 use std::borrow::Cow;

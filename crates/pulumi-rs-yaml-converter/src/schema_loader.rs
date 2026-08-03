@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! gRPC client for fetching provider schemas in the converter.
 //!
 //! Adapted from the language host's schema_loader.rs to avoid circular deps.

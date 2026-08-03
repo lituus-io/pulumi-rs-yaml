@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 use std::net::SocketAddr;
 
 use pulumi_rs_yaml_proto::pulumirpc;

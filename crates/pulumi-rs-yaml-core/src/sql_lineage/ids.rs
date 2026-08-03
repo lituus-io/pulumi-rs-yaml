@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Canonical data-object ID construction — THE cross-stack join contract.
 //!
 //! IDs are cloud-scoped, not stack-scoped: two stacks referring to the

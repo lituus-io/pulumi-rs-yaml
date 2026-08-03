@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Fuzz target: Jinja preprocessing pipeline
 //!
 //! Tests the full Jinja pipeline that processes YAML before evaluation:

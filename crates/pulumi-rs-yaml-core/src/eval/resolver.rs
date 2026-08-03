@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! GAT-based property resolver (Phase B5).
 //!
 //! Provides a `PropertyResolver` trait with two implementations:

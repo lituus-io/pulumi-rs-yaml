@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 """Tests for Python ↔ Rust type conversion round-trips.
 
 Exercises py_to_value and value_to_py via evaluate_builtin("select", [0, [value]]).

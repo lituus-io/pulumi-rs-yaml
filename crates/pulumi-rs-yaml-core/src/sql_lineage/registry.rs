@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Where SQL lives on resources: a const registry of
 //! (type token, property dot-path, role). Enum-driven — no dynamic
 //! dispatch. Callers extend via `SqlLineageOptions::extra_sql_sources`

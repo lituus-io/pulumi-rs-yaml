@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! End-to-end tests exercising gcpx provider resources through the Pulumi YAML evaluator.
 //!
 //! These tests define Pulumi YAML programs using all 6 gcpx resource types and run them

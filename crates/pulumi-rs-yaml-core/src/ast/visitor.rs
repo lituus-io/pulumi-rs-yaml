@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Zero-cost expression visitor. GAT controls accumulator type.
 //!
 //! Three visitors unify ~300 lines of duplicated recursive walkers

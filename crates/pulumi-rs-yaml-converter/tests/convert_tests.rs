@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 use pretty_assertions::assert_eq;
 use pulumi_rs_yaml_converter::yaml_to_pcl;
 

@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Pre-generated protobuf/gRPC code for Pulumi language host.
 //!
 //! This crate contains generated code from Pulumi's proto definitions.

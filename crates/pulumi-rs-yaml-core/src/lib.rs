@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 pub mod ast;
 pub mod classify;
 pub mod completion;

@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Tonic gRPC client wrappers for the Pulumi engine and resource monitor.
 
 use std::collections::{BTreeMap, HashMap};

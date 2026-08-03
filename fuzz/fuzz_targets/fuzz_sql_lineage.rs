@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Fuzz target: SQL lineage export (full pipeline + hot helpers)
 //!
 //! Exercises the template → infra graph → lineage pipeline plus the

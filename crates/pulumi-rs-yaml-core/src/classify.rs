@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Error classification for structured diagnostic reporting.
 //!
 //! Classifies diagnostics into machine-readable categories by substring

@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Security tests for code added in v0.3.0–v0.3.1.
 //!
 //! Covers: classify.rs, visitor.rs, protobuf.rs (by-value), packages.rs,

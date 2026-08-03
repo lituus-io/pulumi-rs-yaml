@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 use crate::eval::value::Value;
 use std::borrow::Cow;
 use std::collections::BTreeMap;

@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Schema-driven completion API for IDE support.
 //!
 //! Provides completion items for resource properties based on provider schemas.

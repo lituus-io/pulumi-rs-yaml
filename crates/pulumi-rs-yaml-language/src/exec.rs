@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! The `exec` subcommand: wraps a child process (e.g. `pulumi up`) so that
 //! full Jinja `{% %}` blocks can appear in Pulumi.*.yaml files.
 //!

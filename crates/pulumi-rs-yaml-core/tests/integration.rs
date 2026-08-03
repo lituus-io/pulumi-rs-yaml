@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Integration tests for the full evaluation pipeline with mock callbacks.
 //!
 //! These tests exercise: parse → topological sort → evaluate → verify registrations.

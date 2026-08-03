@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 mod clients;
 mod component_provider;
 pub(crate) mod exec;

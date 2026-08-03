@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Fuzz target: infrastructure dependency-graph export
 //!
 //! Any template that parses must export without panicking, serialize to

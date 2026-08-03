@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 use crate::source::{FileId, SourceArena};
 use crate::syntax::{LineIndex, Span};
 use std::fmt;

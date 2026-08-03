@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! PCL→YAML generator.
 //!
 //! Converts PCL (HCL2) source to Pulumi YAML format.

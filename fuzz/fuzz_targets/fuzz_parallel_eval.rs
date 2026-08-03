@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Fuzz target: Parallel evaluation of YAML templates
 //!
 //! Tests the evaluator with parallel=4 on arbitrary YAML templates to find:

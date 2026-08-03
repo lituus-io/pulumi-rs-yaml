@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Fuzz target: YAML-to-PCL converter
 //!
 //! Tests the full yaml_to_pcl pipeline with arbitrary YAML input.

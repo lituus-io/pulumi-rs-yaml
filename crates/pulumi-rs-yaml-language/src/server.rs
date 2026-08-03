@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! The YAML language host gRPC server implementing `LanguageRuntime`.
 
 use std::collections::HashMap;

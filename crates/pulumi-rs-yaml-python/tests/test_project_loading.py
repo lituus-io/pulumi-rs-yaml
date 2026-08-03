@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 """Tests for load_project() and discover_project_files()."""
 
 import pytest

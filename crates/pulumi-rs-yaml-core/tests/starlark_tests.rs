@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Integration tests for Starlark function support (`fn::starlark`).
 
 use std::collections::HashMap;

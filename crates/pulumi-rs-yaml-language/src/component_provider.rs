@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Component provider: a gRPC ResourceProvider that handles Construct
 //! calls for YAML-defined component resources.
 //!

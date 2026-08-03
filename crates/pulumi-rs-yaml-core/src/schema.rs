@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Schema loading and storage for provider resource metadata.
 //!
 //! Parses provider schema JSON to extract output properties, secret properties,

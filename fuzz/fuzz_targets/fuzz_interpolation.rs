@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Fuzz target: Interpolation parser
 //!
 //! Tests parse_interpolation() and has_interpolations() with arbitrary strings.

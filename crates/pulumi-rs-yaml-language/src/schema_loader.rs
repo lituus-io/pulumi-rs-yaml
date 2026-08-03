@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! gRPC client for the Pulumi schema loader (`codegen.Loader` service).
 //!
 //! Fetches provider schemas via the `GetSchema` RPC and builds a `SchemaStore`

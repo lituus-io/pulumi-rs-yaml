@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Shared template file discovery for the YAML language host.
 //!
 //! Used by both the runner (Run RPC) and the server (GetRequiredPackages, etc.).

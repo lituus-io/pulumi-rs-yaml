@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Fuzz target: YAML template parser
 //!
 //! Tests parse_template() with arbitrary YAML-like input to find:

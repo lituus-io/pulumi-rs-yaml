@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Fuzz target: Extra context variables and readFile path validation
 //!
 //! Tests v0.4.0 new functionality:

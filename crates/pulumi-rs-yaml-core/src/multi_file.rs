@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Multi-file Pulumi YAML support.
 //!
 //! Discovers, parses, and merges multiple `Pulumi.*.yaml` files into a single

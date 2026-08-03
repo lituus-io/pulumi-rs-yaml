@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 """Tests for evaluate_builtin() — all builtin function evaluation."""
 
 import json

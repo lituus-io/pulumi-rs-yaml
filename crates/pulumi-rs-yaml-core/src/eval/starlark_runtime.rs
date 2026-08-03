@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Starlark function runtime for `fn::starlark` evaluation.
 //!
 //! Compiles user-defined Starlark functions from the `starlark:` top-level block

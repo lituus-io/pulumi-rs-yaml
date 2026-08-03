@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 use crate::ast::interpolation::InterpolationPart;
 use crate::ast::property::PropertyAccess;
 use crate::syntax::ExprMeta;

@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 """Keep the public re-export surface in sync with the native module.
 
 Every #[pyfunction] registered in _native must be re-exported from the

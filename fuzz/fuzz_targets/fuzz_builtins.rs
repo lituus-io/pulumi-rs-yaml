@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Fuzz target: Builtin function evaluation with structured input
 //!
 //! Uses `arbitrary` to generate structured inputs (not just random bytes)

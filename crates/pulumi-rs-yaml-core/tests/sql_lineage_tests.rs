@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Integration tests for the SQL lineage export: full pipeline from
 //! template text through the infra graph join, cross-stack ID
 //! contracts, components, declared lineage, and determinism.

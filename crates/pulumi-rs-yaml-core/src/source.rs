@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 /// Owns the source text for all YAML files in a program.
 ///
 /// All `&'src str` references in the AST and evaluation layers borrow from a `SourceArena`.

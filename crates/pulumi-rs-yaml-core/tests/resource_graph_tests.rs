@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Integration tests for the resource dependency-graph export.
 //!
 //! Covers the full loading pipeline (multi-file discovery, Jinja

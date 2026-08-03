@@ -1,3 +1,5 @@
+# Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 """Tests for create_execution_plan() — DAG-based execution planning."""
 
 import pytest

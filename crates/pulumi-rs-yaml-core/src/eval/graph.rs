@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 use crate::ast::expr::Expr;
 use crate::ast::template::*;
 use crate::ast::visitor::{walk_expr, walk_resource, AllRefsCollector, DepCollector};

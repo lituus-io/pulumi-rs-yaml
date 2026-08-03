@@ -1,3 +1,5 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+
 //! Integration tests for the Jinja2 template pre-processing module.
 
 use std::borrow::Cow;
