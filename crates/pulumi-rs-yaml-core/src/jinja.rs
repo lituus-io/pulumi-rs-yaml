@@ -1070,6 +1070,116 @@ fn register_custom_filters(env: &mut minijinja::Environment<'_>) {
                 })
         },
     );
+
+    // Jinja2 authors write `indent(width=2, first=True)`. minijinja's builtin
+    // is positional-only, so the kwargs map lands in `width` and fails with
+    // "cannot convert map to usize". Accept both spellings; the positional
+    // form keeps the builtin's exact semantics.
+    env.add_filter("indent", indent_compat);
+
+    // Jinja2 method calls on dicts/strings (`vars.items()`), which minijinja
+    // exposes only as filters. A non-capturing `fn` keeps this monomorphised —
+    // no boxed trait object, no captured state, trivially Send + Sync.
+    env.set_unknown_method_callback(jinja2_method_compat);
+}
+
+/// `indent` accepting Jinja2 keyword arguments as well as positional ones.
+///
+/// Delegates to the builtin semantics: `width` spaces prepended to every
+/// non-blank line, `first` also indenting line 1, `blank` also indenting
+/// empty lines.
+fn indent_compat(
+    value: String,
+    args: &[minijinja::Value],
+    kwargs: minijinja::value::Kwargs,
+) -> Result<String, minijinja::Error> {
+    let width = match args.first() {
+        Some(v) => usize::try_from(v.as_i64().unwrap_or(4).max(0) as u64).unwrap_or(4),
+        None => kwargs.get::<Option<usize>>("width")?.unwrap_or(4),
+    };
+    let first = match args.get(1) {
+        Some(v) => v.is_true(),
+        None => kwargs.get::<Option<bool>>("first")?.unwrap_or(false),
+    };
+    let blank = match args.get(2) {
+        Some(v) => v.is_true(),
+        None => kwargs.get::<Option<bool>>("blank")?.unwrap_or(false),
+    };
+    kwargs.assert_all_used()?;
+
+    let prefix = " ".repeat(width);
+    let mut out = String::with_capacity(value.len() + width * 4);
+    for (idx, line) in value.split('\n').enumerate() {
+        if idx > 0 {
+            out.push('\n');
+        }
+        let indentable = if line.trim().is_empty() { blank } else { true };
+        if indentable && (idx > 0 || first) {
+            out.push_str(&prefix);
+        }
+        out.push_str(line);
+    }
+    Ok(out)
+}
+
+/// Python-style methods Jinja2 templates call on values minijinja treats as
+/// plain maps/sequences/strings.
+///
+/// Borrows the receiver and arguments throughout — no clone of the underlying
+/// container. Unknown names fall through to minijinja's own error so typos are
+/// still reported as unknown methods.
+fn jinja2_method_compat(
+    _state: &minijinja::State<'_, '_>,
+    value: &minijinja::Value,
+    method: &str,
+    args: &[minijinja::Value],
+) -> Result<minijinja::Value, minijinja::Error> {
+    let no_args = |name: &str| -> Result<(), minijinja::Error> {
+        if args.is_empty() {
+            Ok(())
+        } else {
+            Err(minijinja::Error::new(
+                minijinja::ErrorKind::TooManyArguments,
+                format!("{} takes no arguments", name),
+            ))
+        }
+    };
+
+    match method {
+        "items" => {
+            no_args("items")?;
+            minijinja::filters::items(value)
+        }
+        "keys" => {
+            no_args("keys")?;
+            let pairs = minijinja::filters::items(value)?;
+            let keys = pairs
+                .try_iter()?
+                .filter_map(|pair| pair.get_item_by_index(0).ok())
+                .collect::<Vec<_>>();
+            Ok(minijinja::Value::from(keys))
+        }
+        "values" => {
+            no_args("values")?;
+            let pairs = minijinja::filters::items(value)?;
+            let values = pairs
+                .try_iter()?
+                .filter_map(|pair| pair.get_item_by_index(1).ok())
+                .collect::<Vec<_>>();
+            Ok(minijinja::Value::from(values))
+        }
+        "get" => {
+            let key = args.first().ok_or_else(|| {
+                minijinja::Error::new(minijinja::ErrorKind::MissingArgument, "get requires a key")
+            })?;
+            let found = value.get_item(key).ok().filter(|v| !v.is_undefined());
+            // Python's dict.get returns None when absent and no default given.
+            Ok(found
+                .or_else(|| args.get(1).cloned())
+                .unwrap_or_else(|| minijinja::Value::from(())))
+        }
+        _ => Err(minijinja::Error::from(minijinja::ErrorKind::UnknownMethod)),
+    }
 }
 
 // ---------------------------------------------------------------------------

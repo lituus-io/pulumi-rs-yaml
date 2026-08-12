@@ -2041,3 +2041,125 @@ mod loader_security {
         let _ = std::fs::remove_dir_all(&base);
     }
 }
+
+// ============================================================================
+// Jinja2 compatibility: Python-style methods and keyword-argument `indent`
+//
+// Macro libraries authored for Jinja2 call `vars.items()` and
+// `indent(width=2, first=True)`. minijinja exposes an `items` filter and a
+// positional-only `indent`, so those templates failed with "unknown method"
+// and "cannot convert map to usize" respectively.
+// ============================================================================
+
+mod jinja2_compat {
+    use super::*;
+
+    fn render(src: &str) -> Result<String, String> {
+        let config = HashMap::new();
+        let ctx = JinjaContext {
+            project_name: "p",
+            stack_name: "dev",
+            cwd: "/tmp",
+            organization: "o",
+            root_directory: "/tmp",
+            config: &config,
+            project_dir: "/tmp",
+            undefined: UndefinedMode::Strict,
+            extra: &EMPTY_EXTRA,
+        };
+        let pre = JinjaPreprocessor::new(&ctx);
+        pre.preprocess(src, "Pulumi.yaml")
+            .map(|c| c.into_owned())
+            .map_err(|e| e.to_string())
+    }
+
+    #[test]
+    fn test_dict_items_method() {
+        let src = "{% set v = {'b': 2, 'a': 1} %}\
+{% for k, val in v.items() %}{{ k }}={{ val }};{% endfor %}\n";
+        let out = render(src).expect("items() must render");
+        assert!(out.contains("a=1"), "missing a=1: {out}");
+        assert!(out.contains("b=2"), "missing b=2: {out}");
+    }
+
+    #[test]
+    fn test_dict_keys_and_values_methods() {
+        let src = "{% set v = {'a': 1, 'b': 2} %}\
+k:{% for k in v.keys() %}{{ k }},{% endfor %} \
+v:{% for x in v.values() %}{{ x }},{% endfor %}\n";
+        let out = render(src).expect("keys()/values() must render");
+        assert!(out.contains("a,"), "keys missing: {out}");
+        assert!(out.contains("1,"), "values missing: {out}");
+    }
+
+    #[test]
+    fn test_dict_get_method_with_and_without_default() {
+        let src = "{% set v = {'a': 1} %}\
+hit:{{ v.get('a') }} miss:{{ v.get('zz', 'fallback') }}\n";
+        let out = render(src).expect("get() must render");
+        assert!(out.contains("hit:1"), "get hit failed: {out}");
+        assert!(out.contains("miss:fallback"), "get default failed: {out}");
+    }
+
+    #[test]
+    fn test_unknown_method_still_errors() {
+        // The callback must not swallow genuine typos.
+        let err = render("{% set v = {'a': 1} %}{{ v.itemz() }}\n")
+            .expect_err("unknown method must still fail");
+        assert!(
+            err.to_lowercase().contains("itemz") || err.to_lowercase().contains("unknown method"),
+            "typo should surface as unknown method: {err}"
+        );
+    }
+
+    #[test]
+    fn test_items_filter_still_works() {
+        // Templates already ported to minijinja syntax must not regress.
+        let src =
+            "{% set v = {'a': 1} %}{% for k, val in v | items %}{{ k }}={{ val }}{% endfor %}\n";
+        let out = render(src).expect("| items filter must still render");
+        assert!(out.contains("a=1"), "items filter broke: {out}");
+    }
+
+    #[test]
+    fn test_indent_keyword_arguments() {
+        let src = "x: |\n{{ \"one\\ntwo\" | indent(width=2, first=True) }}\n";
+        let out = render(src).expect("indent kwargs must render");
+        assert!(out.contains("  one"), "first line not indented: {out:?}");
+        assert!(out.contains("  two"), "later line not indented: {out:?}");
+    }
+
+    #[test]
+    fn test_indent_positional_unchanged() {
+        // Positional form must keep the builtin's exact behaviour: the first
+        // line is NOT indented unless explicitly requested.
+        let out = render("{{ \"one\\ntwo\" | indent(2) }}\n").expect("positional indent");
+        assert!(
+            out.starts_with("one"),
+            "first line must stay flush: {out:?}"
+        );
+        assert!(out.contains("\n  two"), "later line must indent: {out:?}");
+    }
+
+    #[test]
+    fn test_indent_positional_first_true() {
+        let out = render("{{ \"one\\ntwo\" | indent(2, true) }}\n").expect("positional first");
+        assert!(out.starts_with("  one"), "first line must indent: {out:?}");
+    }
+
+    #[test]
+    fn test_indent_blank_lines_default_untouched() {
+        let out = render("{{ \"one\\n\\ntwo\" | indent(width=2) }}\n").expect("blank default");
+        assert!(
+            out.contains("\n\n"),
+            "blank line must stay unindented by default: {out:?}"
+        );
+    }
+
+    #[test]
+    fn test_indent_rejects_unknown_keyword() {
+        let err = render("{{ \"a\" | indent(widht=2) }}\n")
+            .expect_err("misspelled kwarg must fail loudly");
+        assert!(!err.is_empty(), "expected a diagnostic for unknown kwarg");
+    }
+}
