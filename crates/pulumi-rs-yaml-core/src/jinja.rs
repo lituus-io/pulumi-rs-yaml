@@ -1041,6 +1041,15 @@ fn register_custom_filters(env: &mut minijinja::Environment<'_>) {
     env.add_filter("to_json", |v: minijinja::Value| -> String {
         serde_json::to_string(&v).unwrap_or_default()
     });
+
+    // Jinja2 spells this `tojson` (no underscore); `to_json` above is the
+    // Ansible/Salt spelling. Templates ported from Jinja2 — which is all of
+    // them — failed with "unknown filter: tojson", and because a render error
+    // is reported per file the stack then read as *missing* rather than
+    // broken. Same class as the `indent` kwargs gap fixed in 0.5.19: the
+    // semantics were already here, under a name real templates never use.
+    env.add_filter("tojson", tojson_compat);
+
     env.add_filter("to_yaml", |v: minijinja::Value| -> String {
         serde_yaml::to_string(&v).unwrap_or_default()
     });
@@ -1081,6 +1090,58 @@ fn register_custom_filters(env: &mut minijinja::Environment<'_>) {
     // exposes only as filters. A non-capturing `fn` keeps this monomorphised —
     // no boxed trait object, no captured state, trivially Send + Sync.
     env.set_unknown_method_callback(jinja2_method_compat);
+}
+
+/// Jinja2's `tojson`, including its optional `indent`.
+///
+/// Jinja2 accepts `tojson`, `tojson(2)` and `tojson(indent=2)`; a
+/// positional-only registration would reproduce, for this filter, exactly the
+/// "cannot convert map to usize" failure that `indent_compat` exists to
+/// prevent. `indent=None`/absent yields the compact form, matching both
+/// Jinja2 and the `to_json` spelling above, so the two names agree on every
+/// input.
+///
+/// Serialisation cannot fail for a renderable `Value`, but an unserialisable
+/// one returns an error rather than an empty string: a silently empty JSON
+/// literal is a corrupt template that renders green.
+fn tojson_compat(
+    value: minijinja::Value,
+    args: &[minijinja::Value],
+    kwargs: minijinja::value::Kwargs,
+) -> Result<String, minijinja::Error> {
+    let indent = match args.first() {
+        Some(v) => v.as_i64().map(|n| n.max(0) as usize),
+        None => kwargs.get::<Option<usize>>("indent")?,
+    };
+    kwargs.assert_all_used()?;
+
+    let rendered = match indent {
+        Some(width) => {
+            let mut buf = Vec::new();
+            let indent_bytes = " ".repeat(width);
+            let fmt = serde_json::ser::PrettyFormatter::with_indent(indent_bytes.as_bytes());
+            let mut ser = serde_json::Serializer::with_formatter(&mut buf, fmt);
+            serde::Serialize::serialize(&value, &mut ser)
+                .map_err(|e| json_error(&e))
+                .and_then(|()| {
+                    String::from_utf8(buf).map_err(|e| {
+                        minijinja::Error::new(
+                            minijinja::ErrorKind::InvalidOperation,
+                            format!("tojson produced invalid UTF-8: {}", e),
+                        )
+                    })
+                })?
+        }
+        None => serde_json::to_string(&value).map_err(|e| json_error(&e))?,
+    };
+    Ok(rendered)
+}
+
+fn json_error(e: &serde_json::Error) -> minijinja::Error {
+    minijinja::Error::new(
+        minijinja::ErrorKind::InvalidOperation,
+        format!("tojson could not serialise value: {}", e),
+    )
 }
 
 /// `indent` accepting Jinja2 keyword arguments as well as positional ones.
@@ -1443,6 +1504,87 @@ mod tests {
         let result = preprocessor.preprocess(source, "test.yaml").unwrap();
         assert!(matches!(result, Cow::Owned(_)));
         assert!(result.as_ref().contains("name: myproject"));
+    }
+
+    // ---- tojson (Jinja2 spelling) ----
+
+    /// Render `source` through a default context.
+    ///
+    /// Both sides are owned: the diagnostic borrows from the context, which
+    /// dies with this frame.
+    fn render_str(source: &str) -> Result<String, String> {
+        let config = HashMap::new();
+        let extra = HashMap::new();
+        let ctx = JinjaContext {
+            project_name: "test",
+            stack_name: "dev",
+            cwd: "/tmp",
+            organization: "",
+            root_directory: "",
+            config: &config,
+            project_dir: "",
+            undefined: UndefinedMode::Strict,
+            extra: &extra,
+        };
+        match JinjaPreprocessor::new(&ctx).preprocess(source, "test.yaml") {
+            Ok(c) => Ok(c.into_owned()),
+            Err(d) => Err(format!("{d:?}")),
+        }
+    }
+
+    #[test]
+    fn test_tojson_list() {
+        let out = render_str("x: {% set v = [1, 2] %}{{ v | tojson }}\n").unwrap();
+        assert!(out.contains("x: [1,2]"), "got: {out}");
+    }
+
+    #[test]
+    fn test_tojson_map() {
+        let out = render_str("x: {% set v = {\"a\": 1} %}{{ v | tojson }}\n").unwrap();
+        assert!(out.contains(r#"{"a":1}"#), "got: {out}");
+    }
+
+    #[test]
+    fn test_tojson_string_is_quoted() {
+        let out = render_str("x: {{ \"hi\" | tojson }}\n").unwrap();
+        assert!(out.contains(r#"x: "hi""#), "got: {out}");
+    }
+
+    #[test]
+    fn test_tojson_escapes_embedded_quotes() {
+        // The reason a template reaches for tojson at all: emitting a value
+        // into YAML without hand-rolling the escaping.
+        let out = render_str("x: {{ 'a\"b' | tojson }}\n").unwrap();
+        assert!(out.contains(r#""a\"b""#), "got: {out}");
+    }
+
+    #[test]
+    fn test_tojson_agrees_with_to_json_spelling() {
+        // Both names must serialise identically, or a template's meaning would
+        // depend on which spelling its author happened to use.
+        let a = render_str("x: {% set v = {\"a\": [1, 2]} %}{{ v | tojson }}\n").unwrap();
+        let b = render_str("x: {% set v = {\"a\": [1, 2]} %}{{ v | to_json }}\n").unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_tojson_indent_positional_and_kwarg() {
+        // Jinja2 accepts tojson(2) and tojson(indent=2). A positional-only
+        // registration would reproduce the "cannot convert map to usize"
+        // failure that indent_compat exists to prevent.
+        let pos = render_str("{% set v = {\"a\": 1} %}{{ v | tojson(2) }}\n").unwrap();
+        let kw = render_str("{% set v = {\"a\": 1} %}{{ v | tojson(indent=2) }}\n").unwrap();
+        assert_eq!(pos, kw);
+        assert!(
+            pos.contains("\n  \"a\": 1"),
+            "expected pretty form, got: {pos}"
+        );
+    }
+
+    #[test]
+    fn test_tojson_rejects_unknown_kwarg() {
+        // assert_all_used: a typo'd kwarg must fail loudly, not be ignored.
+        assert!(render_str("{{ [1] | tojson(indnet=2) }}\n").is_err());
     }
 
     #[test]
