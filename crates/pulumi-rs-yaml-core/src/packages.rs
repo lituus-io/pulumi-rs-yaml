@@ -307,6 +307,16 @@ fn scan_expr_for_invokes(expr: &Expr<'_>, map: &mut HashMap<String, PackageDepen
     let mut invokes: Vec<InvokeInfo<'_>> = Vec::new();
     walk_expr(expr, &InvokePackageCollector, &mut invokes);
     for info in invokes {
+        // A function answered in process needs no provider. Skipping it here
+        // keeps the package out of both registration and schema loading, each
+        // of which loads the plugin binary — and a loaded plugin is one the
+        // engine Cancels at shutdown, which is exactly where pulumi-str
+        // crashes. Intercepting the invoke alone would not have prevented it.
+        // A template that also uses an unhandled token from the same package
+        // still pulls the package in, through that token.
+        if crate::eval::native_str::handles(&canonicalize_function_token(info.token)) {
+            continue;
+        }
         let pkg_name = resolve_pkg_name(info.token).to_string();
         let version = info.version.unwrap_or("").to_string();
         let download_url = info.plugin_download_url.unwrap_or("").to_string();

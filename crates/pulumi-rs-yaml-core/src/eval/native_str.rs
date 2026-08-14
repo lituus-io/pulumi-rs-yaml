@@ -51,6 +51,24 @@ fn ok(value: String) -> Option<HashMap<String, Value<'static>>> {
     Some(out)
 }
 
+/// Whether this token is answered here rather than by the provider.
+///
+/// Package discovery consults this so a natively-answered invoke does not pull
+/// its provider into the referenced-package set. Intercepting the invoke alone
+/// is not enough: a referenced package is registered with the engine and has
+/// its schema fetched, both of which load the plugin binary — and the crash
+/// this avoids happens in `Cancel`, on any provider the engine has loaded.
+///
+/// Keyed on the token alone, so it is a property of the template rather than of
+/// any particular argument values. A template mixing handled and unhandled
+/// tokens still pulls the package in, which is correct: it genuinely needs it.
+pub(crate) fn handles(token: &str) -> bool {
+    matches!(
+        token,
+        "str:index:replace" | "str:index:trimPrefix" | "str:index:trimSuffix"
+    )
+}
+
 /// Evaluate a `str` function in process, or return `None` to defer to the engine.
 ///
 /// `None` is the "not ours" answer and is always safe: the caller falls back to

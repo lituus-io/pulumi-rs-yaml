@@ -6003,3 +6003,135 @@ resources:
         tokens,
     );
 }
+
+/// A natively-answered function must not pull its provider into the package set.
+///
+/// Intercepting the invoke is not sufficient on its own: a referenced package is
+/// registered with the engine and has its schema fetched, both of which load the
+/// plugin binary — and pulumi-str crashes in `Cancel`, which the engine sends to
+/// every provider it has loaded.
+#[test]
+fn test_native_str_functions_do_not_reference_the_provider() {
+    use pulumi_rs_yaml_core::packages::get_referenced_packages;
+
+    let (template, _) = parse_template(
+        r#"
+name: t
+runtime: yaml
+variables:
+  a:
+    fn::str:replace:
+      string: "a-b"
+      old: "-"
+      new: "_"
+  b:
+    fn::str:trimPrefix:
+      string: "p-v"
+      prefix: "p-"
+  c:
+    fn::str:trimSuffix:
+      string: "v.sql"
+      suffix: ".sql"
+resources:
+  bucket:
+    type: aws:s3:Bucket
+    properties:
+      bucketName: ${a.result}
+"#,
+        None,
+    );
+    let names: Vec<String> = get_referenced_packages(&template, &[])
+        .iter()
+        .map(|p| p.name.clone())
+        .collect();
+    assert!(
+        !names.iter().any(|n| n == "str"),
+        "str must not be referenced when every use is answered in process; got {:?}",
+        names,
+    );
+    assert!(names.iter().any(|n| n == "aws"), "got {:?}", names);
+}
+
+/// Mixed usage still needs the provider — and must still get it.
+///
+/// This is the coexistence case: one unhandled token in the same package is
+/// enough to require the plugin, and suppressing it would break the template.
+#[test]
+fn test_mixed_str_usage_still_references_the_provider() {
+    use pulumi_rs_yaml_core::packages::get_referenced_packages;
+
+    let (template, _) = parse_template(
+        r#"
+name: t
+runtime: yaml
+variables:
+  native:
+    fn::str:replace:
+      string: "a-b"
+      old: "-"
+      new: "_"
+  viaProvider:
+    fn::str:regexp:split:
+      string: "a1b"
+      pattern: "[0-9]"
+resources:
+  bucket:
+    type: aws:s3:Bucket
+    properties:
+      bucketName: ${native.result}
+"#,
+        None,
+    );
+    let names: Vec<String> = get_referenced_packages(&template, &[])
+        .iter()
+        .map(|p| p.name.clone())
+        .collect();
+    assert!(
+        names.iter().any(|n| n == "str"),
+        "an unhandled token still needs the provider; got {:?}",
+        names,
+    );
+}
+
+/// An explicit `packages:` / lock-file declaration is always honoured.
+///
+/// If an operator has pinned the provider, that intent outranks our shortcut.
+#[test]
+fn test_declared_str_package_is_still_honoured() {
+    use pulumi_rs_yaml_core::packages::{get_referenced_packages, PackageDecl};
+
+    let (template, _) = parse_template(
+        r#"
+name: t
+runtime: yaml
+variables:
+  a:
+    fn::str:replace:
+      string: "a-b"
+      old: "-"
+      new: "_"
+resources:
+  bucket:
+    type: aws:s3:Bucket
+    properties:
+      bucketName: ${a.result}
+"#,
+        None,
+    );
+    let declared = vec![PackageDecl {
+        package_declaration_version: 0,
+        name: "str".to_string(),
+        version: "1.0.0".to_string(),
+        download_url: String::new(),
+        parameterization: None,
+    }];
+    let names: Vec<String> = get_referenced_packages(&template, &declared)
+        .iter()
+        .map(|p| p.name.clone())
+        .collect();
+    assert!(
+        names.iter().any(|n| n == "str"),
+        "an explicitly declared package must survive; got {:?}",
+        names,
+    );
+}
