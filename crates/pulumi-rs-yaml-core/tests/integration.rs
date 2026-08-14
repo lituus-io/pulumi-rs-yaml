@@ -5897,3 +5897,109 @@ outputs:
         ),
     );
 }
+
+/// The `str` package's string functions are answered in process, so the
+/// provider is never asked for them — and therefore never loaded.
+///
+/// `pulumi/pulumi-str` v1.0.0 (2022, the only release) is built on a
+/// pulumi-go-provider whose cancel middleware segfaults on shutdown, turning a
+/// fully-applied update into a reported failure. Not loading it is the fix.
+#[test]
+fn test_str_functions_never_reach_the_engine() {
+    let source = r#"
+name: test
+runtime: yaml
+variables:
+  replaced:
+    fn::str:replace:
+      string: "a-b-c"
+      old: "-"
+      new: "_"
+  trimmed:
+    fn::str:trimPrefix:
+      string: "prefix-value"
+      prefix: "prefix-"
+  suffixed:
+    fn::str:trimSuffix:
+      string: "value.sql"
+      suffix: ".sql"
+resources:
+  bucket:
+    type: aws:s3:Bucket
+    properties:
+      bucketName: ${replaced.result}
+      acl: ${trimmed.result}
+      region: ${suffixed.result}
+"#;
+
+    let mock = MockCallback::new();
+    let (eval, has_errors) = eval_with_mock(source, mock);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
+
+    assert!(
+        eval.callback().invocations().is_empty(),
+        "str functions must not be sent to the engine; got {:?}",
+        eval.callback()
+            .invocations()
+            .iter()
+            .map(|i| i.token.clone())
+            .collect::<Vec<_>>(),
+    );
+
+    let regs = eval.callback().registrations();
+    assert_eq!(regs.len(), 1);
+    let got = |k: &str| {
+        regs[0]
+            .inputs
+            .get(k)
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+    };
+    assert_eq!(
+        got("bucketName").as_deref(),
+        Some("a_b_c"),
+        "fn::str:replace must be evaluated, not merely skipped",
+    );
+    assert_eq!(got("acl").as_deref(), Some("value"), "trimPrefix");
+    assert_eq!(got("region").as_deref(), Some("value"), "trimSuffix");
+}
+
+/// Anything not implemented natively still goes to the provider untouched.
+#[test]
+fn test_unimplemented_str_functions_still_reach_the_engine() {
+    let source = r#"
+name: test
+runtime: yaml
+variables:
+  parts:
+    fn::str:regexp:split:
+      string: "a1b2c"
+      pattern: "[0-9]"
+resources:
+  bucket:
+    type: aws:s3:Bucket
+    properties:
+      bucketName: my-bucket
+"#;
+
+    let mock = MockCallback::with_invoke_responses(vec![InvokeResponse {
+        return_values: HashMap::from([(
+            "result".to_string(),
+            Value::List(vec![Value::String(Cow::Borrowed("a"))]),
+        )]),
+        failures: Vec::new(),
+    }]);
+    let (eval, has_errors) = eval_with_mock(source, mock);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
+
+    let tokens: Vec<String> = eval
+        .callback()
+        .invocations()
+        .iter()
+        .map(|i| i.token.clone())
+        .collect();
+    assert!(
+        tokens.iter().any(|t| t.contains("regexp")),
+        "regex functions must keep using the provider; got {:?}",
+        tokens,
+    );
+}

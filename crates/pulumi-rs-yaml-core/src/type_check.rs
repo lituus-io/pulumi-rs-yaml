@@ -118,6 +118,10 @@ impl TypeChecker<'_> {
 
         // Collect user-provided property names
         let mut provided_props: Vec<String> = Vec::new();
+        // Whether `provided_props` is a faithful list of what the user set. An
+        // expression-valued `properties:` cannot be enumerated, so an empty list
+        // there means "unknown", not "nothing provided".
+        let mut props_enumerable = true;
 
         match &entry.resource.properties {
             ResourceProperties::Map(props) => {
@@ -173,16 +177,29 @@ impl TypeChecker<'_> {
                 }
             }
             ResourceProperties::Expr(expr) => {
+                props_enumerable = false;
                 self.check_expr_invokes(expr);
             }
         }
 
-        // Check required inputs
-        for required in &info.required_inputs {
+        // Check required inputs.
+        //
+        // Skipped entirely when the properties are an expression: `provided_props`
+        // is empty there because nothing could be enumerated, so running the loop
+        // would report EVERY required input as missing.
+        for required in info
+            .required_inputs
+            .iter()
+            .filter(|_| props_enumerable)
+            // A "required input" that is not an input property cannot be set by
+            // anyone. Demanding it is always wrong, whatever produced the schema.
+            .filter(|r| info.input_properties.contains(*r))
+        {
             if !provided_props.contains(required) {
-                // Check if the property has a const_value (auto-injected)
+                // Check if the property has a const_value (auto-injected).
+                // Read the input side: this is a statement about an *input*.
                 let has_const = info
-                    .property_types
+                    .input_property_types
                     .get(required)
                     .and_then(|p| p.const_value.as_ref())
                     .is_some();
@@ -637,6 +654,215 @@ mod tests {
             functions: HashMap::new(),
         });
         store
+    }
+
+    /// Build a store the way production does — through `parse_schema_json`.
+    ///
+    /// Every other test here hand-builds a `ResourceTypeInfo`, which is exactly
+    /// how the required-outputs conflation survived: the parser was never in the
+    /// path under test.
+    fn store_from_schema_json(json: &[u8]) -> SchemaStore {
+        let pkg = crate::schema::parse_schema_json(json).expect("schema parses");
+        let mut store = SchemaStore::new();
+        store.insert(pkg);
+        store
+    }
+
+    /// The bi-mobilityds regression, end to end.
+    ///
+    /// A `gcp:workflows/workflow:Workflow` with no required inputs must draw no
+    /// diagnostics, even though `project` and `namePrefix` sit in its required
+    /// *outputs*. This is the shape that produced 10 untrue warnings per run.
+    #[test]
+    fn test_type_check_required_outputs_never_demanded() {
+        let yaml = r#"
+name: test
+runtime: yaml
+resources:
+  wf-ingestion:
+    type: gcp:workflows:Workflow
+    properties:
+      region: northamerica-northeast1
+      name: wf_ingestion
+      sourceContents: "main: {}"
+"#;
+        let store = store_from_schema_json(
+            br#"{
+            "name": "gcp",
+            "version": "9.28.0",
+            "resources": {
+                "gcp:workflows/workflow:Workflow": {
+                    "properties": {
+                        "name": { "type": "string" },
+                        "namePrefix": { "type": "string" },
+                        "project": { "type": "string" },
+                        "region": { "type": "string" },
+                        "revisionId": { "type": "string" },
+                        "sourceContents": { "type": "string" }
+                    },
+                    "inputProperties": {
+                        "name": { "type": "string" },
+                        "namePrefix": { "type": "string" },
+                        "project": { "type": "string" },
+                        "region": { "type": "string" },
+                        "sourceContents": { "type": "string" }
+                    },
+                    "required": ["name", "namePrefix", "project", "revisionId"]
+                }
+            }
+        }"#,
+        );
+
+        let (template, _) = parse_template(yaml, None);
+        let result = type_check(&template, &store, None);
+        assert!(
+            result.diagnostics.is_empty(),
+            "all-optional resource must be clean; got {:?}",
+            result
+                .diagnostics
+                .iter()
+                .map(|d| d.summary.clone())
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    /// A required input that is not an input property can never be satisfied.
+    #[test]
+    fn test_type_check_unsettable_required_input_is_not_demanded() {
+        let (template, _) = parse_template(
+            r#"
+name: test
+runtime: yaml
+resources:
+  r:
+    type: test:index:Res
+    properties:
+      given: yes
+"#,
+            None,
+        );
+        let mut info = ResourceTypeInfo::default();
+        info.input_properties.insert("given".to_string());
+        info.properties.insert("given".to_string());
+        info.properties.insert("computed".to_string());
+        // A schema (or a generator) claiming an output-only name is required.
+        info.required_inputs.insert("computed".to_string());
+        info.input_property_types.insert(
+            "given".to_string(),
+            PropertyInfo {
+                type_: SchemaPropertyType::String,
+                secret: false,
+                const_value: None,
+                required: false,
+            },
+        );
+        let mut store = SchemaStore::new();
+        store.insert(PackageSchema {
+            name: "test".to_string(),
+            version: "1.0.0".to_string(),
+            resources: [("test:index:Res".to_string(), info)].into_iter().collect(),
+            functions: HashMap::new(),
+        });
+
+        let result = type_check(&template, &store, None);
+        assert!(
+            !result
+                .diagnostics
+                .iter()
+                .any(|d| d.summary.contains("computed")),
+            "an unsettable property must never be demanded; got {:?}",
+            result
+                .diagnostics
+                .iter()
+                .map(|d| d.summary.clone())
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    /// Expression-valued `properties:` cannot be enumerated, so nothing is "missing".
+    #[test]
+    fn test_type_check_expr_properties_report_no_missing_required() {
+        let (template, _) = parse_template(
+            r#"
+name: test
+runtime: yaml
+variables:
+  props:
+    bucketName: b
+resources:
+  bucket:
+    type: aws:s3/bucket:Bucket
+    properties: ${props}
+"#,
+            None,
+        );
+        let store = make_store_with_resource(
+            "aws:s3/bucket:Bucket",
+            &[
+                ("bucketName", SchemaPropertyType::String),
+                ("region", SchemaPropertyType::String),
+            ],
+            &["bucketName"],
+        );
+
+        let result = type_check(&template, &store, None);
+        assert!(
+            !result
+                .diagnostics
+                .iter()
+                .any(|d| d.summary.contains("missing required property")),
+            "properties given as an expression are unknowable, not absent; got {:?}",
+            result
+                .diagnostics
+                .iter()
+                .map(|d| d.summary.clone())
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    /// Quieter must not mean blind: real problems still surface.
+    #[test]
+    fn test_type_check_still_flags_real_problems_after_the_fix() {
+        let store = store_from_schema_json(
+            br#"{
+            "name": "gcp",
+            "version": "9.28.0",
+            "resources": {
+                "gcp:workflows/workflow:Workflow": {
+                    "properties": { "name": { "type": "string" } },
+                    "inputProperties": { "name": { "type": "string" } },
+                    "requiredInputs": ["name"],
+                    "required": ["name", "revisionId"]
+                }
+            }
+        }"#,
+        );
+
+        // A genuinely required input, omitted.
+        let (t1, _) = parse_template(
+            "name: t\nruntime: yaml\nresources:\n  w:\n    type: gcp:workflows:Workflow\n    properties:\n      {}\n",
+            None,
+        );
+        assert!(
+            type_check(&t1, &store, None)
+                .diagnostics
+                .iter()
+                .any(|d| d.summary.contains("missing required property 'name'")),
+            "a real requiredInputs entry must still warn",
+        );
+
+        // An unknown property.
+        let (t2, _) = parse_template(
+            "name: t\nruntime: yaml\nresources:\n  w:\n    type: gcp:workflows:Workflow\n    properties:\n      name: n\n      nope: x\n",
+            None,
+        );
+        assert!(
+            type_check(&t2, &store, None)
+                .diagnostics
+                .iter()
+                .any(|d| d.summary.contains("nope")),
+            "unknown-property detection must be unaffected",
+        );
     }
 
     #[test]

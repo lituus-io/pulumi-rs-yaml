@@ -374,16 +374,16 @@ pub fn parse_schema_json(json_bytes: &[u8]) -> Result<PackageSchema, String> {
                         }
                     }
                 }
-                // Also check "required" directly under the resource (some schemas use this)
-                if input_required_set.is_empty() {
-                    if let Some(req_arr) = res_def.get("required").and_then(|v| v.as_array()) {
-                        for req in req_arr {
-                            if let Some(s) = req.as_str() {
-                                input_required_set.insert(s.to_string());
-                            }
-                        }
-                    }
-                }
+                // Deliberately NO fallback to the resource's top-level "required".
+                //
+                // In the Pulumi package-schema spec that array lists the required
+                // *output* properties — those guaranteed present on the resource's
+                // output object — not required inputs. Reading it as inputs demands
+                // provider-computed values a user cannot set.
+                // `gcp:workflows/workflow:Workflow` has no required inputs at all,
+                // yet its "required" carries `project` and `namePrefix`; every such
+                // resource drew a bogus "missing required property" warning on the
+                // language-host path. A resource without `requiredInputs` has none.
 
                 if let Some(input_props) = input_obj.as_object() {
                     for (prop_name, prop_def) in input_props {
@@ -1130,6 +1130,93 @@ mod tests {
         assert!(!info.required_inputs.contains("size"));
         assert!(info.input_property_types.get("name").unwrap().required);
         assert!(!info.input_property_types.get("size").unwrap().required);
+    }
+
+    /// A resource's top-level `required` lists required *outputs*, never inputs.
+    ///
+    /// Shaped on the real `gcp:workflows/workflow:Workflow`, which has no
+    /// `requiredInputs` at all yet lists `project` and `namePrefix` under
+    /// `required` because both are always present on the output object. Reading
+    /// those as inputs demanded provider-computed values the user cannot set.
+    #[test]
+    fn test_parse_required_outputs_are_not_required_inputs() {
+        let json = br#"{
+            "name": "gcp",
+            "version": "9.28.0",
+            "resources": {
+                "gcp:workflows/workflow:Workflow": {
+                    "properties": {
+                        "name": { "type": "string" },
+                        "namePrefix": { "type": "string" },
+                        "project": { "type": "string" },
+                        "revisionId": { "type": "string" },
+                        "sourceContents": { "type": "string" }
+                    },
+                    "inputProperties": {
+                        "name": { "type": "string" },
+                        "namePrefix": { "type": "string" },
+                        "project": { "type": "string" },
+                        "sourceContents": { "type": "string" }
+                    },
+                    "required": ["name", "namePrefix", "project", "revisionId"]
+                }
+            }
+        }"#;
+
+        let schema = parse_schema_json(json).unwrap();
+        let info = schema
+            .resources
+            .get("gcp:workflows/workflow:Workflow")
+            .unwrap();
+
+        assert!(
+            info.required_inputs.is_empty(),
+            "no requiredInputs means no required inputs; got {:?}",
+            info.required_inputs,
+        );
+        for name in ["project", "namePrefix", "name", "revisionId"] {
+            assert!(
+                !info.required_inputs.contains(name),
+                "'{}' came from the required-OUTPUTS array",
+                name,
+            );
+        }
+        // The properties themselves are still parsed — only their requiredness changed.
+        assert!(info.input_properties.contains("project"));
+        assert!(!info.input_property_types.get("project").unwrap().required);
+    }
+
+    /// The `requiredInputs` branch must keep working — this is the over-correction guard.
+    #[test]
+    fn test_parse_required_inputs_still_honoured_alongside_required_outputs() {
+        let json = br#"{
+            "name": "test",
+            "version": "1.0.0",
+            "resources": {
+                "test:index/res:Res": {
+                    "properties": {
+                        "id": { "type": "string" },
+                        "name": { "type": "string" },
+                        "size": { "type": "integer" }
+                    },
+                    "inputProperties": {
+                        "name": { "type": "string" },
+                        "size": { "type": "integer" }
+                    },
+                    "requiredInputs": ["name"],
+                    "required": ["id", "name", "size"]
+                }
+            }
+        }"#;
+
+        let schema = parse_schema_json(json).unwrap();
+        let info = schema.resources.get("test:index/res:Res").unwrap();
+        assert!(info.required_inputs.contains("name"));
+        assert!(
+            !info.required_inputs.contains("size"),
+            "'size' is required-output only; requiredInputs is authoritative",
+        );
+        assert_eq!(info.required_inputs.len(), 1);
     }
 
     #[test]
