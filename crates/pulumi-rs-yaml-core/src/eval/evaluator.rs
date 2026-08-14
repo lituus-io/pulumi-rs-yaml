@@ -1755,6 +1755,35 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
         let canonical_token = canonicalize_function_token(raw_token);
         let token = canonical_token.as_str();
 
+        // Pure string functions are evaluated here rather than asked of the
+        // `str` provider, which is never loaded as a result. That provider's
+        // last release (2022) is built on a pulumi-go-provider whose cancel
+        // middleware segfaults on shutdown, failing an update whose resources
+        // all applied. Answering in process also replaces a plugin launch and
+        // a gRPC round-trip with a string operation. Anything not handled —
+        // including every regex function — returns None and takes the normal
+        // path unchanged.
+        // Shapes its result exactly as the callback branch below does, so a
+        // template cannot tell the two apart: `return:` selects a property,
+        // a missing one yields null, and the bare form yields the whole object
+        // (which is why real templates write `${x.result}`).
+        if let Some(return_values) = super::native_str::try_invoke(token, &args) {
+            return match invoke.return_ {
+                Some(ref return_field) => Some(
+                    return_values
+                        .get(return_field.as_ref())
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                ),
+                None => Some(Value::Object(
+                    return_values
+                        .into_iter()
+                        .map(|(k, v)| (Cow::Owned(k), v))
+                        .collect(),
+                )),
+            };
+        }
+
         // Call the callback
         match self
             .callback

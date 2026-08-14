@@ -7,6 +7,7 @@ pub mod context;
 pub mod evaluator;
 pub mod graph;
 pub mod mock;
+pub(crate) mod native_str;
 pub mod protobuf;
 pub mod resource;
 pub mod starlark_runtime;
