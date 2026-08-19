@@ -1,0 +1,14 @@
+resources:
+  m:
+    type: gcpx:dbt/model:Model
+    properties:
+      a: |2
+          indented first line
+        back to base
+      b: |+3
+         three
+      c: >-
+        folded
+      d: |
+      e: "not a block scalar"
+      tail: done

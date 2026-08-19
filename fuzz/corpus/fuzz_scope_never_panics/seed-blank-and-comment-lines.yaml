@@ -1,0 +1,12 @@
+resources:
+  m:
+    type: gcpx:dbt/model:Model
+
+    # a real YAML comment
+    properties:
+      sql: |
+        SELECT 1
+
+        # this is SQL, not a comment
+        WHERE x > 1
+      tail: done

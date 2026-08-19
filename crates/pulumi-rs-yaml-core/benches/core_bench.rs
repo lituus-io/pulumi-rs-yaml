@@ -242,6 +242,7 @@ outputs:
         config: &config,
         project_dir: "/home/user",
         undefined: UndefinedMode::Strict,
+        provider_templated_packages: &[],
         extra: &HashMap::new(),
     };
 
@@ -278,6 +279,7 @@ resources:
         config: &config,
         project_dir: "/home/user",
         undefined: UndefinedMode::Strict,
+        provider_templated_packages: &[],
         extra: &HashMap::new(),
     };
 
@@ -447,6 +449,7 @@ fn bench_jinja_preprocess_multi_file(c: &mut Criterion) {
         config: &config,
         project_dir: dir.path().to_str().unwrap(),
         undefined: UndefinedMode::Strict,
+        provider_templated_packages: &[],
         extra: &HashMap::new(),
     };
 

@@ -1,3 +1,7 @@
 # Force LF line endings for all text files to ensure consistent behavior
 # across platforms (prevents CRLF issues in golden tests on Windows)
 * text=auto eol=lf
+# Fuzz corpus entries are byte-exact inputs. Line-ending normalisation would
+# silently rewrite them — and the CRLF seed exists precisely to prove CRLF
+# survives, so normalising it turns the test into a tautology.
+fuzz/corpus/** -text -diff

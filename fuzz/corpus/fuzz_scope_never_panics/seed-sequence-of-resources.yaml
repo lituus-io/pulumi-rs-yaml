@@ -1,0 +1,10 @@
+items:
+  - type: gcpx:dbt/model:Model
+    sql: |
+      SELECT {{ ref('a') }}
+  - sql: |
+      SELECT {{ ref('b') }}
+    type: gcpx:dbt/model:Model
+  - type: aws:x:Y
+    sql: |
+      SELECT {{ ref('c') }}

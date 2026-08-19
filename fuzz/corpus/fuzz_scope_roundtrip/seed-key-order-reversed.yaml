@@ -1,0 +1,6 @@
+resources:
+  m:
+    properties:
+      sql: |
+        {{ ref('x') }}
+    type: gcpx:dbt/model:Model

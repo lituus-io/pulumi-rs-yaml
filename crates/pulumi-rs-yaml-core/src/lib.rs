@@ -11,6 +11,7 @@ pub(crate) mod literal_resolve;
 pub mod multi_file;
 pub mod packages;
 pub mod pcl_gen;
+pub mod provider_scope;
 pub mod resource_graph;
 pub mod schema;
 pub mod source;

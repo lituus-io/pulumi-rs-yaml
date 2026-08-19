@@ -76,3 +76,33 @@ name = "fuzz_sql_lineage"
 path = "fuzz_targets/fuzz_sql_lineage.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "fuzz_scope_roundtrip"
+path = "fuzz_targets/fuzz_scope_roundtrip.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_scope_oracle"
+path = "fuzz_targets/fuzz_scope_oracle.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_scope_render_identity"
+path = "fuzz_targets/fuzz_scope_render_identity.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_scope_unlisted_noop"
+path = "fuzz_targets/fuzz_scope_unlisted_noop.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_scope_settings"
+path = "fuzz_targets/fuzz_scope_settings.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_scope_never_panics"
+path = "fuzz_targets/fuzz_scope_never_panics.rs"
+doc = false

@@ -1,0 +1,11 @@
+resources:
+  scoped:
+    type: gcpx:dbt/model:Model
+    properties:
+      sql: |
+        {% if is_incremental() %}ok{% endif %}
+  unscoped:
+    type: aws:s3/bucket:Bucket
+    properties:
+      policy: |
+        {% if is_incremental() %}not ok{% endif %}

@@ -1,0 +1,7 @@
+resources:
+  r:
+    runtime:
+      options:
+        providerTemplatedPackages: [gcpx]
+options:
+  providerTemplatedPackages: [gcpx]
