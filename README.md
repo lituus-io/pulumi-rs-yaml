@@ -115,6 +115,13 @@ Scope and limits:
   altered SQL is the failure worth avoiding; a rejected file is not.
 - Listing nothing, the default, leaves rendering byte-for-byte as it was.
 
+**Comments are not exempt.** Rendering happens over the file as text, before
+anything is parsed, so a YAML comment is just more text. `# see {{ ref('x') }}`
+is a template the runtime will try to evaluate, and `# wrap it in {% raw %}`
+opens a raw block that swallows everything after it. Scoping does not help:
+a comment sits outside the block scalar it describes. Write the construct
+without its delimiters, or put the comment inside the scoped scalar.
+
 ## Test
 
 ```bash

@@ -91,6 +91,12 @@ pub async fn run(
             match load_from_jinja_source(&jinja_source_dir, program_directory, &jinja_ctx) {
                 Ok((t, sm)) => (t, sm),
                 Err(e) => {
+                    // `bail: true` tells the engine the program has already
+                    // reported the problem, so it prints nothing further. Say
+                    // it here, as the non-exec path below does — otherwise the
+                    // deploy stops with an empty resource list and no reason,
+                    // which reads like an empty program rather than a failure.
+                    eprintln!("error: failed to load template: {}", e);
                     return RunResult {
                         error: format!("failed to load template: {}", e),
                         bail: true,
