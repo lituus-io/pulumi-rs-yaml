@@ -66,6 +66,62 @@ cargo build --release -p pulumi-rs-yaml-language --no-default-features
 The `release-small` profile (`opt-level = "z"` everywhere, ~8.2 MB full-featured)
 trades evaluator throughput for a further reduction.
 
+## Provider-templated blocks
+
+Some providers render their own templates. A dbt model's SQL is written in
+Jinja and resolved by the provider, per resource, long after this runtime has
+rendered the stack file — but both layers use `{{ }}` and `{% %}`, so text meant
+for the provider is evaluated here first, by a renderer that knows neither
+`ref('x')` nor `is_incremental()`.
+
+Listing the package scopes that text out. The rule is positional, not lexical:
+a block scalar inside a resource of a listed package is not rendered.
+
+```yaml
+runtime:
+  name: yaml
+  options:
+    providerTemplatedPackages: [gcpx]
+```
+
+```yaml
+resources:
+  dailyRevenue:
+    type: gcpx:dbt/model:Model
+    properties:
+      project: {{ config.gcpProject }}     # rendered here, as always
+      sql: |                               # not rendered here at all
+        {{ config(materialized='incremental', unique_key='outage_id') }}
+        SELECT * FROM {{ ref('stg_outages') }}
+        {% if is_incremental() %}
+        WHERE updated_at > (SELECT MAX(updated_at) FROM {{ this }})
+        {% endif %}
+```
+
+`PULUMI_YAML_PROVIDER_TEMPLATED_PACKAGES` (comma separated) overrides the
+project file, for turning the scope on or off without editing a stack.
+
+Scope and limits:
+
+- The unit is the **block scalar**, whose extent YAML defines exactly. A plain
+  scalar in the same resource still renders, and single-line SQL
+  (`sql: "SELECT {{ ref('x') }}"`) is not covered — passthrough mode already
+  handles the expression-shaped constructs a one-liner holds.
+- Resources **generated** by a `{% for %}` loop are not covered: the text does
+  not exist when the pre-pass runs.
+- Where an extent cannot be determined with certainty — a tab in the
+  indentation, an indicator that disagrees with its content — the file is
+  refused with the line named, rather than rendered on a guess. Silently
+  altered SQL is the failure worth avoiding; a rejected file is not.
+- Listing nothing, the default, leaves rendering byte-for-byte as it was.
+
+**Comments are not exempt.** Rendering happens over the file as text, before
+anything is parsed, so a YAML comment is just more text. `# see {{ ref('x') }}`
+is a template the runtime will try to evaluate, and `# wrap it in {% raw %}`
+opens a raw block that swallows everything after it. Scoping does not help:
+a comment sits outside the block scalar it describes. Write the construct
+without its delimiters, or put the comment inside the scoped scalar.
+
 ## Test
 
 ```bash
@@ -86,6 +142,17 @@ cargo +nightly fuzz run fuzz_yaml_parser -- -max_total_time=60
 ```
 
 Targets: `fuzz_yaml_parser`, `fuzz_interpolation`, `fuzz_jinja`, `fuzz_builtins`, `fuzz_converter`, `fuzz_yaml_bomb`, `fuzz_extra_context`, `fuzz_starlark`, `fuzz_parallel_eval`, `fuzz_resource_graph`, `fuzz_sql_lineage`.
+
+Provider-scope targets, which check the extent detection above:
+`fuzz_scope_roundtrip` (protect and restore are exact inverses),
+`fuzz_scope_oracle` (extents match what `serde_yaml` sees),
+`fuzz_scope_render_identity` (protected bytes survive a real render),
+`fuzz_scope_unlisted_noop` (an unlisted package changes nothing),
+`fuzz_scope_settings` (the option reader cannot over-read),
+`fuzz_scope_never_panics`.
+
+`SCOPE_FUZZ_TRACE=1` makes `fuzz_scope_oracle` report how many inputs reach
+each stage, so its coverage can be checked rather than assumed.
 
 ## Graph export (BigQuery Graph)
 

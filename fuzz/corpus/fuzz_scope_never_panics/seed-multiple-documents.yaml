@@ -1,0 +1,15 @@
+name: one
+resources:
+  m:
+    type: gcpx:dbt/model:Model
+    properties:
+      sql: |
+        SELECT 1
+---
+name: two
+resources:
+  n:
+    type: gcpx:dbt/model:Model
+    properties:
+      sql: |
+        SELECT 2

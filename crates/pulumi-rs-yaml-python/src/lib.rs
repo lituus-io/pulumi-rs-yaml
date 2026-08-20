@@ -162,6 +162,11 @@ fn preprocess_jinja(source: &str, filename: &str, context: &Bound<'_, PyDict>) -
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
 
+    // Scoped packages come from the source being rendered, which for this entry
+    // point is the project file itself.
+    let scoped = pulumi_rs_yaml_core::provider_scope::effective_packages(source);
+    let scoped: Vec<&str> = scoped.iter().map(String::as_str).collect();
+
     let jinja_ctx = pulumi_rs_yaml_core::jinja::JinjaContext {
         project_name: &project_name,
         stack_name: &stack_name,
@@ -171,6 +176,7 @@ fn preprocess_jinja(source: &str, filename: &str, context: &Bound<'_, PyDict>) -
         config: &config,
         project_dir: &project_dir,
         undefined: pulumi_rs_yaml_core::jinja::UndefinedMode::Strict,
+        provider_templated_packages: &scoped,
         extra: &extra,
     };
 
@@ -335,6 +341,11 @@ fn create_execution_plan(
             .unwrap_or_else(|| "unknown".to_string())
     };
 
+    let scoped = pulumi_rs_yaml_core::provider_scope::effective_packages(
+        &std::fs::read_to_string(path.join("Pulumi.yaml")).unwrap_or_default(),
+    );
+    let scoped: Vec<&str> = scoped.iter().map(String::as_str).collect();
+
     let jinja_ctx = pulumi_rs_yaml_core::jinja::JinjaContext {
         project_name: &project_name_owned,
         stack_name: &stack_name,
@@ -344,6 +355,7 @@ fn create_execution_plan(
         config: &config_map,
         project_dir,
         undefined: pulumi_rs_yaml_core::jinja::UndefinedMode::Strict,
+        provider_templated_packages: &scoped,
         extra: &extra_map,
     };
 
@@ -996,6 +1008,11 @@ fn load_graph_project(
             .unwrap_or_else(|| "unknown".to_string())
     };
 
+    let scoped = pulumi_rs_yaml_core::provider_scope::effective_packages(
+        &std::fs::read_to_string(path.join("Pulumi.yaml")).unwrap_or_default(),
+    );
+    let scoped: Vec<&str> = scoped.iter().map(String::as_str).collect();
+
     let jinja_ctx = pulumi_rs_yaml_core::jinja::JinjaContext {
         project_name: &project_name_owned,
         stack_name: &stack_name,
@@ -1005,6 +1022,7 @@ fn load_graph_project(
         config: &config_map,
         project_dir,
         undefined: pulumi_rs_yaml_core::jinja::UndefinedMode::Strict,
+        provider_templated_packages: &scoped,
         extra: &extra_map,
     };
     let jinja_opt = if jinja_context.is_some() {

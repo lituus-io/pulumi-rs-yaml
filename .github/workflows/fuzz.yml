@@ -37,6 +37,12 @@ jobs:
           - fuzz_parallel_eval
           - fuzz_resource_graph
           - fuzz_sql_lineage
+          - fuzz_scope_roundtrip
+          - fuzz_scope_oracle
+          - fuzz_scope_render_identity
+          - fuzz_scope_unlisted_noop
+          - fuzz_scope_settings
+          - fuzz_scope_never_panics
     steps:
       - uses: actions/checkout@v4
 
@@ -47,6 +53,18 @@ jobs:
         with:
           key: fuzz-${{ matrix.target }}
 
+      # Without this the corpus starts from the committed seeds every week, so
+      # coverage never compounds and each run rediscovers the trivial inputs.
+      # The key rotates per run and restores from the newest prefix match,
+      # which is how a cache accumulates rather than freezes.
+      - name: Restore evolved corpus
+        uses: actions/cache@v4
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: |
+            corpus-${{ matrix.target }}-
+
       # rust-toolchain.toml pins an older MSRV for this repo, but cargo-fuzz needs a
       # newer rustc to build — install it with the nightly toolchain
       # explicitly (same pattern as cargo-audit in security.yml).
@@ -56,6 +74,13 @@ jobs:
       - name: Run fuzzer
         working-directory: fuzz
         run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=${{ env.FUZZ_DURATION }}
+
+      # Keep the corpus small enough to stay useful: cmin drops inputs that add
+      # no coverage the rest of the set already has.
+      - name: Minimise corpus
+        if: always()
+        working-directory: fuzz
+        run: cargo +nightly fuzz cmin ${{ matrix.target }} || true
 
       - name: Upload crash artifacts
         if: failure()

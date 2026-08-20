@@ -61,6 +61,14 @@ pub async fn run(
         Ok("passthrough") => UndefinedMode::Passthrough,
         _ => UndefinedMode::Strict,
     };
+    // Packages whose block scalars this runtime must leave alone. Read from the
+    // project file textually, because rendering has to precede parsing and this
+    // is needed before rendering.
+    let project_source = std::fs::read_to_string(Path::new(program_directory).join("Pulumi.yaml"))
+        .unwrap_or_default();
+    let scoped_packages = pulumi_rs_yaml_core::provider_scope::effective_packages(&project_source);
+    let scoped_packages: Vec<&str> = scoped_packages.iter().map(String::as_str).collect();
+
     let empty_extra = HashMap::new();
     let jinja_ctx = JinjaContext {
         project_name: project,
@@ -71,6 +79,7 @@ pub async fn run(
         config,
         project_dir: program_directory,
         undefined: undefined_mode,
+        provider_templated_packages: &scoped_packages,
         extra: &empty_extra,
     };
 
@@ -82,6 +91,12 @@ pub async fn run(
             match load_from_jinja_source(&jinja_source_dir, program_directory, &jinja_ctx) {
                 Ok((t, sm)) => (t, sm),
                 Err(e) => {
+                    // `bail: true` tells the engine the program has already
+                    // reported the problem, so it prints nothing further. Say
+                    // it here, as the non-exec path below does — otherwise the
+                    // deploy stops with an empty resource list and no reason,
+                    // which reads like an empty program rather than a failure.
+                    eprintln!("error: failed to load template: {}", e);
                     return RunResult {
                         error: format!("failed to load template: {}", e),
                         bail: true,

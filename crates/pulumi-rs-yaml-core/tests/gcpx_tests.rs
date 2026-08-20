@@ -2067,6 +2067,7 @@ outputs:
         config: &config,
         project_dir: dir.path().to_str().unwrap(),
         undefined: UndefinedMode::Strict,
+        provider_templated_packages: &[],
         extra: &HashMap::new(),
     };
 

@@ -1,0 +1,9 @@
+base: &base
+  type: gcpx:dbt/model:Model
+resources:
+  inline: {type: gcpx:dbt/model:Model, properties: {sql: "SELECT 1"}}
+  merged:
+    <<: *base
+    properties:
+      sql: |
+        SELECT {{ ref('x') }}

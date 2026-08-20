@@ -25,6 +25,7 @@ fn make_context(config: &HashMap<String, String>) -> JinjaContext<'_> {
         config,
         project_dir: "/home/user/project",
         undefined: UndefinedMode::Strict,
+        provider_templated_packages: &[],
         extra: &EMPTY_EXTRA,
     }
 }
@@ -762,6 +763,7 @@ outputs:
         config: &config,
         project_dir: "/tmp",
         undefined: UndefinedMode::Strict,
+        provider_templated_packages: &[],
         extra: &HashMap::new(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
@@ -924,6 +926,7 @@ fn make_readfile_context<'a>(
         config,
         project_dir,
         undefined: UndefinedMode::Strict,
+        provider_templated_packages: &[],
         extra: &EMPTY_EXTRA,
     }
 }
@@ -1484,6 +1487,7 @@ resources:
         config: &config,
         project_dir: "/tmp",
         undefined: UndefinedMode::Passthrough,
+        provider_templated_packages: &[],
         extra: &HashMap::new(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
@@ -1510,6 +1514,7 @@ fn test_passthrough_config_typo_still_errors() {
         config: &config,
         project_dir: "/tmp",
         undefined: UndefinedMode::Passthrough,
+        provider_templated_packages: &[],
         extra: &HashMap::new(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
@@ -1535,6 +1540,7 @@ fn test_passthrough_unknown_passes_through() {
         config: &config,
         project_dir: "/tmp",
         undefined: UndefinedMode::Passthrough,
+        provider_templated_packages: &[],
         extra: &HashMap::new(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
@@ -1559,6 +1565,7 @@ fn test_passthrough_readfile_still_works() {
         config: &config,
         project_dir: dir.path().to_str().unwrap(),
         undefined: UndefinedMode::Passthrough,
+        provider_templated_packages: &[],
         extra: &HashMap::new(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
@@ -1588,6 +1595,7 @@ fn test_passthrough_for_loop_with_unknown_vars() {
         config: &config,
         project_dir: "/tmp",
         undefined: UndefinedMode::Passthrough,
+        provider_templated_packages: &[],
         extra: &HashMap::new(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
@@ -1615,6 +1623,7 @@ fn test_strict_mode_unchanged() {
         config: &config,
         project_dir: "/tmp",
         undefined: UndefinedMode::Strict,
+        provider_templated_packages: &[],
         extra: &HashMap::new(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
@@ -1646,6 +1655,7 @@ fn test_import_local_template() {
         config: &config,
         project_dir,
         undefined: UndefinedMode::Strict,
+        provider_templated_packages: &[],
         extra: &EMPTY_EXTRA,
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
@@ -1687,6 +1697,7 @@ fn test_import_parent_relative_template() {
         config: &config,
         project_dir,
         undefined: UndefinedMode::Strict,
+        provider_templated_packages: &[],
         extra: &EMPTY_EXTRA,
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
@@ -1739,6 +1750,7 @@ bucket: {{ b.name }}
         config: &config,
         project_dir,
         undefined: UndefinedMode::Strict,
+        provider_templated_packages: &[],
         extra: &EMPTY_EXTRA,
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
@@ -1778,6 +1790,7 @@ fn test_import_rejects_absolute_path() {
         config: &config,
         project_dir,
         undefined: UndefinedMode::Strict,
+        provider_templated_packages: &[],
         extra: &EMPTY_EXTRA,
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
@@ -1804,6 +1817,7 @@ fn test_import_rejects_non_template_extension() {
         config: &config,
         project_dir,
         undefined: UndefinedMode::Strict,
+        provider_templated_packages: &[],
         extra: &EMPTY_EXTRA,
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
@@ -1885,6 +1899,7 @@ resources:
         config: &config,
         project_dir,
         undefined: UndefinedMode::Strict,
+        provider_templated_packages: &[],
         extra: &EMPTY_EXTRA,
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
@@ -1931,6 +1946,7 @@ mod loader_security {
             config: &config,
             project_dir: pd,
             undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
             extra: &EMPTY_EXTRA,
         };
         let pre = JinjaPreprocessor::new(&ctx);
@@ -2065,6 +2081,7 @@ mod jinja2_compat {
             config: &config,
             project_dir: "/tmp",
             undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
             extra: &EMPTY_EXTRA,
         };
         let pre = JinjaPreprocessor::new(&ctx);

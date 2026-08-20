@@ -1,0 +1,5 @@
+name: p
+runtime:
+  name: yaml
+  options:
+    providerTemplatedPackages: [gcpx, other]

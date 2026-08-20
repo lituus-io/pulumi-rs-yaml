@@ -1,0 +1,6 @@
+resources:
+  m:
+    type: gcpx:dbt/model:Model
+    properties:
+	sql: |
+        SELECT 1

@@ -95,6 +95,7 @@ fn jinja_preprocessed_project() {
         config: &config,
         project_dir: "/tmp",
         undefined: UndefinedMode::Strict,
+        provider_templated_packages: &[],
         extra: &extra,
     };
     let (graph, diags) = export_project(dir.path(), Some(&ctx));

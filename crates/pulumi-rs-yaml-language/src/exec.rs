@@ -45,6 +45,14 @@ pub fn run_exec(command_args: &[String]) -> i32 {
         }
     };
 
+    // Text scoped to a provider is not this runtime's to validate either. A dbt
+    // model may use tags minijinja has never heard of, and rejecting the file
+    // for them would defeat the point of scoping them out in the first place.
+    let scoped = pulumi_rs_yaml_core::provider_scope::effective_packages(
+        &fs::read_to_string(cwd.join("Pulumi.yaml")).unwrap_or_default(),
+    );
+    let scoped: Vec<&str> = scoped.iter().map(String::as_str).collect();
+
     // 2. Read all files and check for Jinja blocks
     let mut files_with_blocks: Vec<(PathBuf, String)> = Vec::new();
     let mut any_has_blocks = false;
@@ -60,7 +68,14 @@ pub fn run_exec(command_args: &[String]) -> i32 {
 
         // Validate Jinja syntax in every file (even if no blocks, catches {{ }} errors)
         let filename = path.file_name().unwrap_or_default().to_string_lossy();
-        if let Err(diag) = validate_jinja_syntax(&content, &filename) {
+        let to_validate = match pulumi_rs_yaml_core::provider_scope::protect(&content, &scoped) {
+            Ok(p) => p.source(&content).to_owned(),
+            Err(e) => {
+                eprintln!("error: {}: {}", filename, e);
+                return 1;
+            }
+        };
+        if let Err(diag) = validate_jinja_syntax(&to_validate, &filename) {
             eprintln!("{}", diag.format_rich(&filename));
             return 1;
         }

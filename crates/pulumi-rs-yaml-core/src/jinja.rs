@@ -66,6 +66,10 @@ pub enum RenderErrorKind {
     YamlSyntax,
     YamlIndentation,
     YamlDuplicateKey,
+    /// A provider-templated block scalar whose extent could not be determined
+    /// with certainty. Refusing is deliberate: silently altering a model's SQL
+    /// is worse than declining the file.
+    ProviderScope,
 }
 
 /// Rich diagnostic from template pre-processing.
@@ -199,6 +203,14 @@ pub struct JinjaContext<'cfg> {
     pub config: &'cfg HashMap<String, String>,
     pub project_dir: &'cfg str,
     pub undefined: UndefinedMode,
+    /// Packages whose block scalars this runtime must not render, from
+    /// `runtime.options.providerTemplatedPackages`.
+    ///
+    /// A dbt model's SQL is addressed to the provider, not to us, and it uses
+    /// the same delimiters we do. Listing the package scopes it out by where it
+    /// sits rather than by what it says. Empty — the default — leaves rendering
+    /// exactly as it has always been.
+    pub provider_templated_packages: &'cfg [&'cfg str],
     /// Extra context variables passed through from the caller.
     /// Inserted into the Jinja context BEFORE built-in keys, so built-ins
     /// always win on collision (prevents override attacks).
@@ -561,11 +573,18 @@ impl TemplatePreprocessor for JinjaPreprocessor<'_> {
             return Ok(Cow::Borrowed(source));
         }
 
+        // Scope out text addressed to a provider before anything else looks at
+        // it. `Unchanged` is the default and costs nothing.
+        let protected =
+            crate::provider_scope::protect(source, self.context.provider_templated_packages)
+                .map_err(|e| scope_diagnostic(source, &e))?;
+        let scoped_source = protected.source(source);
+
         // Passthrough mode: pre-escape unknown expressions before rendering
         let effective_source = if self.context.undefined == UndefinedMode::Passthrough {
-            pre_escape_for_passthrough(source)
+            pre_escape_for_passthrough(scoped_source)
         } else {
-            Cow::Borrowed(source)
+            Cow::Borrowed(scoped_source)
         };
 
         // Slow path: render through minijinja
@@ -596,13 +615,18 @@ impl TemplatePreprocessor for JinjaPreprocessor<'_> {
             .render(&mj_ctx)
             .map_err(|e| build_render_diagnostic(source, &e))?;
 
+        // Put provider-templated blocks back before readFile markers are
+        // resolved, so a restored block cannot be mistaken for one.
+        let restored = crate::provider_scope::restore(&rendered, protected.regions())
+            .map_err(|e| scope_diagnostic(source, &e))?;
+
         // Resolve readFile markers with auto-indentation
         let final_output = match resolve_readfile_markers(
-            &rendered,
+            &restored,
             &cache.lock().unwrap_or_else(|e| e.into_inner()),
         ) {
             Some(resolved) => resolved,
-            None => rendered,
+            None => restored.into_owned(),
         };
 
         Ok(Cow::Owned(final_output))
@@ -675,6 +699,34 @@ pub fn validate_jinja_syntax<'src>(
     env.add_template(filename, source)
         .map_err(|e| build_render_diagnostic(source, &e))?;
     Ok(())
+}
+
+/// Converts a provider-scope refusal into a RenderDiagnostic.
+fn scope_diagnostic<'src>(
+    source: &'src str,
+    err: &crate::provider_scope::ScopeError,
+) -> RenderDiagnostic<'src> {
+    use crate::provider_scope::ScopeError;
+    let line = match err {
+        ScopeError::TabIndent { line }
+        | ScopeError::BadIndentIndicator { line }
+        | ScopeError::MarkerNotAlone { line }
+        | ScopeError::UnknownMarker { line } => *line as u32,
+    };
+    RenderDiagnostic {
+        kind: RenderErrorKind::ProviderScope,
+        line,
+        column: 0,
+        source_line: source
+            .lines()
+            .nth(line.saturating_sub(1) as usize)
+            .unwrap_or(""),
+        message: err.to_string(),
+        suggestion: Some(
+            "provider-templated block scalars are left unrendered; \
+             move the SQL to a file and load it with fn::readFile if this cannot be fixed",
+        ),
+    }
 }
 
 /// Converts a minijinja::Error into a RenderDiagnostic with zero-copy source reference.
@@ -857,12 +909,18 @@ fn resolve_readfile_markers(rendered: &str, cache: &ReadFileCache) -> Option<Str
     }
 
     let mut result = String::with_capacity(rendered.len());
-    for (i, line) in rendered.lines().enumerate() {
-        if i > 0 {
-            result.push('\n');
-        }
+    for raw in rendered.split_inclusive('\n') {
+        // Carry the line's own terminator through rather than rebuilding with
+        // `\n`: a CRLF file must stay CRLF, and the last line must keep
+        // whatever it had.
+        let line = raw
+            .strip_suffix("\r\n")
+            .or_else(|| raw.strip_suffix('\n'))
+            .unwrap_or(raw);
+        let term = &raw[line.len()..];
+
         if !line.contains('\x00') {
-            result.push_str(line);
+            result.push_str(raw);
             continue;
         }
 
@@ -877,9 +935,7 @@ fn resolve_readfile_markers(rendered: &str, cache: &ReadFileCache) -> Option<Str
         } else {
             result.push_str(&replace_inline_markers(line, cache));
         }
-    }
-    if rendered.ends_with('\n') {
-        result.push('\n');
+        result.push_str(term);
     }
     Some(result)
 }
@@ -1477,6 +1533,7 @@ mod tests {
             config: &config,
             project_dir: "",
             undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
             extra: &HashMap::new(),
         };
         let preprocessor = JinjaPreprocessor::new(&ctx);
@@ -1497,6 +1554,7 @@ mod tests {
             config: &config,
             project_dir: "",
             undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
             extra: &HashMap::new(),
         };
         let preprocessor = JinjaPreprocessor::new(&ctx);
@@ -1524,6 +1582,7 @@ mod tests {
             config: &config,
             project_dir: "",
             undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
             extra: &extra,
         };
         match JinjaPreprocessor::new(&ctx).preprocess(source, "test.yaml") {
@@ -1599,6 +1658,7 @@ mod tests {
             config: &config,
             project_dir: "",
             undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
             extra: &HashMap::new(),
         };
         let preprocessor = JinjaPreprocessor::new(&ctx);
@@ -1621,6 +1681,7 @@ mod tests {
             config: &config,
             project_dir: "",
             undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
             extra: &HashMap::new(),
         };
         let preprocessor = JinjaPreprocessor::new(&ctx);
@@ -1644,6 +1705,7 @@ mod tests {
             config: &config,
             project_dir: "",
             undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
             extra: &HashMap::new(),
         };
         let preprocessor = JinjaPreprocessor::new(&ctx);
@@ -1816,6 +1878,7 @@ mod tests {
             config: &std::collections::HashMap::new(),
             project_dir: "/tmp",
             undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
             extra: &HashMap::new(),
         };
         let preprocessor = JinjaPreprocessor::new(&ctx);
@@ -1838,6 +1901,7 @@ mod tests {
             config: &std::collections::HashMap::new(),
             project_dir: "/tmp",
             undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
             extra: &HashMap::new(),
         };
         let preprocessor = JinjaPreprocessor::new(&ctx);

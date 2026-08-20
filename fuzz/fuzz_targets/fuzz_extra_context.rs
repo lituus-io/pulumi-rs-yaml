@@ -73,6 +73,7 @@ fuzz_target!(|data: &[u8]| {
         config: &config,
         project_dir: "/tmp/fuzz",
         undefined: pulumi_rs_yaml_core::jinja::UndefinedMode::Strict,
+        provider_templated_packages: &[],
         extra: &extra,
     };
     let preprocessor = pulumi_rs_yaml_core::jinja::JinjaPreprocessor::new(&ctx);
@@ -89,6 +90,7 @@ fuzz_target!(|data: &[u8]| {
         config: &config,
         project_dir: "/tmp/fuzz",
         undefined: pulumi_rs_yaml_core::jinja::UndefinedMode::Passthrough,
+        provider_templated_packages: &[],
         extra: &extra,
     };
     let preprocessor_pt = pulumi_rs_yaml_core::jinja::JinjaPreprocessor::new(&ctx_pt);
@@ -105,6 +107,7 @@ fuzz_target!(|data: &[u8]| {
             config: &config,
             project_dir: "/tmp",
             undefined: pulumi_rs_yaml_core::jinja::UndefinedMode::Strict,
+            provider_templated_packages: &[],
             extra: &extra,
         };
         let safe_pp = pulumi_rs_yaml_core::jinja::JinjaPreprocessor::new(&safe_ctx);

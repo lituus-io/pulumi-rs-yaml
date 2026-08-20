@@ -161,6 +161,10 @@ pub fn run_graph(args: &[String]) -> i32 {
     };
 
     let dir_str = parsed.dir.to_string_lossy().into_owned();
+    let scoped = pulumi_rs_yaml_core::provider_scope::effective_packages(
+        &std::fs::read_to_string(parsed.dir.join("Pulumi.yaml")).unwrap_or_default(),
+    );
+    let scoped: Vec<&str> = scoped.iter().map(String::as_str).collect();
     let config: HashMap<String, String> = HashMap::new();
     let extra: HashMap<String, String> = HashMap::new();
     let jinja_ctx = pulumi_rs_yaml_core::jinja::JinjaContext {
@@ -172,6 +176,7 @@ pub fn run_graph(args: &[String]) -> i32 {
         config: &config,
         project_dir: &dir_str,
         undefined: pulumi_rs_yaml_core::jinja::UndefinedMode::Strict,
+        provider_templated_packages: &scoped,
         extra: &extra,
     };
 
