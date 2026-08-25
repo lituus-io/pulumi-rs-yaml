@@ -2172,8 +2172,114 @@ resources:
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
     assert!(
-        regs[0].options.aliases.iter().any(|a| matches!(a, pulumi_rs_yaml_core::eval::resource::ResolvedAlias::Urn(u) if u == "aws:s3:Bucket")),
-        "aliases from schema should be added"
+        regs[0].options.aliases.iter().any(|a| matches!(a, pulumi_rs_yaml_core::eval::resource::ResolvedAlias::Spec { r#type, .. } if r#type == "aws:s3:Bucket")),
+        "aliases from schema should be added, as a type spec"
+    );
+}
+
+/// A schema alias is a TYPE TOKEN, not a URN, and must reach the engine as a
+/// type spec.
+///
+/// A package schema declares `aliases: [{ "type": "pkg:mod:Type" }]`, which is
+/// the same shape a template author writes as a mapping under
+/// `options.aliases`. Emitting it in the URN field instead hands the engine a
+/// string that is not a URN at all: it has no `urn:pulumi:` prefix and no
+/// stack/project/name segments, so nothing downstream can resolve it.
+///
+/// The distinction is the whole point of the two forms, and both must hold:
+/// a plain string an author writes under `options.aliases` IS a URN by
+/// specification and must stay in the URN field, while a schema-derived token
+/// must not.
+#[test]
+fn test_schema_alias_is_emitted_as_type_spec_not_urn() {
+    use pulumi_rs_yaml_core::eval::resource::ResolvedAlias;
+
+    let source = r#"
+name: test
+runtime: yaml
+resources:
+  myBucket:
+    type: aws:s3:Bucket
+    properties:
+      bucketName: my-bucket
+"#;
+    let (eval, _) = eval_with_schema(source, MockCallback::new(), Some(make_bucket_schema()), false);
+
+    let regs = eval.callback().registrations();
+    assert_eq!(regs.len(), 1);
+    let aliases = &regs[0].options.aliases;
+
+    // No schema-derived token may occupy the URN field.
+    for alias in aliases {
+        if let ResolvedAlias::Urn(u) = alias {
+            assert!(
+                u.starts_with("urn:pulumi:"),
+                "alias {u:?} sits in the URN field but is not a URN — a schema \
+                 type token must be emitted as a type spec instead"
+            );
+        }
+    }
+
+    // The schema's token must arrive as a spec carrying only the type; the
+    // engine fills name/stack/project in from the resource being registered,
+    // which is precisely what a type-only alias means.
+    let spec = aliases
+        .iter()
+        .find(|a| matches!(a, ResolvedAlias::Spec { r#type, .. } if r#type == "aws:s3:Bucket"))
+        .unwrap_or_else(|| {
+            panic!("schema alias not emitted as a type spec; got {aliases:?}")
+        });
+
+    match spec {
+        ResolvedAlias::Spec { name, r#type, stack, project, parent_urn, no_parent } => {
+            assert_eq!(r#type, "aws:s3:Bucket");
+            assert!(name.is_empty(), "schema alias must not invent a name");
+            assert!(stack.is_empty(), "schema alias must not invent a stack");
+            assert!(project.is_empty(), "schema alias must not invent a project");
+            // Security: schema data must never be able to reparent a resource.
+            assert!(parent_urn.is_empty(), "schema alias must not set a parent URN");
+            assert!(!no_parent, "schema alias must not detach a resource from its parent");
+        }
+        other => panic!("expected a spec, got {other:?}"),
+    }
+}
+
+/// Enrichment must stay idempotent after the variant change.
+///
+/// The dedupe check matches on the alias variant, so switching the emitted
+/// form without switching the check would re-add the same alias on every pass
+/// and grow the list without bound.
+#[test]
+fn test_schema_alias_is_not_duplicated() {
+    use pulumi_rs_yaml_core::eval::resource::ResolvedAlias;
+
+    let source = r#"
+name: test
+runtime: yaml
+resources:
+  myBucket:
+    type: aws:s3:Bucket
+    properties:
+      bucketName: my-bucket
+    options:
+      aliases:
+        - type: aws:s3:Bucket
+"#;
+    let (eval, _) = eval_with_schema(source, MockCallback::new(), Some(make_bucket_schema()), false);
+
+    let regs = eval.callback().registrations();
+    assert_eq!(regs.len(), 1);
+    let matching = regs[0]
+        .options
+        .aliases
+        .iter()
+        .filter(|a| matches!(a, ResolvedAlias::Spec { r#type, .. } if r#type == "aws:s3:Bucket"))
+        .count();
+    assert_eq!(
+        matching, 1,
+        "an alias the author already declared must not be added a second time \
+         from the schema; got {:?}",
+        regs[0].options.aliases
     );
 }
 
@@ -2245,18 +2351,19 @@ resources:
         .options
         .additional_secret_outputs
         .contains(&"arn".to_string()));
-    // Explicit aliases preserved
+    // Explicit aliases preserved — an author's plain string IS a URN by
+    // specification, so it stays in the URN field untouched by this change.
     assert!(regs[0]
         .options
         .aliases
         .iter()
         .any(|a| matches!(a, pulumi_rs_yaml_core::eval::resource::ResolvedAlias::Urn(u) if u == "aws:s3:LegacyBucket")));
-    // Schema aliases added
+    // Schema aliases added, as a type spec rather than a URN.
     assert!(regs[0]
         .options
         .aliases
         .iter()
-        .any(|a| matches!(a, pulumi_rs_yaml_core::eval::resource::ResolvedAlias::Urn(u) if u == "aws:s3:Bucket")));
+        .any(|a| matches!(a, pulumi_rs_yaml_core::eval::resource::ResolvedAlias::Spec { r#type, .. } if r#type == "aws:s3:Bucket")));
 }
 
 fn make_secret_input_schema() -> SchemaStore {

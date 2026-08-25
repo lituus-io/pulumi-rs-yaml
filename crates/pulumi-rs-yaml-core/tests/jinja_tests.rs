@@ -1669,7 +1669,7 @@ fn test_import_local_template() {
 
 #[test]
 fn test_import_parent_relative_template() {
-    // Simulate bilayer-test structure:
+    // A nested stack layout:
     //   root/environment.j2
     //   root/stacks/bucket1/Pulumi.yaml  (imports ../environment.j2)
     // The '../environment.j2' resolves against root_directory (the project root)
@@ -1711,7 +1711,7 @@ fn test_import_parent_relative_template() {
 
 #[test]
 fn test_import_and_local_import_combined() {
-    // Two imports: parent and local (bilayer-test pattern)
+    // Two imports: parent and local
     //   root/environment.j2                  ← ../environment.j2 from stacks/bucket1
     //   root/stacks/bucket1/environment.j2   ← environment.j2 (local)
     let root = tempfile::tempdir().unwrap();
@@ -1826,13 +1826,14 @@ fn test_import_rejects_non_template_extension() {
 }
 
 #[test]
-fn test_bilayer_exact_reproduction() {
-    // Exact reproduction of the bilayer-test project structure
+fn test_root_and_local_environment_imports() {
+    // A project root holding environment.j2 beside a nested stack that
+    // imports both it and a local one of the same name.
     let root = tempfile::tempdir().unwrap();
     let sub = root.path().join("stacks").join("bucket1");
     std::fs::create_dir_all(&sub).unwrap();
 
-    // Root environment.j2 — matches bilayer-test/environment.j2
+    // Root environment.j2
     std::fs::write(
         root.path().join("environment.j2"),
         r#"{% set location = 'northamerica-northeast1' %}
@@ -1850,7 +1851,7 @@ fn test_bilayer_exact_reproduction() {
     )
     .unwrap();
 
-    // Local environment.j2 — matches bilayer-test/stacks/bucket1/environment.j2
+    // Local environment.j2, same basename as the root one
     std::fs::write(
         sub.join("environment.j2"),
         r#"{% set bucket_list = [
@@ -1859,7 +1860,7 @@ fn test_bilayer_exact_reproduction() {
     )
     .unwrap();
 
-    // Pulumi.yaml — matches bilayer-test/stacks/bucket1/Pulumi.yaml
+    // Pulumi.yaml in the nested stack directory
     let main_source = r#"{% import '../environment.j2' as environment %}
 {% import 'environment.j2' as stack %}
 
