@@ -1163,3 +1163,236 @@ mod sql_lineage_security {
         }
     }
 }
+
+// =========================================================================
+// native_str.rs — regex functions evaluated in process
+//
+// These run INSIDE the language host, on patterns and subjects a template
+// author controls. A hang, an abort or an unbounded allocation here does not
+// return an error to the user — it takes the deploy down. The RE2 lineage
+// removes catastrophic backtracking by construction; the rest is bounds.
+// =========================================================================
+
+mod native_str_security {
+    use pulumi_rs_yaml_core::eval::native_str::try_invoke;
+    use pulumi_rs_yaml_core::eval::value::Value;
+    use std::collections::HashMap;
+    use std::time::{Duration, Instant};
+
+    fn args(pairs: &[(&str, &str)]) -> HashMap<String, Value<'static>> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), Value::String((*v).to_string().into())))
+            .collect()
+    }
+
+    /// `count` is a number from a template and reaches a capacity reservation.
+    ///
+    /// Reserving it directly asks the allocator for terabytes and aborts the
+    /// process — no error, no diagnostic, just a dead language host. A split of
+    /// a string of length L cannot produce more than L+1 parts, so the
+    /// reservation is bounded by the subject rather than by the request.
+    #[test]
+    fn a_huge_count_cannot_trigger_an_unbounded_allocation() {
+        for huge in [1e9, 1e12, 1e18, f64::MAX] {
+            let mut a = args(&[("string", "a,b,c"), ("on", ",")]);
+            a.insert("count".to_string(), Value::Number(huge));
+
+            let started = Instant::now();
+            let out = try_invoke("str:regexp:split", &a);
+            let elapsed = started.elapsed();
+
+            assert!(
+                elapsed < Duration::from_secs(2),
+                "count={huge} took {elapsed:?} — the reservation is unbounded",
+            );
+            // f64::MAX and 1e18 do not survive the integer round-trip, so they
+            // defer; the finite ones must answer, and answer correctly.
+            if let Some(out) = out {
+                match out.get("result") {
+                    Some(Value::List(items)) => assert_eq!(
+                        items.len(),
+                        3,
+                        "a huge count must not change the RESULT, only the cap",
+                    ),
+                    other => panic!("unexpected split output: {other:?}"),
+                }
+            }
+        }
+    }
+
+    /// Patterns that pin a backtracking engine must stay linear here.
+    ///
+    /// A template author supplies the pattern. On a PCRE-style engine each of
+    /// these is exponential in the subject length; both Go's regexp and this
+    /// crate are RE2 lineage and evaluate them in linear time. This test is the
+    /// standing proof that the guarantee has not been swapped away.
+    #[test]
+    fn catastrophic_backtracking_patterns_do_not_hang() {
+        let subject = "a".repeat(80);
+        let patterns = [r"(a+)+$", r"(a|a)*$", r"(a*)*b", r"(a|aa)+$", r"(.*a){20}$"];
+        for pattern in patterns {
+            for token in ["str:regexp:match", "str:regexp:replace", "str:regexp:split"] {
+                let a = match token {
+                    "str:regexp:match" => args(&[("string", &subject), ("pattern", pattern)]),
+                    "str:regexp:replace" => {
+                        args(&[("string", &subject), ("old", pattern), ("new", "x")])
+                    }
+                    _ => args(&[("string", &subject), ("on", pattern)]),
+                };
+                let started = Instant::now();
+                let _ = try_invoke(token, &a);
+                let elapsed = started.elapsed();
+                assert!(
+                    elapsed < Duration::from_secs(2),
+                    "{token} with {pattern:?} took {elapsed:?} — backtracking has appeared",
+                );
+            }
+        }
+    }
+
+    /// A large subject is bounded work, not a denial of service.
+    #[test]
+    fn a_large_subject_completes_promptly() {
+        let subject = "field,".repeat(50_000); // ~300KB, 50k separators
+        let started = Instant::now();
+        let out = try_invoke(
+            "str:regexp:split",
+            &args(&[("string", &subject), ("on", ",")]),
+        )
+        .expect("a large split must still be answered");
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "splitting {}KB took {elapsed:?}",
+            subject.len() / 1024,
+        );
+        match out.get("result") {
+            Some(Value::List(items)) => assert_eq!(items.len(), 50_001),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    /// A pattern is data, never a capability.
+    ///
+    /// Regex syntax has no escape into the filesystem, the environment or the
+    /// process — but the assertion worth keeping is that these inputs produce
+    /// an ordinary answer or an ordinary decline, never anything else.
+    #[test]
+    fn patterns_that_look_like_injection_are_treated_as_patterns() {
+        let hostile = [
+            "$(whoami)",
+            "`id`",
+            "${IFS}",
+            "../../etc/passwd",
+            "\0/etc/passwd",
+            "%s%s%s%n",
+            "'; DROP TABLE resources; --",
+        ];
+        for probe in hostile {
+            // As a pattern.
+            let _ = try_invoke(
+                "str:regexp:match",
+                &args(&[("string", "harmless"), ("pattern", probe)]),
+            );
+            // As a subject.
+            let out = try_invoke(
+                "str:regexp:match",
+                &args(&[("string", probe), ("pattern", "harmless")]),
+            );
+            assert!(
+                matches!(
+                    out.and_then(|o| o.get("matches").cloned()),
+                    Some(Value::Bool(false))
+                ),
+                "{probe:?} as a subject must simply not match",
+            );
+        }
+    }
+
+    /// The replacement template cannot read a group that does not exist.
+    ///
+    /// Go expands `$1` inside the replacement, so a template can reference
+    /// arbitrary group numbers. An out-of-range reference must expand to
+    /// nothing, never read adjacent memory or panic.
+    #[test]
+    fn out_of_range_group_references_expand_to_nothing() {
+        let out = try_invoke(
+            "str:regexp:replace",
+            &args(&[("string", "abc"), ("old", "(b)"), ("new", "$9$8$7")]),
+        )
+        .expect("must be answered");
+        match out.get("result") {
+            Some(Value::String(s)) => assert_eq!(s.as_ref(), "ac"),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    /// Every combination of adversarial pattern, subject and replacement must
+    /// return — an answer or a decline — and never unwind.
+    #[test]
+    fn no_input_combination_panics() {
+        // Patterns and subjects are swept against each other, but the long
+        // subject is kept out of the cross product: pairing 8KB with every
+        // pattern cost 27s in a debug build and found nothing the short
+        // subjects did not. It is swept separately below.
+        let probes = [
+            "",
+            "\0",
+            "\u{feff}",
+            "🙂🙂",
+            "\\",
+            "$1",
+            "$$",
+            "(",
+            "[",
+            "{",
+            "*",
+            "+",
+            "?",
+            "|",
+            "^",
+            "$",
+            ".*.*.*",
+            r"(?P<n>a)",
+            r"(a)\1",
+            r"(?=a)",
+            r"[z-a]",
+            "a{99999999}",
+        ];
+        for pattern in probes {
+            for subject in probes {
+                let _ = try_invoke(
+                    "str:regexp:match",
+                    &args(&[("string", subject), ("pattern", pattern)]),
+                );
+                let _ = try_invoke(
+                    "str:regexp:split",
+                    &args(&[("string", subject), ("on", pattern)]),
+                );
+                let _ = try_invoke(
+                    "str:regexp:replace",
+                    &args(&[("string", subject), ("old", pattern), ("new", "$1")]),
+                );
+            }
+        }
+
+        // The long subject against each pattern once, rather than against
+        // every other probe as well.
+        let long = "a".repeat(8192);
+        for pattern in probes {
+            let _ = try_invoke(
+                "str:regexp:match",
+                &args(&[("string", &long), ("pattern", pattern)]),
+            );
+            let _ = try_invoke(
+                "str:regexp:split",
+                &args(&[("string", &long), ("on", pattern)]),
+            );
+            let _ = try_invoke(
+                "str:regexp:replace",
+                &args(&[("string", &long), ("old", pattern), ("new", "$1")]),
+            );
+        }
+    }
+}

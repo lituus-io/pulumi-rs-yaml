@@ -123,7 +123,17 @@ fn go_split<'h>(re: &Regex, s: &'h str, n: i64) -> Vec<&'h str> {
         return vec![""];
     }
 
-    let cap = if n > 0 { n as usize } else { 8 };
+    // `n` is attacker-reachable: it comes from `count` in a template, arrives
+    // as an f64 and can be astronomically large. Reserving it directly would
+    // ask the allocator for terabytes and abort the language host — one number
+    // in a template taking a deploy down. A split of a string of length L
+    // yields at most L+1 parts, so that is the real bound, and reserving past
+    // it could never have helped.
+    let cap = if n > 0 {
+        (n as usize).min(s.len().saturating_add(1))
+    } else {
+        8
+    };
     let mut out: Vec<&str> = Vec::with_capacity(cap);
     let mut beg = 0usize;
     let mut end = 0usize;
@@ -188,7 +198,7 @@ fn provider_form(token: &str) -> Cow<'_, str> {
 /// Keyed on the token alone, so it is a property of the template rather than of
 /// any particular argument values. A template mixing handled and unhandled
 /// tokens still pulls the package in, which is correct: it genuinely needs it.
-pub(crate) fn handles(token: &str) -> bool {
+pub fn handles(token: &str) -> bool {
     matches!(
         provider_form(token).as_ref(),
         "str:index:replace"
@@ -205,7 +215,7 @@ pub(crate) fn handles(token: &str) -> bool {
 /// `None` is the "not ours" answer and is always safe: the caller falls back to
 /// the normal invoke path, so an unknown token, an unresolved argument, or a
 /// preview-time `Unknown` all behave exactly as before.
-pub(crate) fn try_invoke(
+pub fn try_invoke(
     token: &str,
     args: &HashMap<String, Value<'static>>,
 ) -> Option<HashMap<String, Value<'static>>> {
@@ -271,7 +281,11 @@ pub(crate) fn try_invoke(
             let re = Regex::new(on).ok()?;
             let parts = go_split(&re, s, n);
             let mut list = Vec::with_capacity(parts.len());
-            list.extend(parts.into_iter().map(|p| Value::String(p.to_string().into())));
+            list.extend(
+                parts
+                    .into_iter()
+                    .map(|p| Value::String(p.to_string().into())),
+            );
             ok_named(RESULT, Value::List(list))
         }
         _ => None,
@@ -437,19 +451,27 @@ mod tests {
             // (s, old, new, expected)
             ("a1b22c", r"\d+", "#", "a#b#c"),
             ("hello", "l+", "L", "heLo"),
-            ("abc", "x", "y", "abc"),              // no match -> unchanged
-            ("aaa", "a", "b", "bbb"),              // ALL matches, not just the first
-            ("a-b", "-", "", "ab"),                // empty replacement deletes
+            ("abc", "x", "y", "abc"), // no match -> unchanged
+            ("aaa", "a", "b", "bbb"), // ALL matches, not just the first
+            ("a-b", "-", "", "ab"),   // empty replacement deletes
             ("2026-08-26", r"(\d+)-(\d+)-(\d+)", "$3/$2/$1", "26/08/2026"),
-            ("john smith", r"(?P<f>\w+) (?P<l>\w+)", "${l}, ${f}", "smith, john"),
-            ("price", "^", "$$", "$price"),        // $$ is a literal dollar
-            ("ab", "", "-", "-a-b-"),              // empty pattern: every boundary
-            ("héllo", "é", "e", "hello"),          // multi-byte safe
+            (
+                "john smith",
+                r"(?P<f>\w+) (?P<l>\w+)",
+                "${l}, ${f}",
+                "smith, john",
+            ),
+            ("price", "^", "$$", "$price"), // $$ is a literal dollar
+            ("ab", "", "-", "-a-b-"),       // empty pattern: every boundary
+            ("héllo", "é", "e", "hello"),   // multi-byte safe
         ];
         for (s, old, new, expected) in cases {
             assert_eq!(
-                result_of("str:regexp:replace",
-                          &[("string", s), ("old", old), ("new", new)]).as_deref(),
+                result_of(
+                    "str:regexp:replace",
+                    &[("string", s), ("old", old), ("new", new)]
+                )
+                .as_deref(),
                 Some(*expected),
                 "regexp replace({s:?}, {old:?}, {new:?})",
             );
@@ -539,8 +561,23 @@ mod tests {
         // swept against a fixed, adversarial partner.
         let long = "a".repeat(4096);
         let nasty = [
-            "\0", "\u{feff}", "🙂🙂", long.as_str(), "\\", "%s", "$1", "$$",
-            "(", "[", "*", "+", "?", "{", r"\", r"(?P<n>a)", ".*.*.*.*",
+            "\0",
+            "\u{feff}",
+            "🙂🙂",
+            long.as_str(),
+            "\\",
+            "%s",
+            "$1",
+            "$$",
+            "(",
+            "[",
+            "*",
+            "+",
+            "?",
+            "{",
+            r"\",
+            r"(?P<n>a)",
+            ".*.*.*.*",
         ];
         for probe in nasty {
             // subject varies
@@ -602,7 +639,12 @@ mod tests {
     #[test]
     fn test_both_spellings_agree() {
         let cases: &[(&str, &str, &str, &str)] = &[
-            ("str:regexp:replace", "str:regexp/replace:replace", r"\d+", "#"),
+            (
+                "str:regexp:replace",
+                "str:regexp/replace:replace",
+                r"\d+",
+                "#",
+            ),
             ("str:index:replace", "str:index/replace:replace", "a", "z"),
         ];
         for (plain, slashed, old, new) in cases {
@@ -858,11 +900,7 @@ mod tests {
             Some(Value::Bool(true)),
         );
         assert_eq!(
-            list_of(
-                "str:regexp/split:split",
-                &[("string", "a,b"), ("on", ",")],
-            )
-            .as_deref(),
+            list_of("str:regexp/split:split", &[("string", "a,b"), ("on", ",")],).as_deref(),
             Some(&["a".to_string(), "b".to_string()][..]),
         );
         assert!(handles("str:regexp/match:match"));
@@ -882,11 +920,7 @@ mod tests {
                 "match must defer on {bad:?}",
             );
             assert!(
-                try_invoke(
-                    "str:regexp:split",
-                    &args(&[("string", "abc"), ("on", bad)]),
-                )
-                .is_none(),
+                try_invoke("str:regexp:split", &args(&[("string", "abc"), ("on", bad)]),).is_none(),
                 "split must defer on {bad:?}",
             );
         }
@@ -926,8 +960,23 @@ mod tests {
     fn test_match_and_split_never_panic() {
         let long = "a".repeat(4096);
         let nasty = [
-            "\0", "\u{feff}", "🙂🙂", long.as_str(), "\\", "%s", "$1",
-            "(", "[", "*", "+", "?", "{", r"\", r"(?P<n>a)", ".*.*.*.*", "",
+            "\0",
+            "\u{feff}",
+            "🙂🙂",
+            long.as_str(),
+            "\\",
+            "%s",
+            "$1",
+            "(",
+            "[",
+            "*",
+            "+",
+            "?",
+            "{",
+            r"\",
+            r"(?P<n>a)",
+            ".*.*.*.*",
+            "",
         ];
         for probe in nasty {
             let _ = matched("a", probe);
@@ -936,7 +985,6 @@ mod tests {
             let _ = list_of("str:regexp:split", &[("string", "a,b"), ("on", probe)]);
         }
     }
-
 
     // ================================================================== //
     // Cost                                                               //
@@ -965,8 +1013,8 @@ mod tests {
         let subject = "a".repeat(64);
         let cases = [r"(a+)+$", r"(a|a)*$", r"(a*)*b", r"(.*)*x"];
         for pattern in cases {
-            let re = Regex::new(pattern)
-                .unwrap_or_else(|e| panic!("{pattern:?} must compile: {e}"));
+            let re =
+                Regex::new(pattern).unwrap_or_else(|e| panic!("{pattern:?} must compile: {e}"));
             let started = Instant::now();
             let _ = re.is_match(&subject);
             let _ = go_split(&re, &subject, -1);

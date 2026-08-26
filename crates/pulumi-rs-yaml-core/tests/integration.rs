@@ -2203,7 +2203,12 @@ resources:
     properties:
       bucketName: my-bucket
 "#;
-    let (eval, _) = eval_with_schema(source, MockCallback::new(), Some(make_bucket_schema()), false);
+    let (eval, _) = eval_with_schema(
+        source,
+        MockCallback::new(),
+        Some(make_bucket_schema()),
+        false,
+    );
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -2226,19 +2231,30 @@ resources:
     let spec = aliases
         .iter()
         .find(|a| matches!(a, ResolvedAlias::Spec { r#type, .. } if r#type == "aws:s3:Bucket"))
-        .unwrap_or_else(|| {
-            panic!("schema alias not emitted as a type spec; got {aliases:?}")
-        });
+        .unwrap_or_else(|| panic!("schema alias not emitted as a type spec; got {aliases:?}"));
 
     match spec {
-        ResolvedAlias::Spec { name, r#type, stack, project, parent_urn, no_parent } => {
+        ResolvedAlias::Spec {
+            name,
+            r#type,
+            stack,
+            project,
+            parent_urn,
+            no_parent,
+        } => {
             assert_eq!(r#type, "aws:s3:Bucket");
             assert!(name.is_empty(), "schema alias must not invent a name");
             assert!(stack.is_empty(), "schema alias must not invent a stack");
             assert!(project.is_empty(), "schema alias must not invent a project");
             // Security: schema data must never be able to reparent a resource.
-            assert!(parent_urn.is_empty(), "schema alias must not set a parent URN");
-            assert!(!no_parent, "schema alias must not detach a resource from its parent");
+            assert!(
+                parent_urn.is_empty(),
+                "schema alias must not set a parent URN"
+            );
+            assert!(
+                !no_parent,
+                "schema alias must not detach a resource from its parent"
+            );
         }
         other => panic!("expected a spec, got {other:?}"),
     }
@@ -2265,7 +2281,12 @@ resources:
       aliases:
         - type: aws:s3:Bucket
 "#;
-    let (eval, _) = eval_with_schema(source, MockCallback::new(), Some(make_bucket_schema()), false);
+    let (eval, _) = eval_with_schema(
+        source,
+        MockCallback::new(),
+        Some(make_bucket_schema()),
+        false,
+    );
 
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
@@ -6127,8 +6148,14 @@ resources:
     // Capture groups expand exactly as Go's Expand does.
     assert_eq!(got("bucketName").as_deref(), Some("26/08/2026"));
     let cleaned = got("acl").unwrap_or_default();
-    assert!(!cleaned.contains("trailing"), "line comment survived: {cleaned:?}");
-    assert!(!cleaned.contains("block"), "block comment survived: {cleaned:?}");
+    assert!(
+        !cleaned.contains("trailing"),
+        "line comment survived: {cleaned:?}"
+    );
+    assert!(
+        !cleaned.contains("block"),
+        "block comment survived: {cleaned:?}"
+    );
     assert!(cleaned.contains("SELECT a,") && cleaned.contains("b FROM t"));
 }
 
