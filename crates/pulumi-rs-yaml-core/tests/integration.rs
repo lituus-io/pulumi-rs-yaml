@@ -6070,6 +6070,68 @@ resources:
     assert_eq!(got("region").as_deref(), Some("value"), "trimSuffix");
 }
 
+/// The three-part `fn::str:regexp:replace` spelling, end to end.
+///
+/// This is the shape that failed in production with
+/// "Invoke 'regexp/replace:replace' not found". Function canonicalization
+/// slashes every three-part token, and `str` — hand-written, not bridged —
+/// registers `str:regexp:replace` verbatim, so the slashed token matched
+/// nothing at the provider either. Answering it in process means it is never
+/// sent, and the assertion below is that no invoke leaves at all.
+#[test]
+fn test_str_regexp_replace_is_answered_in_process() {
+    let source = r#"
+name: test
+runtime: yaml
+variables:
+  cleaned:
+    fn::str:regexp:replace:
+      string: "SELECT a, -- trailing\n/* block */ b FROM t"
+      old: "(--[^\n]*)|(/\\*[\\s\\S]*?\\*/)"
+      new: ""
+  dated:
+    fn::str:regexp:replace:
+      string: "2026-08-26"
+      old: "(\\d+)-(\\d+)-(\\d+)"
+      new: "$3/$2/$1"
+resources:
+  bucket:
+    type: aws:s3:Bucket
+    properties:
+      bucketName: ${dated.result}
+      acl: ${cleaned.result}
+"#;
+
+    let mock = MockCallback::new();
+    let (eval, has_errors) = eval_with_mock(source, mock);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
+
+    assert!(
+        eval.callback().invocations().is_empty(),
+        "str:regexp:replace must not be sent to the engine; got {:?}",
+        eval.callback()
+            .invocations()
+            .iter()
+            .map(|i| i.token.clone())
+            .collect::<Vec<_>>(),
+    );
+
+    let regs = eval.callback().registrations();
+    assert_eq!(regs.len(), 1);
+    let got = |k: &str| {
+        regs[0]
+            .inputs
+            .get(k)
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+    };
+    // Capture groups expand exactly as Go's Expand does.
+    assert_eq!(got("bucketName").as_deref(), Some("26/08/2026"));
+    let cleaned = got("acl").unwrap_or_default();
+    assert!(!cleaned.contains("trailing"), "line comment survived: {cleaned:?}");
+    assert!(!cleaned.contains("block"), "block comment survived: {cleaned:?}");
+    assert!(cleaned.contains("SELECT a,") && cleaned.contains("b FROM t"));
+}
+
 /// Anything not implemented natively still goes to the provider untouched.
 #[test]
 fn test_unimplemented_str_functions_still_reach_the_engine() {

@@ -28,6 +28,8 @@ uuid = { version = "1", features = ["v4"] }
 rand = "0.8.6" # >=0.8.6 fixes RUSTSEC-2026-0097 (thread_rng unsoundness), API-compatible
 pyo3 = { version = "0.29", features = ["extension-module"] }
 heck = "0.5"
+# RE2-lineage, like Go's regexp: linear time, no backreferences, no lookaround.
+regex = "1"
 hcl-rs = "0.19"
 rayon = "1"
 starlark = "0.13"

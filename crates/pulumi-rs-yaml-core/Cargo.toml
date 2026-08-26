@@ -36,6 +36,7 @@ rand = { workspace = true }
 hcl-rs = { workspace = true }
 rayon = { workspace = true }
 starlark = { workspace = true }
+regex = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }
