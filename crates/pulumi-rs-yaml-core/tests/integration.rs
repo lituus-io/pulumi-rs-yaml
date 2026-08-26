@@ -6132,6 +6132,67 @@ resources:
     assert!(cleaned.contains("SELECT a,") && cleaned.contains("b FROM t"));
 }
 
+/// `match` and `split` end to end, in the three-part spelling.
+///
+/// The whole `str` regexp surface is answered in process now, so a template
+/// using all of it registers resources without a single invoke leaving — which
+/// is what keeps the plugin (and its Cancel-time segfault) out of the run.
+#[test]
+fn test_str_regexp_match_and_split_are_answered_in_process() {
+    let source = r#"
+name: test
+runtime: yaml
+variables:
+  looksLikeSql:
+    fn::str:regexp:match:
+      string: "SELECT 1"
+      pattern: "^SELECT"
+  fields:
+    fn::str:regexp:split:
+      string: "a,b,c,d"
+      on: ","
+      count: 3
+  allFields:
+    fn::str:regexp:split:
+      string: "x:y:z"
+      on: ":"
+resources:
+  bucket:
+    type: aws:s3:Bucket
+    properties:
+      bucketName: ${fields.result[2]}
+      acl: ${allFields.result[0]}
+      region: ${fields.result[0]}
+"#;
+
+    let mock = MockCallback::new();
+    let (eval, has_errors) = eval_with_mock(source, mock);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
+
+    assert!(
+        eval.callback().invocations().is_empty(),
+        "the str regexp surface must not reach the engine; got {:?}",
+        eval.callback()
+            .invocations()
+            .iter()
+            .map(|i| i.token.clone())
+            .collect::<Vec<_>>(),
+    );
+
+    let regs = eval.callback().registrations();
+    assert_eq!(regs.len(), 1);
+    let got = |k: &str| {
+        regs[0]
+            .inputs
+            .get(k)
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+    };
+    // count=3 leaves the tail unsplit, exactly as Go's Split does.
+    assert_eq!(got("bucketName").as_deref(), Some("c,d"));
+    assert_eq!(got("region").as_deref(), Some("a"));
+    assert_eq!(got("acl").as_deref(), Some("x"));
+}
+
 /// Anything not implemented natively still goes to the provider untouched.
 #[test]
 fn test_unimplemented_str_functions_still_reach_the_engine() {
@@ -6140,7 +6201,7 @@ name: test
 runtime: yaml
 variables:
   parts:
-    fn::str:regexp:split:
+    fn::str:regexp:find:
       string: "a1b2c"
       pattern: "[0-9]"
 resources:
@@ -6239,8 +6300,12 @@ variables:
       string: "a-b"
       old: "-"
       new: "_"
+  # Every REAL str function is answered natively now, so an unhandled token
+  # is the only way left to exercise the mixed case. The property under test
+  # is unchanged: a token handles() declines must still pull the package in,
+  # because the engine genuinely has to load it to answer.
   viaProvider:
-    fn::str:regexp:split:
+    fn::str:regexp:find:
       string: "a1b"
       pattern: "[0-9]"
 resources:
