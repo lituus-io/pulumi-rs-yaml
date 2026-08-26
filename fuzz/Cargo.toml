@@ -106,3 +106,8 @@ doc = false
 name = "fuzz_scope_never_panics"
 path = "fuzz_targets/fuzz_scope_never_panics.rs"
 doc = false
+
+[[bin]]
+name = "fuzz_native_str"
+path = "fuzz_targets/fuzz_native_str.rs"
+doc = false

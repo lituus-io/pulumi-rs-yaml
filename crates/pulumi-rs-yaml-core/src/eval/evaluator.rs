@@ -763,14 +763,34 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
                     options.additional_secret_outputs.push(prop.clone());
                 }
             }
+            // A schema alias is a TYPE TOKEN, so it becomes a type SPEC — never
+            // a URN. `aliases: [{ "type": "pkg:mod:Type" }]` in a package schema
+            // is the same shape a template author writes as a mapping under
+            // `options.aliases`, and it is not a URN: no `urn:pulumi:` prefix,
+            // no stack/project/name segments. Putting it in the URN field hands
+            // the engine a string it cannot resolve.
+            //
+            // Only the type is filled in. Leaving name/stack/project empty is
+            // what makes this a type-only alias: the engine supplies them from
+            // the resource being registered, which is the whole meaning of a
+            // provider's "this type used to be called that" declaration.
+            // parent_urn stays empty and no_parent stays false so schema data
+            // can never reparent or detach a resource.
             for alias in &info.aliases {
                 let already_present = options.aliases.iter().any(
-                    |a| matches!(a, crate::eval::resource::ResolvedAlias::Urn(u) if u == alias),
+                    |a| matches!(a, crate::eval::resource::ResolvedAlias::Spec { r#type, .. } if r#type == alias),
                 );
                 if !already_present {
                     options
                         .aliases
-                        .push(crate::eval::resource::ResolvedAlias::Urn(alias.clone()));
+                        .push(crate::eval::resource::ResolvedAlias::Spec {
+                            name: String::new(),
+                            r#type: alias.clone(),
+                            stack: String::new(),
+                            project: String::new(),
+                            parent_urn: String::new(),
+                            no_parent: false,
+                        });
                 }
             }
         }

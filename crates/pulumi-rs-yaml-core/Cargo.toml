@@ -1,6 +1,6 @@
 [package]
 name = "pulumi-rs-yaml-core"
-version = "0.5.23"
+version = "0.5.24"
 edition = "2021"
 description = "Core library for pulumi-rs-yaml: parser, AST, evaluator"
 license.workspace = true
@@ -36,6 +36,7 @@ rand = { workspace = true }
 hcl-rs = { workspace = true }
 rayon = { workspace = true }
 starlark = { workspace = true }
+regex = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

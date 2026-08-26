@@ -2172,8 +2172,135 @@ resources:
     let regs = eval.callback().registrations();
     assert_eq!(regs.len(), 1);
     assert!(
-        regs[0].options.aliases.iter().any(|a| matches!(a, pulumi_rs_yaml_core::eval::resource::ResolvedAlias::Urn(u) if u == "aws:s3:Bucket")),
-        "aliases from schema should be added"
+        regs[0].options.aliases.iter().any(|a| matches!(a, pulumi_rs_yaml_core::eval::resource::ResolvedAlias::Spec { r#type, .. } if r#type == "aws:s3:Bucket")),
+        "aliases from schema should be added, as a type spec"
+    );
+}
+
+/// A schema alias is a TYPE TOKEN, not a URN, and must reach the engine as a
+/// type spec.
+///
+/// A package schema declares `aliases: [{ "type": "pkg:mod:Type" }]`, which is
+/// the same shape a template author writes as a mapping under
+/// `options.aliases`. Emitting it in the URN field instead hands the engine a
+/// string that is not a URN at all: it has no `urn:pulumi:` prefix and no
+/// stack/project/name segments, so nothing downstream can resolve it.
+///
+/// The distinction is the whole point of the two forms, and both must hold:
+/// a plain string an author writes under `options.aliases` IS a URN by
+/// specification and must stay in the URN field, while a schema-derived token
+/// must not.
+#[test]
+fn test_schema_alias_is_emitted_as_type_spec_not_urn() {
+    use pulumi_rs_yaml_core::eval::resource::ResolvedAlias;
+
+    let source = r#"
+name: test
+runtime: yaml
+resources:
+  myBucket:
+    type: aws:s3:Bucket
+    properties:
+      bucketName: my-bucket
+"#;
+    let (eval, _) = eval_with_schema(
+        source,
+        MockCallback::new(),
+        Some(make_bucket_schema()),
+        false,
+    );
+
+    let regs = eval.callback().registrations();
+    assert_eq!(regs.len(), 1);
+    let aliases = &regs[0].options.aliases;
+
+    // No schema-derived token may occupy the URN field.
+    for alias in aliases {
+        if let ResolvedAlias::Urn(u) = alias {
+            assert!(
+                u.starts_with("urn:pulumi:"),
+                "alias {u:?} sits in the URN field but is not a URN — a schema \
+                 type token must be emitted as a type spec instead"
+            );
+        }
+    }
+
+    // The schema's token must arrive as a spec carrying only the type; the
+    // engine fills name/stack/project in from the resource being registered,
+    // which is precisely what a type-only alias means.
+    let spec = aliases
+        .iter()
+        .find(|a| matches!(a, ResolvedAlias::Spec { r#type, .. } if r#type == "aws:s3:Bucket"))
+        .unwrap_or_else(|| panic!("schema alias not emitted as a type spec; got {aliases:?}"));
+
+    match spec {
+        ResolvedAlias::Spec {
+            name,
+            r#type,
+            stack,
+            project,
+            parent_urn,
+            no_parent,
+        } => {
+            assert_eq!(r#type, "aws:s3:Bucket");
+            assert!(name.is_empty(), "schema alias must not invent a name");
+            assert!(stack.is_empty(), "schema alias must not invent a stack");
+            assert!(project.is_empty(), "schema alias must not invent a project");
+            // Security: schema data must never be able to reparent a resource.
+            assert!(
+                parent_urn.is_empty(),
+                "schema alias must not set a parent URN"
+            );
+            assert!(
+                !no_parent,
+                "schema alias must not detach a resource from its parent"
+            );
+        }
+        other => panic!("expected a spec, got {other:?}"),
+    }
+}
+
+/// Enrichment must stay idempotent after the variant change.
+///
+/// The dedupe check matches on the alias variant, so switching the emitted
+/// form without switching the check would re-add the same alias on every pass
+/// and grow the list without bound.
+#[test]
+fn test_schema_alias_is_not_duplicated() {
+    use pulumi_rs_yaml_core::eval::resource::ResolvedAlias;
+
+    let source = r#"
+name: test
+runtime: yaml
+resources:
+  myBucket:
+    type: aws:s3:Bucket
+    properties:
+      bucketName: my-bucket
+    options:
+      aliases:
+        - type: aws:s3:Bucket
+"#;
+    let (eval, _) = eval_with_schema(
+        source,
+        MockCallback::new(),
+        Some(make_bucket_schema()),
+        false,
+    );
+
+    let regs = eval.callback().registrations();
+    assert_eq!(regs.len(), 1);
+    let matching = regs[0]
+        .options
+        .aliases
+        .iter()
+        .filter(|a| matches!(a, ResolvedAlias::Spec { r#type, .. } if r#type == "aws:s3:Bucket"))
+        .count();
+    assert_eq!(
+        matching, 1,
+        "an alias the author already declared must not be added a second time \
+         from the schema; got {:?}",
+        regs[0].options.aliases
     );
 }
 
@@ -2245,18 +2372,19 @@ resources:
         .options
         .additional_secret_outputs
         .contains(&"arn".to_string()));
-    // Explicit aliases preserved
+    // Explicit aliases preserved — an author's plain string IS a URN by
+    // specification, so it stays in the URN field untouched by this change.
     assert!(regs[0]
         .options
         .aliases
         .iter()
         .any(|a| matches!(a, pulumi_rs_yaml_core::eval::resource::ResolvedAlias::Urn(u) if u == "aws:s3:LegacyBucket")));
-    // Schema aliases added
+    // Schema aliases added, as a type spec rather than a URN.
     assert!(regs[0]
         .options
         .aliases
         .iter()
-        .any(|a| matches!(a, pulumi_rs_yaml_core::eval::resource::ResolvedAlias::Urn(u) if u == "aws:s3:Bucket")));
+        .any(|a| matches!(a, pulumi_rs_yaml_core::eval::resource::ResolvedAlias::Spec { r#type, .. } if r#type == "aws:s3:Bucket")));
 }
 
 fn make_secret_input_schema() -> SchemaStore {
@@ -5963,6 +6091,135 @@ resources:
     assert_eq!(got("region").as_deref(), Some("value"), "trimSuffix");
 }
 
+/// The three-part `fn::str:regexp:replace` spelling, end to end.
+///
+/// This is the shape that failed in production with
+/// "Invoke 'regexp/replace:replace' not found". Function canonicalization
+/// slashes every three-part token, and `str` — hand-written, not bridged —
+/// registers `str:regexp:replace` verbatim, so the slashed token matched
+/// nothing at the provider either. Answering it in process means it is never
+/// sent, and the assertion below is that no invoke leaves at all.
+#[test]
+fn test_str_regexp_replace_is_answered_in_process() {
+    let source = r#"
+name: test
+runtime: yaml
+variables:
+  cleaned:
+    fn::str:regexp:replace:
+      string: "SELECT a, -- trailing\n/* block */ b FROM t"
+      old: "(--[^\n]*)|(/\\*[\\s\\S]*?\\*/)"
+      new: ""
+  dated:
+    fn::str:regexp:replace:
+      string: "2026-08-26"
+      old: "(\\d+)-(\\d+)-(\\d+)"
+      new: "$3/$2/$1"
+resources:
+  bucket:
+    type: aws:s3:Bucket
+    properties:
+      bucketName: ${dated.result}
+      acl: ${cleaned.result}
+"#;
+
+    let mock = MockCallback::new();
+    let (eval, has_errors) = eval_with_mock(source, mock);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
+
+    assert!(
+        eval.callback().invocations().is_empty(),
+        "str:regexp:replace must not be sent to the engine; got {:?}",
+        eval.callback()
+            .invocations()
+            .iter()
+            .map(|i| i.token.clone())
+            .collect::<Vec<_>>(),
+    );
+
+    let regs = eval.callback().registrations();
+    assert_eq!(regs.len(), 1);
+    let got = |k: &str| {
+        regs[0]
+            .inputs
+            .get(k)
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+    };
+    // Capture groups expand exactly as Go's Expand does.
+    assert_eq!(got("bucketName").as_deref(), Some("26/08/2026"));
+    let cleaned = got("acl").unwrap_or_default();
+    assert!(
+        !cleaned.contains("trailing"),
+        "line comment survived: {cleaned:?}"
+    );
+    assert!(
+        !cleaned.contains("block"),
+        "block comment survived: {cleaned:?}"
+    );
+    assert!(cleaned.contains("SELECT a,") && cleaned.contains("b FROM t"));
+}
+
+/// `match` and `split` end to end, in the three-part spelling.
+///
+/// The whole `str` regexp surface is answered in process now, so a template
+/// using all of it registers resources without a single invoke leaving — which
+/// is what keeps the plugin (and its Cancel-time segfault) out of the run.
+#[test]
+fn test_str_regexp_match_and_split_are_answered_in_process() {
+    let source = r#"
+name: test
+runtime: yaml
+variables:
+  looksLikeSql:
+    fn::str:regexp:match:
+      string: "SELECT 1"
+      pattern: "^SELECT"
+  fields:
+    fn::str:regexp:split:
+      string: "a,b,c,d"
+      on: ","
+      count: 3
+  allFields:
+    fn::str:regexp:split:
+      string: "x:y:z"
+      on: ":"
+resources:
+  bucket:
+    type: aws:s3:Bucket
+    properties:
+      bucketName: ${fields.result[2]}
+      acl: ${allFields.result[0]}
+      region: ${fields.result[0]}
+"#;
+
+    let mock = MockCallback::new();
+    let (eval, has_errors) = eval_with_mock(source, mock);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
+
+    assert!(
+        eval.callback().invocations().is_empty(),
+        "the str regexp surface must not reach the engine; got {:?}",
+        eval.callback()
+            .invocations()
+            .iter()
+            .map(|i| i.token.clone())
+            .collect::<Vec<_>>(),
+    );
+
+    let regs = eval.callback().registrations();
+    assert_eq!(regs.len(), 1);
+    let got = |k: &str| {
+        regs[0]
+            .inputs
+            .get(k)
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+    };
+    // count=3 leaves the tail unsplit, exactly as Go's Split does.
+    assert_eq!(got("bucketName").as_deref(), Some("c,d"));
+    assert_eq!(got("region").as_deref(), Some("a"));
+    assert_eq!(got("acl").as_deref(), Some("x"));
+}
+
 /// Anything not implemented natively still goes to the provider untouched.
 #[test]
 fn test_unimplemented_str_functions_still_reach_the_engine() {
@@ -5971,7 +6228,7 @@ name: test
 runtime: yaml
 variables:
   parts:
-    fn::str:regexp:split:
+    fn::str:regexp:find:
       string: "a1b2c"
       pattern: "[0-9]"
 resources:
@@ -6070,8 +6327,12 @@ variables:
       string: "a-b"
       old: "-"
       new: "_"
+  # Every REAL str function is answered natively now, so an unhandled token
+  # is the only way left to exercise the mixed case. The property under test
+  # is unchanged: a token handles() declines must still pull the package in,
+  # because the engine genuinely has to load it to answer.
   viaProvider:
-    fn::str:regexp:split:
+    fn::str:regexp:find:
       string: "a1b"
       pattern: "[0-9]"
 resources:

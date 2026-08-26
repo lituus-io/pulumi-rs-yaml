@@ -509,6 +509,53 @@ fn bench_sql_lineage_export(c: &mut Criterion) {
 #[cfg(not(feature = "sql-lineage"))]
 fn bench_sql_lineage_export(_c: &mut Criterion) {}
 
+/// The `str` regexp functions, answered in process.
+///
+/// The comparison that matters is not against another regex engine but against
+/// what this replaced: a plugin process launch plus a gRPC round trip, tens of
+/// milliseconds. These numbers exist so that gap stays visible, and so a
+/// change that reintroduces per-call setup shows up as a step rather than as a
+/// rumour. Compilation dominates the operation itself, which is why the split
+/// and match cases are also measured with the pattern already compiled.
+fn bench_native_str_regexp(c: &mut Criterion) {
+    use pulumi_rs_yaml_core::eval::native_str::try_invoke;
+
+    fn args(pairs: &[(&str, &str)]) -> HashMap<String, Value<'static>> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), Value::String((*v).to_string().into())))
+            .collect()
+    }
+
+    // The shape that motivated this: stripping comments from a SQL file.
+    let sql = "SELECT a, -- trailing\n/* block */ b FROM t\n".repeat(40);
+    let strip = args(&[
+        ("string", sql.as_str()),
+        ("old", r"(--[^\n]*)|(/\*[\s\S]*?\*/)"),
+        ("new", ""),
+    ]);
+    c.bench_function("native_str_regexp_replace_sql_comments", |b| {
+        b.iter(|| black_box(try_invoke("str:regexp:replace", black_box(&strip))))
+    });
+
+    let csv = "field,".repeat(500);
+    let split = args(&[("string", csv.as_str()), ("on", ",")]);
+    c.bench_function("native_str_regexp_split_500_fields", |b| {
+        b.iter(|| black_box(try_invoke("str:regexp:split", black_box(&split))))
+    });
+
+    let m = args(&[("string", "SELECT 1"), ("pattern", "^SELECT")]);
+    c.bench_function("native_str_regexp_match", |b| {
+        b.iter(|| black_box(try_invoke("str:regexp:match", black_box(&m))))
+    });
+
+    // The non-regex functions, for the contrast: no compilation at all.
+    let plain = args(&[("string", "a-b-c-d-e"), ("old", "-"), ("new", "_")]);
+    c.bench_function("native_str_index_replace", |b| {
+        b.iter(|| black_box(try_invoke("str:index:replace", black_box(&plain))))
+    });
+}
+
 criterion_group!(
     benches,
     bench_parse_simple,
@@ -527,5 +574,6 @@ criterion_group!(
     bench_discover_project_files,
     bench_jinja_preprocess_multi_file,
     bench_sql_lineage_export,
+    bench_native_str_regexp,
 );
 criterion_main!(benches);
