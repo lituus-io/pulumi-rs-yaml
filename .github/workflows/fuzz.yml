@@ -17,6 +17,25 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   CARGO_TERM_COLOR: always
   FUZZ_DURATION: ${{ inputs.duration || '60' }}
+  # PINNED, and it has to be. cargo-fuzz requires nightly, and this job took
+  # whatever nightly was current that morning — so every rustc change was a
+  # coin flip on whether the week's fuzzing ran at all. It came up tails on
+  # 2026-08-25: `allocative` (a starlark dependency, and starlark is a core
+  # dependency, so every target links it) declares `impl Allocative for !`
+  # behind a build-script `rust_nightly` cfg, alongside an impl for
+  # `Infallible`. That nightly made the two the same type, so the crate stopped
+  # compiling with E0119 and ALL 17 targets failed — not one of them a finding.
+  #
+  # Bisected: nightly-2026-08-24 builds, nightly-2026-08-25 does not. Bumping
+  # allocative does not help; 0.3.6 carries the same pair of impls, and the cfg
+  # is set by a build script rather than a cargo feature, so it cannot be
+  # switched off from here.
+  #
+  # Unpin when allocative ships a version that guards the never-type impl (or
+  # drops it): move this forward and delete the note. A pinned toolchain is
+  # also just better practice for fuzzing, where a corpus compounds across runs
+  # and a build that changes underneath you is noise in the results.
+  FUZZ_TOOLCHAIN: nightly-2026-08-24
 
 jobs:
   fuzz:
@@ -46,8 +65,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust nightly
-        uses: dtolnay/rust-toolchain@nightly
+      - name: Install the pinned Rust nightly
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.FUZZ_TOOLCHAIN }}
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -69,18 +90,18 @@ jobs:
       # newer rustc to build — install it with the nightly toolchain
       # explicitly (same pattern as cargo-audit in security.yml).
       - name: Install cargo-fuzz
-        run: RUSTUP_TOOLCHAIN=nightly cargo install cargo-fuzz --locked
+        run: RUSTUP_TOOLCHAIN=${{ env.FUZZ_TOOLCHAIN }} cargo install cargo-fuzz --locked
 
       - name: Run fuzzer
         working-directory: fuzz
-        run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=${{ env.FUZZ_DURATION }}
+        run: cargo +${{ env.FUZZ_TOOLCHAIN }} fuzz run ${{ matrix.target }} -- -max_total_time=${{ env.FUZZ_DURATION }}
 
       # Keep the corpus small enough to stay useful: cmin drops inputs that add
       # no coverage the rest of the set already has.
       - name: Minimise corpus
         if: always()
         working-directory: fuzz
-        run: cargo +nightly fuzz cmin ${{ matrix.target }} || true
+        run: cargo +${{ env.FUZZ_TOOLCHAIN }} fuzz cmin ${{ matrix.target }} || true
 
       - name: Upload crash artifacts
         if: failure()
