@@ -38,6 +38,39 @@ env:
   FUZZ_TOOLCHAIN: nightly-2026-08-24
 
 jobs:
+  # Registering a target in fuzz/Cargo.toml makes it buildable; listing it in
+  # the matrix below is what makes it RUN. Two separate edits, and forgetting
+  # the second is silent — a target sits in the tree, passes review, counts
+  # toward the README badge, and never executes. This job compares the two
+  # lists so the gap fails loudly instead.
+  matrix-covers-every-target:
+    name: Every registered target is in the matrix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare fuzz/Cargo.toml bins against the matrix
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+
+          cargo = pathlib.Path("fuzz/Cargo.toml").read_text()
+          registered = set(re.findall(r'\[\[bin\]\]\s*\nname = "([^"]+)"', cargo))
+
+          wf = pathlib.Path(".github/workflows/fuzz.yml").read_text()
+          block = wf.split("        target:", 1)[1]
+          listed = set(re.findall(r"^\s+- (fuzz_\w+)\s*$", block, re.M))
+
+          missing = registered - listed
+          extra = listed - registered
+          if missing:
+              print(f"::error::registered but never run: {sorted(missing)}")
+          if extra:
+              print(f"::error::in the matrix but not registered: {sorted(extra)}")
+          if missing or extra:
+              sys.exit(1)
+          print(f"{len(registered)} fuzz targets, all of them in the matrix")
+          PY
+
   fuzz:
     name: Fuzz (${{ matrix.target }})
     runs-on: ubuntu-latest
@@ -62,6 +95,7 @@ jobs:
           - fuzz_scope_unlisted_noop
           - fuzz_scope_settings
           - fuzz_scope_never_panics
+          - fuzz_native_str
     steps:
       - uses: actions/checkout@v4
 
