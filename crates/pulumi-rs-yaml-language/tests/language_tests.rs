@@ -362,6 +362,20 @@ fn generate_package_lock(dir: &std::path::Path, schema_json: &str) -> Result<(),
 
 // ========== SupportsFeature / RegisterPackage Tests ==========
 
+/// The package identifier `clients.rs` builds for an error message: `name`
+/// alone when no version is known, `name@version` otherwise.
+///
+/// Taking both parts as parameters is also what keeps the two cases below
+/// honest — inlining the branch made each call site's condition a constant,
+/// so neither test exercised the arm it was named for.
+fn package_id(name: &str, version: &str) -> String {
+    if version.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}@{}", name, version)
+    }
+}
+
 /// Verify the error message format for register_package when version is empty.
 /// The format should NOT include a trailing `@` when version is absent.
 #[test]
@@ -371,11 +385,7 @@ fn test_register_package_error_format_empty_version() {
     let version = "";
     let error_msg = "status: Unimplemented";
 
-    let pkg_id = if version.is_empty() {
-        name.to_string()
-    } else {
-        format!("{}@{}", name, version)
-    };
+    let pkg_id = package_id(name, version);
     let formatted = format!("register package {} failed: {}", pkg_id, error_msg);
 
     assert_eq!(
@@ -395,11 +405,7 @@ fn test_register_package_error_format_with_version() {
     let version = "6.0.0";
     let error_msg = "connection refused";
 
-    let pkg_id = if version.is_empty() {
-        name.to_string()
-    } else {
-        format!("{}@{}", name, version)
-    };
+    let pkg_id = package_id(name, version);
     let formatted = format!("register package {} failed: {}", pkg_id, error_msg);
 
     assert_eq!(
