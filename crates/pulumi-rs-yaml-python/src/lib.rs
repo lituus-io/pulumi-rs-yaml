@@ -10,7 +10,9 @@ use pyo3::types::PyDict;
 
 use pulumi_rs_yaml_core::diag::Diagnostics;
 use pulumi_rs_yaml_core::eval::builtins;
+use pulumi_rs_yaml_core::eval::native_str;
 use pulumi_rs_yaml_core::eval::value::Value;
+use pulumi_rs_yaml_core::packages::canonicalize_function_token;
 
 use convert::{
     expr_to_py, json_to_py, py_dict_to_string_map, py_to_value, resource_options_to_py,
@@ -275,6 +277,64 @@ fn evaluate_builtin(py: Python<'_>, name: &str, args: Py<PyAny>) -> PyResult<Py<
         Some(val) => value_to_py(py, &val),
         None => Err(PyValueError::new_err("builtin returned no result")),
     }
+}
+
+/// Evaluate one `str` package function in process, or return `None`.
+///
+/// The `str` provider's whole surface is pure string manipulation, so the
+/// engine answers it without launching the plugin. Exposing that evaluator
+/// here lets static tooling resolve a name built from `${var.result}` with
+/// exactly the semantics a deploy would produce — the same code path, not a
+/// re-implementation that could drift at the regex edges.
+///
+/// `token` accepts every spelling a template may write: the two-part
+/// shorthand (`str:replace`), the registered form (`str:index:replace`), and
+/// the slashed schema form (`str:regexp/replace:replace`); it is canonicalized
+/// the way the evaluator canonicalizes it.
+///
+/// `args` must be a dict — anything else is a `ValueError`, since a caller
+/// passing a list has a bug rather than an unanswerable invoke. Everything
+/// else is answered with `None`: an unknown token, a missing or non-string
+/// argument, a pattern this crate cannot compile. `None` means "not answered
+/// here", never "the empty string".
+///
+/// Returns the function's output object (`{"result": ...}`, or
+/// `{"matches": ...}` for `str:regexp:match`).
+#[pyfunction]
+fn evaluate_str_invoke(
+    py: Python<'_>,
+    token: &str,
+    args: Py<PyAny>,
+) -> PyResult<Option<Py<PyAny>>> {
+    let bound = args.bind(py);
+    let Ok(dict) = bound.cast::<PyDict>() else {
+        return Err(PyValueError::new_err(
+            "evaluate_str_invoke expects a dict of arguments",
+        ));
+    };
+
+    // A key that is not a string, or a value this cannot convert, can never
+    // name a `str` argument; dropping it leaves the argument missing, which
+    // `try_invoke` already answers with `None`. Raising instead would turn an
+    // unanswerable invoke into an exception on a caller's resolution path.
+    let mut arg_map: HashMap<String, Value<'static>> = HashMap::with_capacity(dict.len());
+    for (key, value) in dict.iter() {
+        let (Ok(name), Ok(val)) = (key.extract::<String>(), py_to_value(&value)) else {
+            continue;
+        };
+        arg_map.insert(name, val);
+    }
+
+    let canonical = canonicalize_function_token(token);
+    let Some(outputs) = native_str::try_invoke(&canonical, &arg_map) else {
+        return Ok(None);
+    };
+
+    let out = PyDict::new(py);
+    for (name, value) in &outputs {
+        out.set_item(name.as_str(), value_to_py(py, value)?)?;
+    }
+    Ok(Some(out.into_any().unbind()))
 }
 
 /// Create an execution plan from a YAML project directory.
@@ -1052,6 +1112,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(validate_jinja, m)?)?;
     m.add_function(wrap_pyfunction!(preprocess_jinja, m)?)?;
     m.add_function(wrap_pyfunction!(evaluate_builtin, m)?)?;
+    m.add_function(wrap_pyfunction!(evaluate_str_invoke, m)?)?;
     m.add_function(wrap_pyfunction!(create_execution_plan, m)?)?;
     m.add_function(wrap_pyfunction!(export_dependency_graph, m)?)?;
     #[cfg(feature = "sql-lineage")]
