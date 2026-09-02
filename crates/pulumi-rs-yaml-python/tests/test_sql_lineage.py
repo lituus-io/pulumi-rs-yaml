@@ -90,3 +90,56 @@ class TestErrors:
     def test_invalid_project_raises(self):
         with pytest.raises(ValueError):
             export_sql_lineage("/nonexistent/path", "dev")
+
+
+STR_INVOKE_PRODUCER = """\
+name: data-platform
+runtime: yaml
+config:
+  gcp:project:
+    value: data-proj
+variables:
+  domain: sales_eu
+  dataset_id:
+    Fn::str:replace:
+      string: ${domain}
+      old: '_'
+      new: '-'
+  table_id:
+    fn::str:trimSuffix:
+      string: orders_raw
+      suffix: '_raw'
+resources:
+  base:
+    type: gcp:bigquery:Table
+    properties:
+      datasetId: ${dataset_id.result}
+      tableId: ${table_id.result}
+      schema: '[{"name":"order_id","type":"STRING"}]'
+  view:
+    type: gcp:bigquery:Table
+    properties:
+      datasetId: ${dataset_id.result}
+      tableId: revenue_view
+      view:
+        query: "SELECT o.order_id FROM `data-proj.sales-eu.orders` o"
+"""
+
+
+class TestStrInvokeDerivedIds:
+    """A dataset or table named through `str` functions is addressable."""
+
+    def test_ids_resolve(self, tmp_project):
+        graph = export_sql_lineage(tmp_project(STR_INVOKE_PRODUCER), "prod", "org")
+        ids = {n["id"] for n in graph["nodes"]}
+        assert "bq://data-proj/sales-eu/orders" in ids
+        assert "bq://data-proj/sales-eu/revenue_view" in ids
+
+    def test_derives_from_edge_joins_the_resolved_ids(self, tmp_project):
+        graph = export_sql_lineage(tmp_project(STR_INVOKE_PRODUCER), "prod", "org")
+        assert any(
+            e["relationship"] == "derives_from"
+            and e["source_id"] == "bq://data-proj/sales-eu/revenue_view"
+            and e["target_id"] == "bq://data-proj/sales-eu/orders"
+            for e in graph["edges"]
+        )

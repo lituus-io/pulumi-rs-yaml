@@ -1396,3 +1396,250 @@ mod native_str_security {
         }
     }
 }
+
+// =========================================================================
+// literal_resolve — the static resolver answers `str` and nothing else
+// =========================================================================
+
+mod literal_resolve_security {
+    use pulumi_rs_yaml_core::ast::parse::parse_template;
+    use pulumi_rs_yaml_core::resource_graph::{
+        export_resource_graph, GraphExportOptions, GraphNode, ResourceGraph,
+    };
+
+    fn export(yaml: &str) -> ResourceGraph<'static> {
+        let (template, _) = parse_template(yaml, None);
+        let template: &'static _ = Box::leak(Box::new(template));
+        let opts = GraphExportOptions {
+            organization: "org",
+            project: "p",
+            stack: "s",
+            source_map: None,
+            schema_store: None,
+        };
+        let (graph, _) = export_resource_graph(template, &opts);
+        // The export must still succeed and serialize: an unanswerable name
+        // is a missing literal, never a failed export.
+        let json = graph.to_json().expect("serializes");
+        let _: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+        graph
+    }
+
+    fn literal<'g>(node: &'g GraphNode<'static>, key: &str) -> Option<&'g str> {
+        node.literal_properties
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_ref())
+    }
+
+    fn resource<'g>(graph: &'g ResourceGraph<'static>, logical: &str) -> &'g GraphNode<'static> {
+        graph
+            .nodes
+            .iter()
+            .find(|n| n.logical_name == logical)
+            .expect("resource node")
+    }
+
+    /// `fn::readFile` is never read by the resolver. The path here is one the
+    /// process can genuinely open, so a resolver that evaluated it would leak
+    /// its contents into the exported graph.
+    #[test]
+    fn read_file_is_never_evaluated_into_a_name() {
+        let graph = export(concat!(
+            "name: p\nruntime: yaml\n",
+            "variables:\n",
+            "  leaked:\n",
+            "    fn::readFile: /etc/passwd\n",
+            "resources:\n",
+            "  r:\n",
+            "    type: gcp:storage:Bucket\n",
+            "    properties:\n",
+            "      name: ${leaked}\n",
+            "      alsoName: prefix-${leaked}-suffix\n",
+        ));
+        let r = resource(&graph, "r");
+        assert_eq!(literal(r, "name"), None);
+        assert_eq!(literal(r, "alsoName"), None);
+    }
+
+    /// A `str` argument that would itself have to read a file is not a
+    /// literal, so the invoke is not attempted at all.
+    #[test]
+    fn read_file_inside_a_str_argument_is_not_evaluated() {
+        let graph = export(concat!(
+            "name: p\nruntime: yaml\n",
+            "variables:\n",
+            "  leaked:\n",
+            "    fn::readFile: /etc/passwd\n",
+            "  sanitized:\n",
+            "    fn::str:replace:\n",
+            "      string: ${leaked}\n",
+            "      old: ':'\n",
+            "      new: '-'\n",
+            "resources:\n",
+            "  r:\n",
+            "    type: gcp:storage:Bucket\n",
+            "    properties:\n",
+            "      name: ${sanitized.result}\n",
+        ));
+        assert_eq!(literal(resource(&graph, "r"), "name"), None);
+    }
+
+    /// Every provider invoke other than `str` stays unevaluated, whichever
+    /// spelling and whichever `return:` it names. None of these tokens may
+    /// reach a provider, a plugin launch or a network call from an exporter.
+    #[test]
+    fn no_non_str_invoke_is_ever_evaluated() {
+        let tokens = [
+            "gcp:compute:getNetwork",
+            "aws:s3:getBucket",
+            "aws:secretsmanager/getSecretVersion:getSecretVersion",
+            "std:index:file",
+            "command:local:run",
+            "kubernetes:helm:template",
+            "pulumi:pulumi:getStack",
+            "strings:index:replace",
+            "str2:index:replace",
+        ];
+        for token in tokens {
+            let graph = export(&format!(
+                concat!(
+                    "name: p\nruntime: yaml\n",
+                    "variables:\n",
+                    "  v:\n",
+                    "    fn::invoke:\n",
+                    "      function: {}\n",
+                    "      arguments:\n",
+                    "        string: value\n",
+                    "        old: v\n",
+                    "        new: w\n",
+                    "      return: result\n",
+                    "resources:\n",
+                    "  r:\n",
+                    "    type: gcp:storage:Bucket\n",
+                    "    properties:\n",
+                    "      name: ${{v}}\n",
+                ),
+                token
+            ));
+            assert_eq!(
+                literal(resource(&graph, "r"), "name"),
+                None,
+                "token {} must not be evaluated",
+                token
+            );
+        }
+    }
+
+    /// A config value is dynamic; an invoke reading one resolves to nothing
+    /// rather than to a name built from a default the deploy may override.
+    #[test]
+    fn a_config_backed_argument_never_produces_a_name() {
+        let graph = export(concat!(
+            "name: p\nruntime: yaml\n",
+            "config:\n",
+            "  env:\n",
+            "    type: string\n",
+            "    default: dev\n",
+            "variables:\n",
+            "  sanitized:\n",
+            "    fn::str:replace:\n",
+            "      string: ${env}\n",
+            "      old: 'd'\n",
+            "      new: 'p'\n",
+            "resources:\n",
+            "  r:\n",
+            "    type: gcp:storage:Bucket\n",
+            "    properties:\n",
+            "      name: ${sanitized.result}\n",
+        ));
+        assert_eq!(literal(resource(&graph, "r"), "name"), None);
+    }
+
+    /// A 1 MiB argument against a nested-quantifier pattern: RE2 is linear,
+    /// and the resolver adds no backtracking of its own.
+    #[test]
+    fn a_one_mib_argument_with_a_nested_quantifier_stays_linear() {
+        let subject = "a".repeat(1024 * 1024);
+        let yaml = format!(
+            concat!(
+                "name: p\nruntime: yaml\n",
+                "variables:\n",
+                "  big: \"{}\"\n",
+                "  hit:\n",
+                "    fn::invoke:\n",
+                "      function: str:regexp:match\n",
+                "      arguments:\n",
+                "        string: ${{big}}\n",
+                "        pattern: '(a+)+b'\n",
+                "      return: matches\n",
+                "resources:\n",
+                "  r:\n",
+                "    type: gcp:storage:Bucket\n",
+                "    properties:\n",
+                "      name: ${{hit}}\n"
+            ),
+            subject
+        );
+        let start = std::time::Instant::now();
+        let graph = export(&yaml);
+        let elapsed = start.elapsed();
+        assert_eq!(literal(resource(&graph, "r"), "name"), Some("false"));
+        assert!(
+            elapsed.as_secs() < 5,
+            "1 MiB nested-quantifier export took {:?}",
+            elapsed
+        );
+    }
+
+    /// A 200-deep chain of invokes, each argument the previous one's output:
+    /// resolution recurses through the argument chain and must not overflow
+    /// the stack on a template a generator can easily produce.
+    #[test]
+    fn a_deep_invoke_chain_does_not_overflow_the_stack() {
+        let mut yaml = String::from("name: p\nruntime: yaml\nvariables:\n  v0: seed_0\n");
+        for i in 1..200 {
+            yaml.push_str(&format!(
+                "  v{}:\n    fn::str:replace:\n      string: ${{v{}{}}}\n      old: '_'\n      new: '-'\n",
+                i,
+                i - 1,
+                if i == 1 { "" } else { ".result" }
+            ));
+        }
+        yaml.push_str(concat!(
+            "resources:\n",
+            "  r:\n",
+            "    type: gcp:storage:Bucket\n",
+            "    properties:\n",
+            "      name: ${v199.result}\n",
+        ));
+        let graph = export(&yaml);
+        assert_eq!(literal(resource(&graph, "r"), "name"), Some("seed-0"));
+    }
+
+    /// A resolved literal is data, not syntax. A replacement carrying
+    /// template markup lands in the name verbatim: nothing re-renders it,
+    /// re-parses it, or resolves it a second time.
+    #[test]
+    fn a_resolved_name_is_never_re_rendered() {
+        let graph = export(concat!(
+            "name: p\nruntime: yaml\n",
+            "variables:\n",
+            "  injected:\n",
+            "    fn::str:replace:\n",
+            "      string: 'a_b'\n",
+            "      old: '_'\n",
+            "      new: '{{ 7*7 }}'\n",
+            "resources:\n",
+            "  r:\n",
+            "    type: gcp:storage:Bucket\n",
+            "    properties:\n",
+            "      name: ${injected.result}\n",
+        ));
+        assert_eq!(
+            literal(resource(&graph, "r"), "name"),
+            Some("a{{ 7*7 }}b"),
+            "the replacement is a literal, resolved exactly once"
+        );
+    }
+}
