@@ -556,6 +556,110 @@ fn bench_native_str_regexp(c: &mut Criterion) {
     });
 }
 
+/// Static literal resolution, measured through the graph exporter that
+/// consumes it — `resolve_literal` itself is crate-private, and the exporter
+/// is what the cost is actually paid by.
+///
+/// Three shapes, for three different questions. `plain_variable_chain` is the
+/// path that existed before invokes were answered and must not move: it is
+/// the regression guard. `invoke_derived_name` is what the new arms cost on a
+/// name built the way real templates build one — a `replace` feeding a
+/// `regexp:replace`. `wide_template` is the scale case, 1 000 variables of
+/// which 200 are invokes, where the memo's absence for invoke outputs would
+/// show up if recomputation were ever more than linear.
+///
+/// Each template is parsed once, outside the measured loop, so the numbers
+/// are resolution and export rather than YAML parsing.
+///
+/// What the invoke cases measure is mostly regex compilation, not string
+/// work: 200 plain `replace` evaluations in the wide case cost about 40 us
+/// in total, while 20 reads of one `regexp:replace`-derived name cost about
+/// 250 us, because invoke outputs are not memoised and each read compiles
+/// the pattern again. That is the deliberate trade — the memo holds one
+/// scalar per variable name and an invoke has a whole output object — and
+/// these two cases are here so its price stays visible rather than assumed.
+fn bench_resolve_literal(c: &mut Criterion) {
+    use pulumi_rs_yaml_core::ast::template::TemplateDecl;
+    use pulumi_rs_yaml_core::resource_graph::{export_resource_graph, GraphExportOptions};
+
+    fn leak(source: &str) -> &'static TemplateDecl<'static> {
+        let (template, diags) = parse_template(source, None);
+        assert!(!diags.has_errors(), "bench template must parse: {}", diags);
+        Box::leak(Box::new(template))
+    }
+
+    let opts = GraphExportOptions {
+        organization: "org",
+        project: "bench",
+        stack: "dev",
+        source_map: None,
+        schema_store: None,
+    };
+
+    // A chain of plain variables, each interpolating the previous one, read
+    // by 20 resources. No invoke anywhere: this is the untouched path.
+    let mut plain = String::from("name: bench\nruntime: yaml\nvariables:\n  v0: seed\n");
+    for i in 1..40 {
+        plain.push_str(&format!("  v{}: ${{v{}}}-{}\n", i, i - 1, i));
+    }
+    plain.push_str("resources:\n");
+    for i in 0..20 {
+        plain.push_str(&format!(
+            "  r{}:\n    type: gcp:storage:Bucket\n    properties:\n      name: acme-${{v39}}-{}\n      location: US\n",
+            i, i
+        ));
+    }
+    let plain = leak(&plain);
+    c.bench_function("resolve_literal_plain_variable_chain", |b| {
+        b.iter(|| black_box(export_resource_graph(black_box(plain), black_box(&opts))))
+    });
+
+    // The shape this change exists for: a name built from `str:replace`, then
+    // reshaped by `str:regexp:replace`, read by 20 resources.
+    let mut invoked = String::from(concat!(
+        "name: bench\nruntime: yaml\nvariables:\n",
+        "  process_nm: geo_fence_service\n",
+        "  sanitized:\n    fn::str:replace:\n      string: ${process_nm}\n      old: '_'\n      new: '-'\n",
+        "  versioned:\n    fn::str:regexp:replace:\n      string: ${sanitized.result}\n      old: '-(service)$'\n      new: '-$1-v2'\n",
+        "resources:\n",
+    ));
+    for i in 0..20 {
+        invoked.push_str(&format!(
+            "  r{}:\n    type: gcp:storage:Bucket\n    properties:\n      name: acme-bkt-${{versioned.result}}-{}\n      location: US\n",
+            i, i
+        ));
+    }
+    let invoked = leak(&invoked);
+    c.bench_function("resolve_literal_invoke_derived_name", |b| {
+        b.iter(|| black_box(export_resource_graph(black_box(invoked), black_box(&opts))))
+    });
+
+    // 1 000 variables, 200 of them invokes, 50 resources reading them.
+    let mut wide = String::from("name: bench\nruntime: yaml\nvariables:\n");
+    for i in 0..800 {
+        wide.push_str(&format!("  p{}: part_{}_value\n", i, i));
+    }
+    for i in 0..200 {
+        wide.push_str(&format!(
+            "  q{}:\n    fn::str:replace:\n      string: ${{p{}}}\n      old: '_'\n      new: '-'\n",
+            i, i
+        ));
+    }
+    wide.push_str("resources:\n");
+    for i in 0..50 {
+        wide.push_str(&format!(
+            "  r{}:\n    type: gcp:storage:Bucket\n    properties:\n      name: ${{q{}.result}}\n      other: ${{p{}}}\n",
+            i,
+            i * 4,
+            i * 16
+        ));
+    }
+    let wide = leak(&wide);
+    c.bench_function("resolve_literal_wide_template_200_invokes", |b| {
+        b.iter(|| black_box(export_resource_graph(black_box(wide), black_box(&opts))))
+    });
+}
+
 criterion_group!(
     benches,
     bench_parse_simple,
@@ -575,5 +679,6 @@ criterion_group!(
     bench_jinja_preprocess_multi_file,
     bench_sql_lineage_export,
     bench_native_str_regexp,
+    bench_resolve_literal,
 );
 criterion_main!(benches);

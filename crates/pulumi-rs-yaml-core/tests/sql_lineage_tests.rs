@@ -526,3 +526,70 @@ fn multi_file_source_attribution() {
         .expect("view node");
     assert_eq!(view.source_file, Some("Pulumi.views.yaml"));
 }
+
+/// A dataset and a table whose ids are built from `str` functions are
+/// addressable in lineage under their real names, and the view that reads
+/// them joins to the same entities.
+#[test]
+fn dataset_and_table_ids_derived_from_str_invokes() {
+    const YAML: &str = concat!(
+        "name: data-platform\n",
+        "runtime: yaml\n",
+        "config:\n",
+        "  gcp:project:\n",
+        "    value: data-proj\n",
+        "variables:\n",
+        "  domain: sales_eu\n",
+        "  dataset_id:\n",
+        "    Fn::str:replace:\n",
+        "      string: ${domain}\n",
+        "      old: '_'\n",
+        "      new: '-'\n",
+        "  table_id:\n",
+        "    fn::str:trimSuffix:\n",
+        "      string: orders_raw\n",
+        "      suffix: '_raw'\n",
+        "resources:\n",
+        "  ds:\n",
+        "    type: gcp:bigquery:Dataset\n",
+        "    properties:\n",
+        "      datasetId: ${dataset_id.result}\n",
+        "  base:\n",
+        "    type: gcp:bigquery:Table\n",
+        "    properties:\n",
+        "      datasetId: ${dataset_id.result}\n",
+        "      tableId: ${table_id.result}\n",
+        "      schema: '[{\"name\":\"order_id\",\"type\":\"STRING\"}]'\n",
+        "  revenueView:\n",
+        "    type: gcp:bigquery:Table\n",
+        "    properties:\n",
+        "      datasetId: ${dataset_id.result}\n",
+        "      tableId: revenue_view\n",
+        "      view:\n",
+        "        query: \"SELECT o.order_id FROM `data-proj.sales-eu.orders` o\"\n",
+        "        useLegacySql: false\n",
+    );
+
+    let e = export(YAML, "data-platform", "prod");
+    let ids: Vec<&str> = e.lineage.nodes.iter().map(|n| n.id.as_ref()).collect();
+    assert!(
+        ids.contains(&"bq://data-proj/sales-eu/orders"),
+        "invoke-derived table missing; have {:?}",
+        ids
+    );
+    assert!(
+        ids.contains(&"bq://data-proj/sales-eu/revenue_view"),
+        "view missing; have {:?}",
+        ids
+    );
+    assert!(has_edge(
+        &e.lineage,
+        "bq://data-proj/sales-eu/revenue_view",
+        "bq://data-proj/sales-eu/orders",
+        DataEdgeKind::DerivesFrom,
+    ));
+    assert_eq!(
+        node(&e.lineage, "bq://data-proj/sales-eu/orders").kind,
+        DataNodeKind::Table
+    );
+}

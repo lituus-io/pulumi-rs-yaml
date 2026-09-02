@@ -179,3 +179,64 @@ resources:
             and e["target_id"] == child["id"]
             for e in graph["edges"]
         )
+
+
+STR_INVOKE = """\
+name: proj
+runtime: yaml
+config:
+  env:
+    type: string
+    default: dev
+variables:
+  process_nm: geo_fence
+  sanitized_process_nm:
+    Fn::str:replace:
+      string: ${process_nm}
+      old: '_'
+      new: '-'
+  trimmed:
+    fn::str:trimSuffix:
+      string: ${sanitized_process_nm.result}
+      suffix: '-fence'
+  from_config:
+    fn::str:replace:
+      string: ${env}
+      old: 'd'
+      new: 'p'
+resources:
+  bucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: acme-bkt-${sanitized_process_nm.result}
+      location: US
+  dataset:
+    type: gcp:bigquery:Dataset
+    properties:
+      datasetId: ${trimmed.result}
+  dynamic:
+    type: gcp:storage:Bucket
+    properties:
+      name: ${from_config.result}
+"""
+
+
+class TestStrInvokeDerivedLiterals:
+    """Names built from `str` functions are literals in the exported graph."""
+
+    def test_replace_derived_name(self, tmp_project):
+        graph = export_dependency_graph(tmp_project(STR_INVOKE), "dev", "org")
+        bucket = next(n for n in graph["nodes"] if n["logical_name"] == "bucket")
+        assert bucket["literal_properties"]["name"] == "acme-bkt-geo-fence"
+        # Plain literals on the same resource are unaffected.
+        assert bucket["literal_properties"]["location"] == "US"
+
+    def test_chained_invoke_derived_id(self, tmp_project):
+        graph = export_dependency_graph(tmp_project(STR_INVOKE), "dev", "org")
+        dataset = next(n for n in graph["nodes"] if n["logical_name"] == "dataset")
+        assert dataset["literal_properties"]["datasetId"] == "geo"
+
+    def test_unresolvable_name_is_still_absent(self, tmp_project):
+        graph = export_dependency_graph(tmp_project(STR_INVOKE), "dev", "org")
+        dynamic = next(n for n in graph["nodes"] if n["logical_name"] == "dynamic")
+        assert "name" not in dynamic["literal_properties"]

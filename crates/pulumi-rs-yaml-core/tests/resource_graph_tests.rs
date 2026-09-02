@@ -213,3 +213,108 @@ fn cross_stack_contract_through_full_pipeline() {
         "consumer cross-stack edge must target the producer's output id exactly"
     );
 }
+
+/// A stack whose bucket name is built from `str:replace` has a real name in
+/// the graph, not an absent one: the argument chain is literal, so the
+/// exporter resolves it through the same evaluator a deploy uses.
+#[test]
+fn names_derived_from_str_invokes_reach_literal_properties() {
+    let dir = make_temp_project(&[(
+        "Pulumi.yaml",
+        concat!(
+            "name: proj\n",
+            "runtime: yaml\n",
+            "variables:\n",
+            "  process_nm: geo_fence\n",
+            "  sanitized_process_nm:\n",
+            "    Fn::str:replace:\n",
+            "      string: ${process_nm}\n",
+            "      old: '_'\n",
+            "      new: '-'\n",
+            "  suffix_stripped:\n",
+            "    fn::str:trimSuffix:\n",
+            "      string: ${sanitized_process_nm.result}\n",
+            "      suffix: '-fence'\n",
+            "resources:\n",
+            "  bucket:\n",
+            "    type: gcp:storage:Bucket\n",
+            "    properties:\n",
+            "      name: acme-bkt-${sanitized_process_nm.result}\n",
+            "      location: US\n",
+            "  dataset:\n",
+            "    type: gcp:bigquery:Dataset\n",
+            "    properties:\n",
+            "      datasetId: ${suffix_stripped.result}\n",
+        ),
+    )]);
+    let (graph, diags) = export_project(dir.path(), None);
+    assert!(!diags.has_errors(), "{}", diags);
+
+    let bucket = graph
+        .nodes
+        .iter()
+        .find(|n| n.logical_name == "bucket")
+        .expect("bucket node");
+    assert!(
+        bucket
+            .literal_properties
+            .iter()
+            .any(|(k, v)| k == "name" && v == "acme-bkt-geo-fence"),
+        "bucket literals: {:?}",
+        bucket.literal_properties
+    );
+    // The pre-existing literal is untouched.
+    assert!(bucket
+        .literal_properties
+        .iter()
+        .any(|(k, v)| k == "location" && v == "US"));
+
+    let dataset = graph
+        .nodes
+        .iter()
+        .find(|n| n.logical_name == "dataset")
+        .expect("dataset node");
+    assert!(
+        dataset
+            .literal_properties
+            .iter()
+            .any(|(k, v)| k == "datasetId" && v == "geo"),
+        "dataset literals: {:?}",
+        dataset.literal_properties
+    );
+}
+
+/// The export stays deterministic and serializable with invoke-derived names.
+#[test]
+fn str_invoke_names_serialize_and_are_deterministic() {
+    let dir = make_temp_project(&[(
+        "Pulumi.yaml",
+        concat!(
+            "name: proj\n",
+            "runtime: yaml\n",
+            "variables:\n",
+            "  sanitized:\n",
+            "    fn::str:regexp:replace:\n",
+            "      string: geo_fence_v2\n",
+            "      old: '_(v\\d+)$'\n",
+            "      new: '-$1'\n",
+            "resources:\n",
+            "  bucket:\n",
+            "    type: gcp:storage:Bucket\n",
+            "    properties:\n",
+            "      name: ${sanitized.result}\n",
+        ),
+    )]);
+    let (first, _) = export_project(dir.path(), None);
+    let (second, _) = export_project(dir.path(), None);
+    assert_eq!(first.to_json().unwrap(), second.to_json().unwrap());
+
+    let value: serde_json::Value = serde_json::from_str(&first.to_json().unwrap()).unwrap();
+    let bucket = value["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["logical_name"] == "bucket")
+        .expect("bucket");
+    assert_eq!(bucket["literal_properties"]["name"], "geo_fence-v2");
+}

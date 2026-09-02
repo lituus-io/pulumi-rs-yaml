@@ -884,7 +884,7 @@ mod tests {
         .expect("match must be answered here");
         assert_eq!(out.len(), 1);
         assert!(matches!(out.get(MATCHES), Some(Value::Bool(true))));
-        assert!(out.get(RESULT).is_none(), "match must not emit `result`");
+        assert!(!out.contains_key(RESULT), "match must not emit `result`");
     }
 
     /// Both regexp functions accept the canonicalized spelling too, since that
