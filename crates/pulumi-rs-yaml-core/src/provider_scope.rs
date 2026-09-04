@@ -823,6 +823,10 @@ pub fn restore<'r>(rendered: &'r str, regions: &[Region<'_>]) -> Result<Cow<'r, 
 /// returns nothing when the shape is not exactly that. Reading nothing means
 /// no protection, which is the behaviour every existing stack already has.
 pub fn packages_from_source(source: &str) -> Vec<String> {
+    // A mark makes the first key `\u{feff}runtime`, which reads as no setting
+    // at all — the scope would be lost silently. `split_lines` below is left
+    // alone deliberately: `protect`/`restore` must hand every byte back.
+    let source = crate::encoding::strip_bom(source);
     let mut found = Vec::new();
     let lines = split_lines(source);
     let mut runtime_indent = None::<usize>;

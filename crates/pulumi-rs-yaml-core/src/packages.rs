@@ -7,6 +7,7 @@ use std::sync::LazyLock;
 use crate::ast::expr::Expr;
 use crate::ast::template::*;
 use crate::ast::visitor::{walk_expr, InvokeInfo, InvokePackageCollector};
+use crate::encoding::strip_bom;
 
 // Static YAML keys allocated once, used for package lock parsing.
 static KEY_PKG_DECL_VERSION: LazyLock<serde_yaml::Value> =
@@ -93,7 +94,8 @@ fn walk_dir_for_packages(dir: &Path, packages: &mut Vec<PackageDecl>) {
 /// Tries to parse a YAML file as a package lock file.
 fn try_parse_package_lock(path: &Path) -> Option<PackageDecl> {
     let data = std::fs::read_to_string(path).ok()?;
-    let value: serde_yaml::Value = serde_yaml::from_str(&data).ok()?;
+    // `.ok()?` here, so a marked lock file is not rejected — it is invisible.
+    let value: serde_yaml::Value = serde_yaml::from_str(strip_bom(&data)).ok()?;
     let map = value.as_mapping()?;
 
     // Must have packageDeclarationVersion

@@ -17,6 +17,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::encoding::strip_bom_bytes;
+
 /// Type classification for a schema property.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SchemaPropertyType {
@@ -263,7 +265,10 @@ impl SchemaStore {
     /// Loads a schema store from a JSON file on disk.
     pub fn load(path: &Path) -> io::Result<Self> {
         let data = std::fs::read(path)?;
-        serde_json::from_slice(&data).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+        // Bytes, not `str`: a 56 MB provider schema should not pay for a UTF-8
+        // validation pass to have three bytes removed.
+        serde_json::from_slice(strip_bom_bytes(&data))
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
 }
 
