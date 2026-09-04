@@ -1863,3 +1863,229 @@ mod checkpoint_security {
         }
     }
 }
+
+// =========================================================================
+// encoding.rs — a leading byte order mark is not a second document
+//
+// Every fixture in this module is written as RAW BYTES. A mark is invisible,
+// and `rustfmt`, an editor save or a helpful string literal would silently
+// normalise it away — leaving eight tests that pass while proving nothing.
+// `\xef\xbb\xbf` in a byte string is the one spelling no tool will touch.
+// =========================================================================
+
+mod bom_security {
+    use pulumi_rs_yaml_core::ast::parse::parse_template;
+    use pulumi_rs_yaml_core::encoding::{strip_bom_bytes, UTF8_BOM_BYTES};
+    use pulumi_rs_yaml_core::jinja::{JinjaContext, UndefinedMode};
+    use pulumi_rs_yaml_core::multi_file::load_project;
+    use pulumi_rs_yaml_core::packages::search_package_decls;
+    use pulumi_rs_yaml_core::schema::{PackageSchema, SchemaStore};
+    use std::collections::HashMap;
+    use std::path::Path;
+
+    /// Bytes to `&str`, refusing anything that is not UTF-8.
+    ///
+    /// The fixtures are byte strings so the mark survives every formatter; the
+    /// parser takes `&str`, and this is the one place the two meet.
+    fn text(bytes: &[u8]) -> &str {
+        let Ok(s) = std::str::from_utf8(bytes) else {
+            unreachable!("fixture must be UTF-8")
+        };
+        s
+    }
+
+    /// Writes `bytes` verbatim under a fresh temp directory and returns it.
+    fn dir_with(name: &str, bytes: &[u8]) -> tempfile::TempDir {
+        let Ok(dir) = tempfile::tempdir() else {
+            unreachable!("a temp directory must be creatable")
+        };
+        assert!(std::fs::write(dir.path().join(name), bytes).is_ok());
+        // The fixture asserts its own first bytes: if anything ever rewrites
+        // this file, the test that depends on the mark says so.
+        let Ok(back) = std::fs::read(dir.path().join(name)) else {
+            unreachable!("the fixture must read back")
+        };
+        assert_eq!(&back[..3], &UTF8_BOM_BYTES, "the fixture lost its mark");
+        dir
+    }
+
+    fn jinja_ctx<'a>(
+        dir: &'a str,
+        config: &'a HashMap<String, String>,
+        extra: &'a HashMap<String, String>,
+    ) -> JinjaContext<'a> {
+        JinjaContext {
+            project_name: "app",
+            stack_name: "dev",
+            cwd: dir,
+            organization: "org",
+            root_directory: dir,
+            config,
+            project_dir: dir,
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra,
+        }
+    }
+
+    #[test]
+    fn the_reported_repro_parses_as_a_single_document() {
+        // The signature that made the incident so hard to read: one line
+        // parsed, and every file of two lines or more did not.
+        let one_line = b"\xef\xbb\xbfname: app\n";
+        let (template, diags) = parse_template(text(one_line), None);
+        assert!(!diags.has_errors(), "one line: {}", diags);
+        assert_eq!(template.name.as_deref(), Some("app"));
+
+        let real = b"\xef\xbb\xbfname: app\nruntime: yaml\nresources:\n  b:\n    type: gcp:storage:Bucket\n";
+        let (template, diags) = parse_template(text(real), None);
+        assert!(!diags.has_errors(), "several lines: {}", diags);
+        assert_eq!(template.name.as_deref(), Some("app"));
+        assert_eq!(template.resources.len(), 1);
+    }
+
+    #[test]
+    fn a_mark_alone_is_an_empty_document_not_a_second_one() {
+        // Stripping must not invent a document. A file holding nothing but the
+        // mark is empty, and the error has to say so rather than describe a
+        // phantom second document the file does not contain.
+        let (_, diags) = parse_template(text(b"\xef\xbb\xbf"), None);
+        assert!(diags.has_errors(), "an empty document is not a template");
+        let rendered = diags.to_string();
+        assert!(
+            rendered.contains("expected a YAML mapping"),
+            "the reason must be the real one: {rendered}"
+        );
+        assert!(
+            !rendered.contains("more than one document"),
+            "the phantom must be gone: {rendered}"
+        );
+    }
+
+    #[test]
+    fn a_genuine_multi_document_file_still_fails_the_same_way() {
+        // The anti-masking test, and the reason the strip is a correctness fix
+        // rather than a workaround: a file that really does hold two documents
+        // holds two after the mark is removed, and must still be refused with
+        // the same message it has always been refused with.
+        let plain = b"name: app\nruntime: yaml\n---\nname: other\n";
+        let marked = b"\xef\xbb\xbfname: app\nruntime: yaml\n---\nname: other\n";
+
+        let (_, plain_diags) = parse_template(text(plain), None);
+        let (_, marked_diags) = parse_template(text(marked), None);
+        assert!(plain_diags.has_errors());
+        assert!(marked_diags.has_errors(), "the mark must not launder this");
+        assert!(
+            plain_diags.to_string().contains("more than one document"),
+            "{}",
+            plain_diags
+        );
+        assert_eq!(
+            plain_diags.to_string(),
+            marked_diags.to_string(),
+            "the mark must change nothing about a real second document"
+        );
+    }
+
+    #[test]
+    fn a_mark_inside_the_document_is_content() {
+        // Exactly one mark, at offset zero. U+FEFF anywhere else is a character
+        // the author wrote, and a parser that removed it would be corrupting a
+        // value rather than reading a stream marker.
+        let src = b"\xef\xbb\xbfname: app\nruntime: yaml\ndescription: a\xef\xbb\xbfb\n";
+        let (template, diags) = parse_template(text(src), None);
+        assert!(!diags.has_errors(), "{}", diags);
+        assert_eq!(template.name.as_deref(), Some("app"));
+        assert_eq!(template.description.as_deref(), Some("a\u{feff}b"));
+
+        // A second mark immediately after the first is content too: exactly one
+        // is removed, and what is left is a file whose first key really is
+        // `\u{feff}name` — still refused, as it was before.
+        let doubled = b"\xef\xbb\xbf\xef\xbb\xbfname: app\nruntime: yaml\n";
+        let (_, diags) = parse_template(text(doubled), None);
+        assert!(diags.has_errors(), "only one mark is a stream marker");
+    }
+
+    #[test]
+    fn a_utf16_mark_is_neither_stripped_nor_decoded() {
+        // A UTF-16 mark is a different encoding, not a leading U+FEFF in a
+        // UTF-8 stream. Guessing at a transcode would rewrite the file on a
+        // hunch; dropping the two bytes would hand the parser a NUL-riddled
+        // buffer that fails further from its cause. So it is diagnosed.
+        for lead in [&b"\xff\xfe"[..], &b"\xfe\xff"[..]] {
+            let mut src = lead.to_vec();
+            src.extend_from_slice(b"n\x00a\x00m\x00e\x00");
+            assert!(std::str::from_utf8(&src).is_err(), "not UTF-8 text");
+            assert_eq!(strip_bom_bytes(&src), &src[..], "nothing is removed");
+
+            let Ok(dir) = tempfile::tempdir() else {
+                unreachable!("a temp directory must be creatable")
+            };
+            assert!(std::fs::write(dir.path().join("Pulumi.yaml"), &src).is_ok());
+            let (template, diags) = load_project(dir.path(), None);
+            assert!(diags.has_errors(), "an undecodable file must be refused");
+            assert!(template.name().is_none());
+        }
+    }
+
+    #[test]
+    fn a_marked_package_lock_is_read_rather_than_ignored() {
+        // try_parse_package_lock ends in `.ok()?`, so a marked lock file was
+        // never rejected — it was invisible. The package silently went missing
+        // and the failure surfaced somewhere else entirely.
+        let lock = b"\xef\xbb\xbfpackageDeclarationVersion: 1\nname: gcpx\nversion: 1.2.3\n";
+        let dir = dir_with("gcpx.yaml", lock);
+        let found = search_package_decls(dir.path());
+        assert_eq!(found.len(), 1, "the marked lock file must be found");
+        assert_eq!(found[0].name, "gcpx");
+        assert_eq!(found[0].version, "1.2.3");
+    }
+
+    #[test]
+    fn a_marked_schema_store_loads() {
+        let Ok(dir) = tempfile::tempdir() else {
+            unreachable!("a temp directory must be creatable")
+        };
+        let path = dir.path().join("schema.json");
+        let mut store = SchemaStore::new();
+        store.insert(PackageSchema {
+            name: "gcp".to_owned(),
+            version: "8.0.0".to_owned(),
+            ..Default::default()
+        });
+        assert!(store.save(&path).is_ok());
+
+        // Re-write the same JSON behind a mark, as an editor would.
+        let Ok(json) = std::fs::read(&path) else {
+            unreachable!("the store must read back")
+        };
+        let mut marked = UTF8_BOM_BYTES.to_vec();
+        marked.extend_from_slice(&json);
+        assert!(std::fs::write(&path, &marked).is_ok());
+
+        let Ok(loaded) = SchemaStore::load(Path::new(&path)) else {
+            unreachable!("a marked schema store must load")
+        };
+        assert!(loaded.packages().contains_key("gcp"));
+    }
+
+    #[test]
+    fn a_marked_project_is_not_nameless() {
+        // The observable that reached the incident report: the project loaded
+        // with no name at all, so everything keyed on it — the graph export
+        // among them — described a project called "unknown". Both paths through
+        // load_project must produce the name the file states.
+        let src = b"\xef\xbb\xbfname: app\nruntime: yaml\nresources:\n  b:\n    type: gcp:storage:Bucket\n";
+        let dir = dir_with("Pulumi.yaml", src);
+        let path = dir.path().to_string_lossy().into_owned();
+        let config = HashMap::new();
+        let extra = HashMap::new();
+
+        for ctx in [None, Some(jinja_ctx(&path, &config, &extra))] {
+            let (template, diags) = load_project(dir.path(), ctx.as_ref());
+            assert!(!diags.has_errors(), "{}", diags);
+            assert_eq!(template.name(), Some("app"));
+            assert_eq!(template.resources().len(), 1);
+        }
+    }
+}
