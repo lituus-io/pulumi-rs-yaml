@@ -1685,6 +1685,22 @@ mod checkpoint_security {
         };
         bytes[at..at + 11].copy_from_slice(b"\xff\xfe\xfd\xff\xfe\xfd\xff\xfe\xfd\xff\xfe");
         assert!(is_error(&bytes), "invalid UTF-8 must not be read");
+
+        // The other half of the boundary. A field the reader never returns is
+        // never decoded either — that is what makes it zero-copy — so a bad
+        // byte inside `type` is invisible, exactly as it is to serde_json's
+        // own structural scan. This is safe precisely because the strings it
+        // DOES hand back are `str`, and the case above is what holds them to
+        // it. Pinned here so the difference stays deliberate.
+        let mut bytes = disk(r#"{"urn":"PLACEHOLDER","id":"x","type":"gcp:t:T"}"#).into_bytes();
+        let Some(at) = bytes.windows(7).position(|w| w == b"gcp:t:T") else {
+            unreachable!("fixture must contain the type value")
+        };
+        bytes[at + 4] = 0xff;
+        let Ok(index) = index_checkpoint(&bytes, None) else {
+            unreachable!("an unread field must not be decoded")
+        };
+        assert_eq!(index.entries.len(), 1);
     }
 
     #[test]

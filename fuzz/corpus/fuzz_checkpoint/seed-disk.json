@@ -1,0 +1,1 @@
+{"version":3,"checkpoint":{"latest":{"resources":[{"urn":"urn:pulumi:dev::app::gcp:workflows/workflow:Workflow::w","custom":true,"id":"projects/p/locations/l/workflows/w","type":"gcp:workflows/workflow:Workflow","inputs":{"name":"w","project":"p"},"outputs":{"id":"projects/p/locations/l/workflows/w","state":"ACTIVE"},"dependencies":[]}]}}}

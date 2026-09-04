@@ -54,13 +54,19 @@
 //! bounded by `serde_json`'s recursion limit, so a hostile document is an
 //! error rather than a stack overflow.
 //!
+//! Ignored means ignored, and that has one visible consequence: a byte
+//! sequence that is not UTF-8 inside a field this never returns is not an
+//! error, because nothing ever decodes it. The same is true of `serde_json`'s
+//! own structural scan. It is safe because the strings that do come back are
+//! [`str`], so they are valid by construction, and invalid UTF-8 in a `urn` or
+//! an `id` is an error like any other malformed document.
+//!
 //! # Zero-copy
 //!
 //! Bytes in ([`&[u8]`](slice)), [`Cow`] out. A JSON string that carries no
 //! escape is borrowed straight out of the caller's buffer; only a string with
-//! an escape (or a non-UTF-8 sequence, which is an error) allocates. A
-//! 37 KiB checkpoint of a hundred resources therefore allocates one vector of
-//! pointer pairs and nothing else.
+//! an escape allocates. A 37 KiB checkpoint of a hundred resources therefore
+//! allocates one vector of pointer pairs and nothing else.
 //!
 //! Never a guess: this reads the bytes it is handed and nothing else. It never
 //! reads a file, the network, or a plugin.

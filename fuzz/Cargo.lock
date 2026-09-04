@@ -1588,6 +1588,7 @@ dependencies = [
  "libfuzzer-sys",
  "pulumi-rs-yaml-converter",
  "pulumi-rs-yaml-core",
+ "serde",
  "serde_json",
  "serde_yaml",
 ]
