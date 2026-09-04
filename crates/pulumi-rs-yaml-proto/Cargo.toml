@@ -1,6 +1,6 @@
 [package]
 name = "pulumi-rs-yaml-proto"
-version = "0.5.25"
+version = "0.5.26"
 edition = "2021"
 description = "Protobuf/gRPC definitions for Pulumi language host (pre-generated)"
 license.workspace = true
