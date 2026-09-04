@@ -4,8 +4,8 @@
 [![Security](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/security.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/security.yml)
 [![Fuzz](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/fuzz.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/fuzz.yml)
 [![Benchmark](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/benchmark.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/benchmark.yml)
-[![fuzz targets](https://img.shields.io/badge/fuzz%20targets-18-blue)](fuzz/fuzz_targets)
-[![security tests](https://img.shields.io/badge/security%20tests-94-blue)](crates/pulumi-rs-yaml-core/tests/security_tests.rs)
+[![fuzz targets](https://img.shields.io/badge/fuzz%20targets-19-blue)](fuzz/fuzz_targets)
+[![security tests](https://img.shields.io/badge/security%20tests-108-blue)](crates/pulumi-rs-yaml-core/tests/security_tests.rs)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE)
 
 Rust implementation of the [Pulumi](https://www.pulumi.com/) YAML language runtime. Drop-in replacement for the Go-based `pulumi-yaml` with 1:1 compatibility.
@@ -141,7 +141,7 @@ cd fuzz
 cargo +nightly fuzz run fuzz_yaml_parser -- -max_total_time=60
 ```
 
-Targets: `fuzz_yaml_parser`, `fuzz_interpolation`, `fuzz_jinja`, `fuzz_builtins`, `fuzz_converter`, `fuzz_yaml_bomb`, `fuzz_extra_context`, `fuzz_starlark`, `fuzz_parallel_eval`, `fuzz_resource_graph`, `fuzz_sql_lineage`.
+Targets: `fuzz_yaml_parser`, `fuzz_interpolation`, `fuzz_jinja`, `fuzz_builtins`, `fuzz_converter`, `fuzz_yaml_bomb`, `fuzz_extra_context`, `fuzz_starlark`, `fuzz_parallel_eval`, `fuzz_resource_graph`, `fuzz_sql_lineage`, `fuzz_native_str`, `fuzz_checkpoint`.
 
 Provider-scope targets, which check the extent detection above:
 `fuzz_scope_roundtrip` (protect and restore are exact inverses),
@@ -153,6 +153,49 @@ Provider-scope targets, which check the extent detection above:
 
 `SCOPE_FUZZ_TRACE=1` makes `fuzz_scope_oracle` report how many inputs reach
 each stage, so its coverage can be checked rather than assumed.
+
+## Checkpoint index
+
+A stack's checkpoint records which physical resources that stack manages, so
+a tool asking "does another stack already own this id?" has to read sibling
+checkpoints out of the shared state backend. `index_checkpoint` reads one
+document into its `(id, urn)` pairs without copying it, and
+`index_checkpoints` reads a whole backend's worth on a scoped thread pool.
+
+```python
+from pulumi_yaml_rs import index_checkpoint, index_checkpoints
+
+blob = open("app-dev.json", "rb").read()
+index_checkpoint(blob)
+# {"shape": "resources", "entries": [("projects/p/locations/l/workflows/w", "urn:pulumi:dev::app::gcp:workflows/workflow:Workflow::w")]}
+
+# Only the ids you care about; a target may be the full id or its leaf alone.
+index_checkpoint(blob, ["w"])
+
+# One dict per input, in input order. A document that is not a checkpoint
+# occupies its own slot as {"error": "Not a Pulumi checkpoint: ..."}, so one
+# bad file never hides the rest. parallel=0 asks for available parallelism.
+index_checkpoints([blob, other], targets=None, parallel=0)
+```
+
+Both encodings are read: `checkpoint.latest.resources`, which is what a
+backend stores, and `deployment.resources`, which is what an export writes.
+`shape` is `"empty"` when `checkpoint.latest` is absent or null — a stack that
+has never deployed — as against `"resources"` with no entries, a deployed
+stack that manages nothing.
+
+The contract is to fail loudly. Anything that cannot be read with certainty
+raises a `ValueError` prefixed `Not a Pulumi checkpoint:` — an unrecognised
+version, a missing deployment, both encodings at once, invalid JSON. The
+caller is an ownership gate, where an empty index and an unread document are
+the same value and the second one authorises a delete, so there is no input
+for which this answers with a confident empty result.
+
+Both entry points release the GIL for the parse, so a caller reading a bucket
+from many threads never queues its parses behind one another.
+
+It is a pure function of the bytes it is given: nothing reads a file, the
+network, or a plugin.
 
 ## Graph export (BigQuery Graph)
 

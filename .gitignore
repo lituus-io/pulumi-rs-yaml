@@ -47,8 +47,8 @@ fuzz/corpus/**
 !fuzz/corpus/**/
 !fuzz/corpus/**/*.yaml
 !fuzz/corpus/**/*.txt
+# Checkpoint seeds are JSON documents.
+!fuzz/corpus/**/*.json
 # Structured targets take raw bytes, so their curated seeds are binary.
 !fuzz/corpus/**/*.bin
 
-# claude
-.claude/

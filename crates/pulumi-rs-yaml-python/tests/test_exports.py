@@ -7,6 +7,8 @@ package root, so consumers never have to reach into pulumi_yaml_rs._native.
 """
 
 import inspect
+import re
+from pathlib import Path
 
 import pulumi_yaml_rs
 from pulumi_yaml_rs import _native
@@ -37,3 +39,23 @@ def test_all_entries_are_importable():
         if name in OPTIONAL_EXPORTS and not hasattr(_native, name):
             continue
         assert hasattr(pulumi_yaml_rs, name), f"__all__ lists {name} but it is not importable"
+
+
+def test_stub_declares_every_native_function():
+    """The type stub is part of the public surface, so it drifts silently.
+
+    `evaluate_str_invoke` shipped in 0.5.25 without a stub entry, which no test
+    noticed. Every function reachable from the package root — including the
+    ones gated behind an optional build feature, whose stub must exist even
+    where the symbol does not — has to appear in _native.pyi.
+    """
+    stub = (
+        Path(__file__).resolve().parent.parent
+        / "python"
+        / "pulumi_yaml_rs"
+        / "_native.pyi"
+    ).read_text()
+    declared = set(re.findall(r"^def (\w+)\(", stub, re.M))
+    expected = set(_native_functions()) | OPTIONAL_EXPORTS
+    missing = sorted(expected - declared)
+    assert not missing, f"native functions missing from _native.pyi: {missing}"

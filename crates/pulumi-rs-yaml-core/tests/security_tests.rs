@@ -1643,3 +1643,223 @@ mod literal_resolve_security {
         );
     }
 }
+
+// =========================================================================
+// checkpoint — hostile bytes into the checkpoint index
+// =========================================================================
+
+/// The index this module reads decides whether one stack may delete a
+/// resource another stack manages. That makes an empty answer the dangerous
+/// answer, not a benign one: every test here asserts that a document the
+/// reader cannot vouch for comes back as an error, and that no input turns
+/// into an empty index, a hang, or a dead process.
+mod checkpoint_security {
+    use pulumi_rs_yaml_core::checkpoint::{index_checkpoint, index_checkpoints, IdFilter, Shape};
+    use std::time::Instant;
+
+    const URN: &str = "urn:pulumi:dev::app::gcp:workflows/workflow:Workflow::w";
+    const ID: &str = "projects/p/locations/l/workflows/w";
+
+    fn disk(resources: &str) -> String {
+        format!(r#"{{"version":3,"checkpoint":{{"latest":{{"resources":[{resources}]}}}}}}"#)
+    }
+
+    fn is_error(bytes: &[u8]) -> bool {
+        index_checkpoint(bytes, None).is_err()
+    }
+
+    #[test]
+    fn invalid_json_is_an_error_not_an_empty_index() {
+        for bytes in [&b"{"[..], b"", b"null", b"[]", b"   ", b"\0"] {
+            assert!(is_error(bytes), "{bytes:?} must not read as a checkpoint");
+        }
+    }
+
+    #[test]
+    fn non_utf8_bytes_are_an_error() {
+        let mut bytes = disk(r#"{"urn":"PLACEHOLDER","id":"x"}"#).into_bytes();
+        // Overwrite the urn's contents with a lone continuation byte, which
+        // no UTF-8 sequence can contain.
+        let Some(at) = bytes.windows(11).position(|w| w == b"PLACEHOLDER") else {
+            unreachable!("fixture must contain the placeholder")
+        };
+        bytes[at..at + 11].copy_from_slice(b"\xff\xfe\xfd\xff\xfe\xfd\xff\xfe\xfd\xff\xfe");
+        assert!(is_error(&bytes), "invalid UTF-8 must not be read");
+
+        // The other half of the boundary. A field the reader never returns is
+        // never decoded either — that is what makes it zero-copy — so a bad
+        // byte inside `type` is invisible, exactly as it is to serde_json's
+        // own structural scan. This is safe precisely because the strings it
+        // DOES hand back are `str`, and the case above is what holds them to
+        // it. Pinned here so the difference stays deliberate.
+        let mut bytes = disk(r#"{"urn":"PLACEHOLDER","id":"x","type":"gcp:t:T"}"#).into_bytes();
+        let Some(at) = bytes.windows(7).position(|w| w == b"gcp:t:T") else {
+            unreachable!("fixture must contain the type value")
+        };
+        bytes[at + 4] = 0xff;
+        let Ok(index) = index_checkpoint(&bytes, None) else {
+            unreachable!("an unread field must not be decoded")
+        };
+        assert_eq!(index.entries.len(), 1);
+    }
+
+    #[test]
+    fn an_empty_object_is_not_a_checkpoint() {
+        assert!(is_error(b"{}"));
+        assert!(is_error(br#"{"checkpoint":{"latest":{"resources":[]}}}"#));
+    }
+
+    #[test]
+    fn a_version_with_no_body_is_not_a_checkpoint() {
+        assert!(is_error(br#"{"version":3}"#));
+        assert!(is_error(br#"{"version":3,"other":{"resources":[]}}"#));
+    }
+
+    #[test]
+    fn an_unknown_version_is_an_error() {
+        // A version that relocates `resources` would otherwise deserialise
+        // into a confident "manages nothing".
+        assert!(is_error(br#"{"version":4,"deployment":{"resources":[]}}"#));
+        assert!(is_error(
+            br#"{"version":"3","deployment":{"resources":[]}}"#
+        ));
+        assert!(is_error(br#"{"version":0,"deployment":{"resources":[]}}"#));
+    }
+
+    #[test]
+    fn resources_that_are_not_a_list_are_an_error() {
+        assert!(is_error(
+            br#"{"version":3,"deployment":{"resources":{"a":1}}}"#
+        ));
+        assert!(is_error(
+            br#"{"version":3,"deployment":{"resources":"[]"}}"#
+        ));
+        assert!(is_error(br#"{"version":3,"deployment":{"resources":[7]}}"#));
+    }
+
+    #[test]
+    fn a_latest_that_is_a_list_is_an_error() {
+        assert!(is_error(br#"{"version":3,"checkpoint":{"latest":[]}}"#));
+        assert!(is_error(br#"{"version":3,"checkpoint":[]}"#));
+        assert!(is_error(br#"{"version":3,"checkpoint":"latest"}"#));
+    }
+
+    #[test]
+    fn deep_nesting_is_an_error_not_a_stack_overflow() {
+        // Two shapes of the same attack: a bracket bomb at the top level,
+        // which the document type rejects on the first frame, and a nesting
+        // spiral inside a field, which the parser's own recursion limit
+        // stops. Both must return, and this process must still be here to
+        // assert that they did.
+        let bomb = "[".repeat(100_000);
+        assert!(is_error(bomb.as_bytes()));
+
+        let spiral = format!(
+            r#"{{"version":3,"deployment":{{"resources":[{{"urn":"{URN}","inputs":{}"#,
+            r#"{"a":"#.repeat(100_000)
+        );
+        assert!(is_error(spiral.as_bytes()));
+    }
+
+    #[test]
+    fn sixty_four_mib_of_open_brackets_fails_fast() {
+        let bomb = vec![b'['; 64 * 1024 * 1024];
+        let started = Instant::now();
+        assert!(is_error(&bomb));
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed.as_secs_f64() < 1.0,
+            "64 MiB of brackets took {elapsed:?}"
+        );
+    }
+
+    #[test]
+    fn duplicate_ids_are_preserved_in_order() {
+        // Deduplicating here would hide exactly the case the gate cares
+        // about: two entries claiming the same physical resource.
+        let doc = disk(&format!(
+            r#"{{"urn":"{URN}-a","id":"{ID}"}},{{"urn":"{URN}-b","id":"{ID}"}}"#
+        ));
+        let Ok(index) = index_checkpoint(doc.as_bytes(), None) else {
+            unreachable!("fixture must read")
+        };
+        assert_eq!(index.shape, Shape::Resources);
+        assert_eq!(index.entries.len(), 2);
+        assert_eq!(index.entries[0].1, format!("{URN}-a"));
+        assert_eq!(index.entries[1].1, format!("{URN}-b"));
+    }
+
+    #[test]
+    fn hostile_urn_and_id_strings_pass_through_unaltered() {
+        // An id is data on the way to an ownership comparison and, further
+        // on, to an operator's screen. Nothing here interprets it.
+        let hostile = [
+            "'; DROP TABLE resources; --",
+            "{{ 7*7 }}",
+            "${x}",
+            "../../etc/passwd",
+            "\u{200b}",
+            "<script>alert(1)</script>",
+        ];
+        for payload in hostile {
+            let escaped = payload.replace('\\', "\\\\").replace('"', "\\\"");
+            let doc = disk(&format!(r#"{{"urn":"{escaped}","id":"{escaped}"}}"#));
+            let Ok(index) = index_checkpoint(doc.as_bytes(), None) else {
+                unreachable!("{payload:?} must read")
+            };
+            assert_eq!(index.entries, vec![(payload.into(), payload.into())]);
+        }
+    }
+
+    #[test]
+    fn a_filter_matches_a_full_id_and_a_leaf_only_id() {
+        let doc = disk(&format!(r#"{{"urn":"{URN}","id":"{ID}"}}"#));
+        for target in [ID, "w"] {
+            let filter = IdFilter::new([target]);
+            assert!(filter.matches(ID), "{target} must match the id");
+            let Ok(index) = index_checkpoint(doc.as_bytes(), Some(&filter)) else {
+                unreachable!("fixture must read")
+            };
+            assert_eq!(index.entries.len(), 1, "target {target} kept nothing");
+        }
+        let filter = IdFilter::new(["projects/other/locations/l/workflows/elsewhere"]);
+        assert!(!filter.matches(ID));
+    }
+
+    #[test]
+    fn an_empty_target_set_filters_everything() {
+        // `None` means "no filter". An empty set means "none of these", and
+        // must never be read as the former.
+        let doc = disk(&format!(r#"{{"urn":"{URN}","id":"{ID}"}}"#));
+        let empty = IdFilter::new(std::iter::empty());
+        assert!(!empty.matches(ID));
+        let Ok(index) = index_checkpoint(doc.as_bytes(), Some(&empty)) else {
+            unreachable!("fixture must read")
+        };
+        assert!(index.entries.is_empty());
+        assert_eq!(
+            index.shape,
+            Shape::Resources,
+            "the document was read; it is the filter that kept nothing"
+        );
+    }
+
+    #[test]
+    fn a_bad_document_in_a_batch_fails_only_itself() {
+        let good = disk(&format!(r#"{{"urn":"{URN}","id":"{ID}"}}"#));
+        let bomb = "[".repeat(100_000);
+        let docs: Vec<&[u8]> = vec![
+            good.as_bytes(),
+            b"{",
+            good.as_bytes(),
+            bomb.as_bytes(),
+            br#"{"version":9,"deployment":{}}"#,
+            good.as_bytes(),
+        ];
+        for parallel in [1, 4] {
+            let out = index_checkpoints(&docs, None, parallel);
+            let ok: Vec<bool> = out.iter().map(Result::is_ok).collect();
+            assert_eq!(ok, vec![true, false, true, false, false, true]);
+        }
+    }
+}

@@ -96,6 +96,7 @@ jobs:
           - fuzz_scope_settings
           - fuzz_scope_never_panics
           - fuzz_native_str
+          - fuzz_checkpoint
     steps:
       - uses: actions/checkout@v4
 

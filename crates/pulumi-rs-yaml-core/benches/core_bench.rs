@@ -660,6 +660,67 @@ fn bench_resolve_literal(c: &mut Criterion) {
     });
 }
 
+fn bench_checkpoint(c: &mut Criterion) {
+    use pulumi_rs_yaml_core::checkpoint::{index_checkpoint, index_checkpoints, IdFilter};
+
+    /// A checkpoint in the shape a backend stores, padded with the `inputs`
+    /// and `outputs` a real resource carries — the bytes the reader has to
+    /// skip past are most of the work, so a bare `{urn, id}` fixture would
+    /// measure the wrong thing. A hundred resources lands at roughly 37 KiB,
+    /// which is the average size of a checkpoint in a shared backend.
+    fn checkpoint_doc(resources: usize) -> Vec<u8> {
+        let mut doc = String::from(r#"{"version":3,"checkpoint":{"latest":{"resources":["#);
+        for i in 0..resources {
+            if i > 0 {
+                doc.push(',');
+            }
+            doc.push_str(&format!(
+                concat!(
+                    r#"{{"urn":"urn:pulumi:dev::app::gcp:workflows/workflow:Workflow::w{i}","#,
+                    r#""custom":true,"id":"projects/p/locations/l/workflows/w{i}","#,
+                    r#""type":"gcp:workflows/workflow:Workflow","#,
+                    r#""inputs":{{"name":"w{i}","region":"a-region-1","project":"p","#,
+                    r#""serviceAccount":"projects/p/serviceAccounts/sa@p.iam.example","#,
+                    r#""sourceContents":"main:\n  steps:\n    - s{i}:\n        return: ok\n"}},"#,
+                    r#""outputs":{{"id":"projects/p/locations/l/workflows/w{i}","#,
+                    r#""name":"w{i}","state":"ACTIVE","revisionId":"000001-abc","#,
+                    r#""createTime":"2026-01-01T00:00:00.000000Z"}},"#,
+                    r#""dependencies":[],"propertyDependencies":{{}}}}"#,
+                ),
+                i = i
+            ));
+        }
+        doc.push_str("]}}}");
+        doc.into_bytes()
+    }
+
+    let doc = checkpoint_doc(100);
+    c.bench_function("index_checkpoint_37kb", |b| {
+        b.iter(|| black_box(index_checkpoint(black_box(&doc), black_box(None))))
+    });
+
+    // Ten leaf-only targets, built once: a filter is per scan, not per
+    // document, and building it inside the loop would measure the wrong cost.
+    let leaves: Vec<String> = (0..10).map(|i| format!("w{}", i * 7)).collect();
+    let filter = IdFilter::new(leaves.iter().map(String::as_str));
+    c.bench_function("index_checkpoint_filtered_37kb", |b| {
+        b.iter(|| black_box(index_checkpoint(black_box(&doc), black_box(Some(&filter)))))
+    });
+
+    // A whole backend's worth of documents. These are ~2 KiB rather than
+    // 37 KiB because 3,000 x 37 KiB is 111 MB of fixture, which measures the
+    // allocator more than the reader; the per-document cost above is the
+    // number to multiply.
+    let small = checkpoint_doc(5);
+    let batch: Vec<&[u8]> = vec![small.as_slice(); 3000];
+    c.bench_function("index_checkpoints_3000_parallel8", |b| {
+        b.iter(|| black_box(index_checkpoints(black_box(&batch), black_box(None), 8)))
+    });
+    c.bench_function("index_checkpoints_3000_sequential", |b| {
+        b.iter(|| black_box(index_checkpoints(black_box(&batch), black_box(None), 1)))
+    });
+}
+
 criterion_group!(
     benches,
     bench_parse_simple,
@@ -680,5 +741,6 @@ criterion_group!(
     bench_sql_lineage_export,
     bench_native_str_regexp,
     bench_resolve_literal,
+    bench_checkpoint,
 );
 criterion_main!(benches);
