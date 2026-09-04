@@ -32,6 +32,20 @@ outputs:
             black_box(template);
         })
     });
+
+    // The same template behind a byte order mark. Every parse in the workspace
+    // now pays for the check, so the pair has to show that the cost of the
+    // marked path is the strip and nothing else — a three-byte comparison and a
+    // subslice, not a copy. Benched at the template level rather than on
+    // `strip_bom` alone: a nanosecond microbench sits under the CI job's 100 ns
+    // floor and could never fail.
+    let marked = format!("{}{source}", pulumi_rs_yaml_core::encoding::UTF8_BOM);
+    c.bench_function("parse_simple_template_with_bom", |b| {
+        b.iter(|| {
+            let (template, _diags) = parse_template(black_box(marked.as_str()), None);
+            black_box(template);
+        })
+    });
 }
 
 fn bench_parse_complex(c: &mut Criterion) {
