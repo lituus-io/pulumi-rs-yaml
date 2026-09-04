@@ -6,8 +6,9 @@ use std::collections::HashMap;
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
 
+use pulumi_rs_yaml_core::checkpoint::{self, CheckpointError, IdFilter, Index};
 use pulumi_rs_yaml_core::diag::Diagnostics;
 use pulumi_rs_yaml_core::eval::builtins;
 use pulumi_rs_yaml_core::eval::native_str;
@@ -335,6 +336,115 @@ fn evaluate_str_invoke(
         out.set_item(name.as_str(), value_to_py(py, value)?)?;
     }
     Ok(Some(out.into_any().unbind()))
+}
+
+/// Every checkpoint failure reaches Python under one prefix, so a caller can
+/// tell "this is not a checkpoint" from any other `ValueError` on its path.
+fn checkpoint_err(e: CheckpointError) -> PyErr {
+    PyValueError::new_err(format!("Not a Pulumi checkpoint: {}", e))
+}
+
+/// Build `{"shape": ..., "entries": [(id, urn), ...]}` directly.
+///
+/// Going through `serde_json::to_value` + `json_to_py` would copy each
+/// borrowed `Cow` twice on the way out, which is the whole cost the core
+/// reader avoids. `PyTuple::new` over two `&str` is the only copy there is:
+/// the one that makes a Python object.
+fn index_to_py<'py>(py: Python<'py>, index: &Index<'_>) -> PyResult<Bound<'py, PyDict>> {
+    let entries = PyList::empty(py);
+    for (id, urn) in &index.entries {
+        entries.append(PyTuple::new(py, [id.as_ref(), urn.as_ref()])?)?;
+    }
+    let dict = PyDict::new(py);
+    dict.set_item("shape", index.shape.as_str())?;
+    dict.set_item("entries", entries)?;
+    Ok(dict)
+}
+
+fn id_filter(targets: Option<&[String]>) -> Option<IdFilter> {
+    targets.map(|ids| IdFilter::new(ids.iter().map(String::as_str)))
+}
+
+/// Index one checkpoint document into `{"shape": str, "entries": [(id, urn)]}`.
+///
+/// `data` is borrowed, never copied: a JSON string carrying no escape is
+/// handed back as a view into the same buffer, and only the retained pairs
+/// become Python strings.
+///
+/// Both encodings are read — `checkpoint.latest.resources` (what a backend
+/// stores) and `deployment.resources` (what an export writes). `shape` is
+/// `"empty"` when `checkpoint.latest` is absent or null, which is a stack that
+/// has never deployed, as opposed to `"resources"` with no entries, which is a
+/// deployed stack that manages nothing.
+///
+/// Anything this cannot read with certainty is a `ValueError` prefixed
+/// `Not a Pulumi checkpoint:` — never an empty result. The caller is an
+/// ownership gate, where a confident empty answer authorises a delete.
+///
+/// `targets` keeps only the ids a caller asked about; each may be written in
+/// full or as its leaf name alone. Omitting it keeps everything; an empty list
+/// keeps nothing.
+///
+/// The GIL is released for the parse, so a caller reading from many threads
+/// never queues its parses behind one another.
+#[pyfunction]
+#[pyo3(signature = (data, targets=None))]
+fn index_checkpoint(
+    py: Python<'_>,
+    data: Py<PyBytes>,
+    targets: Option<Vec<String>>,
+) -> PyResult<Py<PyAny>> {
+    let filter = id_filter(targets.as_deref());
+    // `bytes` is immutable and `data` (a strong reference) outlives this call,
+    // so the slice stays valid and unchanged while the GIL is released — the
+    // case `Py<PyBytes>::as_bytes` documents. The closure captures only the
+    // slice and the filter; a `Bound` or `Python` inside would not be `Ungil`
+    // and would not compile, so the compiler holds the argument up.
+    let bytes = data.as_bytes(py);
+    let index = py
+        .detach(|| checkpoint::index_checkpoint(bytes, filter.as_ref()))
+        .map_err(checkpoint_err)?;
+    Ok(index_to_py(py, &index)?.into_any().unbind())
+}
+
+/// Index many documents; one dict per input, in input order.
+///
+/// A document that is not a checkpoint yields `{"error": "Not a Pulumi
+/// checkpoint: ..."}` in its own slot rather than raising, so one bad file
+/// never hides the others; a caller that must fail closed checks for the key.
+///
+/// `parallel`: 0 asks for the machine's available parallelism, 1 is
+/// sequential. The pool is scoped to this call and sized `min(parallel, len)`.
+/// The GIL is released for the whole batch.
+#[pyfunction]
+#[pyo3(signature = (docs, targets=None, parallel=0))]
+fn index_checkpoints(
+    py: Python<'_>,
+    docs: Vec<Py<PyBytes>>,
+    targets: Option<Vec<String>>,
+    parallel: usize,
+) -> PyResult<Py<PyAny>> {
+    let filter = id_filter(targets.as_deref());
+    let parallel = if parallel == 0 {
+        std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
+    } else {
+        parallel
+    };
+    let slices: Vec<&[u8]> = docs.iter().map(|d| d.as_bytes(py)).collect();
+    let results = py.detach(|| checkpoint::index_checkpoints(&slices, filter.as_ref(), parallel));
+
+    let out = PyList::empty(py);
+    for result in &results {
+        match result {
+            Ok(index) => out.append(index_to_py(py, index)?)?,
+            Err(e) => {
+                let dict = PyDict::new(py);
+                dict.set_item("error", format!("Not a Pulumi checkpoint: {}", e))?;
+                out.append(dict)?;
+            }
+        }
+    }
+    Ok(out.into_any().unbind())
 }
 
 /// Create an execution plan from a YAML project directory.
@@ -1113,6 +1223,8 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(preprocess_jinja, m)?)?;
     m.add_function(wrap_pyfunction!(evaluate_builtin, m)?)?;
     m.add_function(wrap_pyfunction!(evaluate_str_invoke, m)?)?;
+    m.add_function(wrap_pyfunction!(index_checkpoint, m)?)?;
+    m.add_function(wrap_pyfunction!(index_checkpoints, m)?)?;
     m.add_function(wrap_pyfunction!(create_execution_plan, m)?)?;
     m.add_function(wrap_pyfunction!(export_dependency_graph, m)?)?;
     #[cfg(feature = "sql-lineage")]
