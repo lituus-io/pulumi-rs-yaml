@@ -123,3 +123,22 @@ resources:
         result = load_project(d)
         assert result["file_count"] >= 2
         assert result["resource_count"] >= 2
+
+
+class TestLoadMarkedProject:
+    """A ``Pulumi.yaml`` beginning with a byte order mark is a legal file.
+
+    ``write_bytes``, deliberately: the ``tmp_project`` fixture writes text and
+    would leave the mark to the encoder, which is exactly how this defect stays
+    invisible.
+    """
+
+    def test_load_marked_project(self, tmp_path):
+        marked = b"\xef\xbb\xbfname: app\nruntime: yaml\nresources:\n  bucket:\n    type: gcp:storage:Bucket\n"
+        (tmp_path / "Pulumi.yaml").write_bytes(marked)
+        assert (tmp_path / "Pulumi.yaml").read_bytes()[:3] == b"\xef\xbb\xbf"
+
+        result = load_project(str(tmp_path))
+        assert result["has_errors"] is False
+        assert result["resource_count"] == 1
+        assert "bucket" in result["resource_names"]
