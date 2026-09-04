@@ -52,5 +52,3 @@ fuzz/corpus/**
 # Structured targets take raw bytes, so their curated seeds are binary.
 !fuzz/corpus/**/*.bin
 
-# claude
-.claude/
