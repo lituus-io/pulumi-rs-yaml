@@ -109,8 +109,12 @@ pub fn run_exec(command_args: &[String]) -> i32 {
         // Strip {% %} lines
         let stripped = strip_jinja_blocks(original);
 
-        // Validate stripped YAML is parseable
-        if let Err(e) = serde_yaml::from_str::<serde_yaml::Value>(&stripped) {
+        // Validate stripped YAML is parseable. The wrapper's gate must accept
+        // what the runtime accepts, and `strip_jinja_blocks` hands the mark
+        // through untouched because its output is written over the user's file.
+        if let Err(e) = serde_yaml::from_str::<serde_yaml::Value>(
+            pulumi_rs_yaml_core::encoding::strip_bom(&stripped),
+        ) {
             eprintln!("error: stripped YAML in {} is not valid: {}", filename, e);
             eprintln!("hint: ensure {{{{ }}}} expressions are inside quoted strings");
             cleanup_all(&modified_files, &temp_dir);
@@ -663,6 +667,44 @@ resources:
         assert!(dir.exists());
         assert!(dir.is_dir());
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A marked file with `{% %}` blocks reaches the child process.
+    ///
+    /// The wrapper validates the stripped YAML before spawning, so this gate
+    /// has to accept exactly what the runtime accepts — otherwise `bli exec`
+    /// refuses a file the language host would have run. `strip_jinja_blocks`
+    /// hands the mark through untouched on purpose: its output is written over
+    /// the user's file, and the original is restored byte for byte.
+    #[cfg(unix)]
+    #[test]
+    fn test_run_exec_accepts_a_leading_byte_order_mark() {
+        let Ok(dir) = tempfile::tempdir() else {
+            unreachable!("a temp directory must be creatable")
+        };
+        let marked = "\u{feff}name: app\nruntime: yaml\nresources:\n{% for i in range(2) %}\n  \"r{{ i }}\":\n    type: test:T\n{% endfor %}\n";
+        let path = dir.path().join("Pulumi.yaml");
+        assert!(fs::write(&path, marked).is_ok());
+
+        let _cwd = TempCwd::new(dir.path());
+        assert_eq!(run_exec(&["true".to_string()]), 0);
+        assert_eq!(fs::read_to_string(&path).ok().as_deref(), Some(marked));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_run_exec_accepts_a_leading_byte_order_mark() {
+        let Ok(dir) = tempfile::tempdir() else {
+            unreachable!("a temp directory must be creatable")
+        };
+        let marked = "\u{feff}name: app\nruntime: yaml\nresources:\n{% for i in range(2) %}\n  \"r{{ i }}\":\n    type: test:T\n{% endfor %}\n";
+        let path = dir.path().join("Pulumi.yaml");
+        assert!(fs::write(&path, marked).is_ok());
+
+        let _cwd = TempCwd::new(dir.path());
+        let code = run_exec(&["cmd".to_string(), "/c".to_string(), "exit 0".to_string()]);
+        assert_eq!(code, 0);
+        assert_eq!(fs::read_to_string(&path).ok().as_deref(), Some(marked));
     }
 
     #[cfg(unix)]

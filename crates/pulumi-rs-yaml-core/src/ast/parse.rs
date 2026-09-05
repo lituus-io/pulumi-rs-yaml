@@ -4,6 +4,7 @@ use crate::ast::expr::{Expr, InvokeExpr, InvokeOptions, ObjectProperty, Starlark
 use crate::ast::interpolation::{has_interpolations, parse_interpolation};
 use crate::ast::template::*;
 use crate::diag::{unexpected_casing, Diagnostics};
+use crate::encoding::strip_bom;
 use crate::syntax::{ExprMeta, Span};
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -15,6 +16,10 @@ use std::collections::HashSet;
 /// When the source text is available (e.g., for interpolation parsing), we use
 /// owned copies of the relevant substrings.
 pub fn parse_template(source: &str, span: Option<Span>) -> (TemplateDecl<'static>, Diagnostics) {
+    // The one template deserializer: every reader in the workspace funnels
+    // here, so a legal leading byte order mark is removed here too rather than
+    // at each read. See `crate::encoding`.
+    let source = strip_bom(source);
     let mut diags = Diagnostics::new();
 
     let yaml: serde_yaml::Value = match serde_yaml::from_str(source) {
@@ -1740,5 +1745,30 @@ pulumi:
             &template.variables[0].value,
             Expr::DateFormat(_, _)
         ));
+    }
+
+    #[test]
+    fn test_parse_leading_byte_order_mark_is_one_document() {
+        // The reported shape exactly: one line parsed even before the fix, two
+        // or more read as a second implicit document and the template came back
+        // nameless. Both must now parse, and the mark must not reach the name.
+        for source in [
+            "\u{feff}name: app\n",
+            "\u{feff}name: app\nruntime: yaml\ndescription: d\n",
+        ] {
+            let (template, diags) = parse_template(source, None);
+            assert!(!diags.has_errors(), "errors: {}", diags);
+            assert_eq!(template.name.as_deref(), Some("app"));
+        }
+    }
+
+    #[test]
+    fn test_parse_keeps_a_byte_order_mark_that_is_content() {
+        // Only the one at offset zero is a stream marker. A U+FEFF inside a
+        // scalar is a character the author wrote, and it survives into the value.
+        let source = "\u{feff}name: a\u{feff}b\nruntime: yaml\n";
+        let (template, diags) = parse_template(source, None);
+        assert!(!diags.has_errors(), "errors: {}", diags);
+        assert_eq!(template.name.as_deref(), Some("a\u{feff}b"));
     }
 }

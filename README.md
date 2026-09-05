@@ -5,7 +5,7 @@
 [![Fuzz](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/fuzz.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/fuzz.yml)
 [![Benchmark](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/benchmark.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/benchmark.yml)
 [![fuzz targets](https://img.shields.io/badge/fuzz%20targets-19-blue)](fuzz/fuzz_targets)
-[![security tests](https://img.shields.io/badge/security%20tests-108-blue)](crates/pulumi-rs-yaml-core/tests/security_tests.rs)
+[![security tests](https://img.shields.io/badge/security%20tests-116-blue)](crates/pulumi-rs-yaml-core/tests/security_tests.rs)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE)
 
 Rust implementation of the [Pulumi](https://www.pulumi.com/) YAML language runtime. Drop-in replacement for the Go-based `pulumi-yaml` with 1:1 compatibility.
@@ -141,7 +141,7 @@ cd fuzz
 cargo +nightly fuzz run fuzz_yaml_parser -- -max_total_time=60
 ```
 
-Targets: `fuzz_yaml_parser`, `fuzz_interpolation`, `fuzz_jinja`, `fuzz_builtins`, `fuzz_converter`, `fuzz_yaml_bomb`, `fuzz_extra_context`, `fuzz_starlark`, `fuzz_parallel_eval`, `fuzz_resource_graph`, `fuzz_sql_lineage`, `fuzz_native_str`, `fuzz_checkpoint`.
+Core targets: `fuzz_yaml_parser`, `fuzz_interpolation`, `fuzz_jinja`, `fuzz_builtins`, `fuzz_converter`, `fuzz_yaml_bomb`, `fuzz_extra_context`, `fuzz_starlark`, `fuzz_parallel_eval`, `fuzz_resource_graph`, `fuzz_sql_lineage`, `fuzz_native_str`, `fuzz_checkpoint`.
 
 Provider-scope targets, which check the extent detection above:
 `fuzz_scope_roundtrip` (protect and restore are exact inverses),
@@ -150,6 +150,11 @@ Provider-scope targets, which check the extent detection above:
 `fuzz_scope_unlisted_noop` (an unlisted package changes nothing),
 `fuzz_scope_settings` (the option reader cannot over-read),
 `fuzz_scope_never_panics`.
+
+Nineteen targets in all — the two lists above together are exactly the `[[bin]]`
+entries in `fuzz/Cargo.toml`, which the badge counts and which a CI job holds to
+the workflow matrix. `scope_grammar.rs` sits alongside them as a shared input
+generator rather than a target, which is why it is not registered.
 
 `SCOPE_FUZZ_TRACE=1` makes `fuzz_scope_oracle` report how many inputs reach
 each stage, so its coverage can be checked rather than assumed.

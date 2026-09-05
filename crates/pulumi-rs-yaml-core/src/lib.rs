@@ -6,6 +6,7 @@ pub mod classify;
 pub mod completion;
 pub mod config_types;
 pub mod diag;
+pub mod encoding;
 pub mod eval;
 pub mod jinja;
 pub(crate) mod literal_resolve;

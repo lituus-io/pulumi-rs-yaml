@@ -240,3 +240,23 @@ class TestStrInvokeDerivedLiterals:
         graph = export_dependency_graph(tmp_project(STR_INVOKE), "dev", "org")
         dynamic = next(n for n in graph["nodes"] if n["logical_name"] == "dynamic")
         assert "name" not in dynamic["literal_properties"]
+
+
+class TestMarkedProject:
+    """The observable the incident was reported through.
+
+    A ``Pulumi.yaml`` behind a byte order mark loaded nameless, so every URN in
+    the exported graph — and the ``project`` field itself — described a project
+    called ``unknown``. The bytes are written raw so no formatter can remove the
+    thing under test.
+    """
+
+    def test_project_name_survives_a_byte_order_mark(self, tmp_path):
+        (tmp_path / "Pulumi.yaml").write_bytes(b"\xef\xbb\xbf" + BASIC.encode("utf-8"))
+        assert (tmp_path / "Pulumi.yaml").read_bytes()[:3] == b"\xef\xbb\xbf"
+
+        graph = export_dependency_graph(str(tmp_path), "dev", "org")
+        assert graph["project"] == "proj"
+        assert graph["diagnostics"] == []
+        bucket = next(n for n in graph["nodes"] if n["logical_name"] == "bucket")
+        assert bucket["id"] == "urn:pulumi:dev::proj::gcp:storage/bucket:Bucket::bucket"

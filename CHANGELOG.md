@@ -3,6 +3,99 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.27
+
+### A byte order mark is not a second document
+
+A `Pulumi.yaml` that begins with a UTF-8 byte order mark — three bytes an
+editor writes and nobody types — did not parse. The error said
+`deserializing from YAML containing more than one document is not supported`,
+which is a complaint about a defect the file does not have, and the template
+came back with no name at all, so everything keyed on the project name
+described a project called `unknown`.
+
+The mechanism is worth stating, because the message points away from it.
+`serde_yaml` sits on libyaml, which skips a leading mark — but skips it as a
+character, advancing the scanner's column to 1. The first key therefore opens
+the root block mapping at indent 1; line 2's key at column 0 is shallower, so
+it unrolls that mapping and closes the document, and every remaining line
+starts a second implicit one. Hence the signature that made this so hard to
+read: a one-line file parsed, a file of two lines or more did not, and the
+reason named was never the reason. Through the Jinja path the same three bytes
+surfaced instead as `found character that cannot start any token`.
+
+YAML 1.2 permits a mark at the start of a stream, so the file was legal and
+this is a correctness fix rather than a workaround. `encoding::strip_bom` and
+`strip_bom_bytes` remove exactly one mark, at offset zero, and return a
+subslice of their argument — no allocation and no copy on any parse. A mark
+anywhere else is content and comes back byte for byte. UTF-16 marks are left
+alone: those are a different encoding, not a leading `U+FEFF` in a UTF-8
+stream, and dropping the two bytes would hand the parser a NUL-riddled buffer
+that fails further from its cause.
+
+The strip is silent. The input conforms to the spec, so there is nothing to
+warn about, and there is no honest span to attach to bytes the spec says are
+not part of the document. Removing the mark from the file on disk belongs to
+whichever tool owns the file.
+
+### Six boundaries, not every read
+
+The strip happens where text becomes a value, not where a file is read: the
+reported case arrived as a `str` from a caller that never touched a file, and a
+read-site fix would have missed it entirely. Six deserializer entries, each the
+single funnel for a family of readers — `parse_template`, which every reader in
+the workspace reaches; `validate_rendered_yaml`, which runs before it on every
+Jinja path; `try_parse_package_lock`, whose `.ok()?` had made a marked lock file
+invisible rather than rejected; `SchemaStore::load`, on bytes, because a 56 MB
+provider schema should not pay for a UTF-8 pass to lose three bytes;
+`packages_from_source`, where a mark makes the first key `\u{feff}runtime` and
+the provider scope is lost with no error at all; and the `exec` wrapper's
+pre-spawn gate, which has to accept what the runtime accepts.
+
+`strip_jinja_blocks` and `provider_scope`'s `protect`/`restore` are deliberately
+untouched: their output is written back over the user's file, and
+`fuzz_scope_roundtrip` asserts they hand every byte back. Every public signature
+from 0.5.26 is unchanged, and the Python `__all__` gains nothing — every symptom
+on that side, the `unknown` project name included, is fixed transitively.
+
+Shadowing rather than stripping inline where a diagnostic is built turned out to
+matter more than the parse. A mark did not merely break a file; it collapsed
+*every* error in that file into the same locationless phantom. With the strip in
+place, a marked file with a genuine indentation error is reported at its line
+and column again.
+
+### Tests
+
+Eight new security tests (108 -> 116). The one that carries the design is the
+anti-masking case: a file that genuinely holds two documents holds two after the
+mark is removed, and is refused with byte-identical wording either way — a strip
+cannot hide a real defect, it can only stop inventing one. Around it: the
+reported repro at one line and at several; a mark alone, which must fail as
+"expected a YAML mapping" rather than as a phantom second document; a mark
+inside a scalar, which survives into the value; a doubled mark, where exactly
+one is a stream marker; a UTF-16 mark, diagnosed rather than guessed at; a
+marked package lock; a marked schema store; and a marked project loaded with and
+without a Jinja context.
+
+Every fixture that must carry a mark is written as raw bytes. A mark is
+invisible, and a formatter, an editor save or a helpful string literal would
+normalise it away, leaving tests that pass while proving nothing — the file
+fixtures assert their own first three bytes before the test that depends on them
+runs.
+
+`fuzz_yaml_parser` gains the differential property rather than a new target
+(nineteen, unchanged): the same bytes with and without a leading mark are the
+same document, and must parse to the same template and the same diagnostics.
+Stated that way it is two-sided — it fails if the mark is not removed, and
+equally if removing it changes anything else.
+
+Eleven in-module unit tests, two of them address-level: unmarked text is handed
+straight back (`ptr::eq`), and a stripped slice starts three bytes into its
+input. Four Python tests write their fixtures with `write_bytes`. The bench pair
+`parse_simple_template` and `parse_simple_template_with_bom` measures 7.07 us
+against 6.91 us — the strip is a three-byte comparison, and the pair shows it
+costs nothing measurable.
+
 ## 0.5.26
 
 ### A checkpoint index read from borrowed bytes

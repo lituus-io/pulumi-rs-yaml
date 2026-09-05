@@ -94,3 +94,31 @@ class TestParseRealFixture:
         assert result["resource_count"] == 1
         assert result["resource_names"] == ["testBucket"]
         assert result["has_errors"] is False
+
+
+class TestParseByteOrderMark:
+    """A leading byte order mark is legal YAML 1.2 and must not read as a
+    second document.
+
+    The fixtures are bytes decoded here rather than literals with an invisible
+    character in them: ``ruff format`` and every editor on the way would happily
+    normalise the mark away, and the test would keep passing while testing
+    nothing.
+    """
+
+    MARKED = b"\xef\xbb\xbfname: app\nruntime: yaml\n"
+
+    def test_marked_template_parses(self):
+        result = parse_template(self.MARKED.decode("utf-8"))
+        assert result["has_errors"] is False
+        assert result["name"] == "app"
+
+    def test_marked_template_reports_no_phantom_document(self):
+        # The reported symptom: has_errors=True with the template nameless, and
+        # a message naming a defect the file does not have.
+        result = parse_template(self.MARKED.decode("utf-8"))
+        assert result["diagnostics"] == []
+
+    def test_a_real_second_document_is_still_refused(self):
+        two = b"\xef\xbb\xbfname: app\nruntime: yaml\n---\nname: other\n"
+        assert parse_template(two.decode("utf-8"))["has_errors"] is True

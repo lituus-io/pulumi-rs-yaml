@@ -387,6 +387,21 @@ fn the_option_is_not_read_from_the_wrong_place() {
     assert!(packages_from_source("name: p\nruntime: yaml\n").is_empty());
 }
 
+#[test]
+fn the_option_is_read_through_a_leading_byte_order_mark() {
+    // The scan is textual and anchored at column 0, so a mark made the first
+    // key `\u{feff}runtime` and the whole setting vanished — no error, no
+    // protection, and a provider template rendered by the runtime instead.
+    let marked = "\u{feff}name: p\nruntime:\n  name: yaml\n  options:\n    providerTemplatedPackages: [gcpx]\n";
+    assert_eq!(packages_from_source(marked), vec!["gcpx"]);
+
+    // Only the mark at offset zero is a stream marker; one on the key itself is
+    // a different key, and must still read as no setting at all.
+    let inner =
+        "\u{feff}name: p\n\u{feff}runtime:\n  options:\n    providerTemplatedPackages: [gcpx]\n";
+    assert!(packages_from_source(inner).is_empty());
+}
+
 // ---------------------------------------------------------------------------
 // Regression over the corpus
 // ---------------------------------------------------------------------------

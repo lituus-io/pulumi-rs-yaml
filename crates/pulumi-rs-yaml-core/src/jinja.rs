@@ -761,6 +761,11 @@ pub fn validate_rendered_yaml<'src>(
     _original: &'src str,
     filename: &str,
 ) -> Result<(), RenderDiagnostic<'src>> {
+    // This gate runs before `parse_template` on every Jinja path, so it has to
+    // accept what the parser accepts. Shadowing rather than stripping inline
+    // keeps `source_line` and the reported column measured against the same
+    // text the deserializer read.
+    let rendered = crate::encoding::strip_bom(rendered);
     if let Err(e) = serde_yaml::from_str::<serde_yaml::Value>(rendered) {
         let line = e.location().map(|l| l.line()).unwrap_or(0) as u32;
         let col = e.location().map(|l| l.column()).unwrap_or(0) as u32;
@@ -1498,6 +1503,30 @@ mod tests {
     fn test_validate_rendered_yaml_valid() {
         let yaml = "name: test\nruntime: yaml\n";
         assert!(validate_rendered_yaml(yaml, yaml, "test.yaml").is_ok());
+    }
+
+    #[test]
+    fn test_validate_rendered_yaml_leading_byte_order_mark() {
+        // This gate runs before parse_template on every Jinja path, so a marked
+        // render must pass it — and a marked render that is genuinely broken
+        // must still be reported at the line the author can see.
+        let ok = "\u{feff}name: app\nruntime: yaml\n";
+        assert!(validate_rendered_yaml(ok, ok, "Pulumi.yaml").is_ok());
+
+        // Before the strip, a mark turned *every* error in the file into the
+        // same phantom "more than one document", with no location at all. The
+        // real defect is now named, at the line and column the author can see.
+        let broken = "\u{feff}name: app\nruntime: yaml\n  bad: 1\n";
+        let Err(d) = validate_rendered_yaml(broken, broken, "Pulumi.yaml") else {
+            unreachable!("a mapping value in that position must not parse")
+        };
+        assert!(
+            !d.message.contains("more than one document"),
+            "{}",
+            d.message
+        );
+        assert_eq!((d.line, d.column), (3, 6));
+        assert_eq!(d.source_line, "  bad: 1");
     }
 
     #[test]
