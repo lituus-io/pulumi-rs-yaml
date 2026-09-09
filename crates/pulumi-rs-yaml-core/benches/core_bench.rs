@@ -675,7 +675,9 @@ fn bench_resolve_literal(c: &mut Criterion) {
 }
 
 fn bench_checkpoint(c: &mut Criterion) {
-    use pulumi_rs_yaml_core::checkpoint::{index_checkpoint, index_checkpoints, IdFilter};
+    use pulumi_rs_yaml_core::checkpoint::{
+        index_checkpoint, index_checkpoint_with_elements, index_checkpoints, ElementSpec, IdFilter,
+    };
 
     /// A checkpoint in the shape a backend stores, padded with the `inputs`
     /// and `outputs` a real resource carries — the bytes the reader has to
@@ -719,6 +721,61 @@ fn bench_checkpoint(c: &mut Criterion) {
     let filter = IdFilter::new(leaves.iter().map(String::as_str));
     c.bench_function("index_checkpoint_filtered_37kb", |b| {
         b.iter(|| black_box(index_checkpoint(black_box(&doc), black_box(Some(&filter)))))
+    });
+
+    // The same document, read by a scan that asks for an element. Nothing in
+    // this fixture is a type the spec names, so what this measures is the cost
+    // every resource pays for the scan to be able to ask: capturing `inputs`
+    // as a slice and reading `type`. That is the number that must stay next to
+    // the unfiltered one — the projection itself is paid only by the handful
+    // of resources that carry an element.
+    let spec = ElementSpec::new([(
+        "gcp:bigquery/datasetAccess:DatasetAccess",
+        ["role", "userByEmail", "view", "authorizedDataset"],
+    )]);
+    c.bench_function("index_checkpoint_37kb_with_elements", |b| {
+        b.iter(|| {
+            black_box(index_checkpoint_with_elements(
+                black_box(&doc),
+                black_box(None),
+                black_box(Some(&spec)),
+            ))
+        })
+    });
+
+    // A checkpoint of a hundred resources that DO carry an element, which is
+    // the shape a dataset's `access[]` array makes: every id is the parent's,
+    // and only the projection tells the rows apart.
+    let elements = {
+        let mut doc = String::from(r#"{"version":3,"checkpoint":{"latest":{"resources":["#);
+        for i in 0..100 {
+            if i > 0 {
+                doc.push(',');
+            }
+            doc.push_str(&format!(
+                concat!(
+                    r#"{{"urn":"urn:pulumi:dev::app::gcp:bigquery/datasetAccess:DatasetAccess::a{i}","#,
+                    r#""custom":true,"id":"projects/p/datasets/d","#,
+                    r#""type":"gcp:bigquery/datasetAccess:DatasetAccess","#,
+                    r#""inputs":{{"__defaults":[],"datasetId":"d","project":"p","#,
+                    r#""role":"READER","userByEmail":"probe{i}@example.com"}},"#,
+                    r#""outputs":{{"datasetId":"d","project":"p","role":"READER"}},"#,
+                    r#""dependencies":[],"propertyDependencies":{{}}}}"#,
+                ),
+                i = i
+            ));
+        }
+        doc.push_str("]}}}");
+        doc.into_bytes()
+    };
+    c.bench_function("index_checkpoint_100_elements", |b| {
+        b.iter(|| {
+            black_box(index_checkpoint_with_elements(
+                black_box(&elements),
+                black_box(None),
+                black_box(Some(&spec)),
+            ))
+        })
     });
 
     // A whole backend's worth of documents. These are ~2 KiB rather than

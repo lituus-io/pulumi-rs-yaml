@@ -181,3 +181,129 @@ class TestReleasesTheGil:
             "the counter did not advance while 3,000 documents were indexed: "
             "the GIL was held for the parse"
         )
+
+
+ACCESS_TYPE = "gcp:bigquery/datasetAccess:DatasetAccess"
+ACCESS_ID = "projects/p/datasets/d"
+
+
+def _access(name, role, member, view=None):
+    """One element of a dataset's access array: its id is the dataset's."""
+    inputs = {
+        "__defaults": [],
+        "datasetId": "d",
+        "project": "p",
+        "role": role,
+        "userByEmail": member,
+    }
+    if view is not None:
+        inputs["view"] = view
+    return {
+        "urn": f"urn:pulumi:dev::app::{ACCESS_TYPE}::{name}",
+        "id": ACCESS_ID,
+        "type": ACCESS_TYPE,
+        "inputs": inputs,
+        "outputs": {"role": role},
+    }
+
+
+def _doc(*resources):
+    return json.dumps(
+        {"version": 3, "checkpoint": {"latest": {"resources": list(resources)}}}
+    ).encode()
+
+
+ELEMENTS = {ACCESS_TYPE: ["role", "userByEmail", "view", "authorizedDataset"]}
+
+
+class TestElements:
+    """Telling two members of one parent array apart.
+
+    Every entry of the array carries the parent's id, so a caller that
+    indexes ids alone sees one resource where there are several. Asking for
+    an element by type projects the requested `inputs` keys out of each one —
+    and asking is the only way to get it: a scan that names no type is the
+    scan there has always been, tuple for tuple.
+    """
+
+    def test_a_requested_type_carries_its_element(self):
+        out = index_checkpoint(_doc(_access("a", "READER", "one@example.com")), None, ELEMENTS)
+        [(rid, _urn, element)] = out["entries"]
+        assert rid == ACCESS_ID
+        assert element == {"role": "READER", "userByEmail": "one@example.com"}
+
+    def test_only_the_requested_keys_come_back(self):
+        out = index_checkpoint(_doc(_access("a", "READER", "one@example.com")), None, ELEMENTS)
+        [(_rid, _urn, element)] = out["entries"]
+        assert "__defaults" not in element
+        assert "datasetId" not in element and "project" not in element
+
+    def test_two_entries_on_one_id_are_told_apart(self):
+        out = index_checkpoint(
+            _doc(_access("a", "READER", "one@example.com"),
+                 _access("b", "WRITER", "two@example.com")),
+            None, ELEMENTS,
+        )
+        ids = [rid for rid, _urn, _el in out["entries"]]
+        elements = [el for _rid, _urn, el in out["entries"]]
+        assert ids == [ACCESS_ID, ACCESS_ID], "one parent, two rows"
+        assert elements[0] != elements[1]
+
+    def test_a_nested_value_round_trips_as_python_objects(self):
+        view = {"projectId": "p", "datasetId": "d", "tableId": "t", "__defaults": []}
+        out = index_checkpoint(
+            _doc(_access("a", "READER", "one@example.com", view=view)), None, ELEMENTS)
+        [(_rid, _urn, element)] = out["entries"]
+        assert element["view"] == view, "nested objects arrive whole, not as text"
+
+    def test_an_unrequested_type_has_no_element(self):
+        out = index_checkpoint(DISK, None, ELEMENTS)
+        assert out["entries"] == [(ID, URN, None)]
+
+    def test_a_requested_type_without_inputs_has_no_element(self):
+        bare = {"urn": f"urn:pulumi:dev::app::{ACCESS_TYPE}::a", "id": ACCESS_ID,
+                "type": ACCESS_TYPE}
+        out = index_checkpoint(_doc(bare), None, ELEMENTS)
+        assert out["entries"] == [(ACCESS_ID, bare["urn"], None)]
+
+    def test_asking_for_nothing_is_the_scan_it_always_was(self):
+        """The property an older caller on a newer reader depends on."""
+        doc = _doc(_access("a", "READER", "one@example.com"))
+        assert index_checkpoint(doc) == index_checkpoint(doc, None, None)
+        [entry] = index_checkpoint(doc)["entries"]
+        assert entry == (ACCESS_ID, f"urn:pulumi:dev::app::{ACCESS_TYPE}::a")
+        assert len(entry) == 2
+
+    def test_an_empty_spec_is_also_that_scan(self):
+        doc = _doc(_access("a", "READER", "one@example.com"))
+        assert index_checkpoint(doc, None, {})["entries"] == [
+            (ACCESS_ID, f"urn:pulumi:dev::app::{ACCESS_TYPE}::a", None)
+        ]
+
+    def test_inputs_that_are_not_an_object_raise_for_a_requested_type(self):
+        broken = {"urn": f"urn:pulumi:dev::app::{ACCESS_TYPE}::a", "id": ACCESS_ID,
+                  "type": ACCESS_TYPE, "inputs": ["role"]}
+        with pytest.raises(ValueError, match=r"^Not a Pulumi checkpoint: "):
+            index_checkpoint(_doc(broken), None, ELEMENTS)
+        # …and never for a scan that did not ask.
+        assert len(index_checkpoint(_doc(broken))["entries"]) == 1
+
+    def test_targets_still_apply_first(self):
+        out = index_checkpoint(
+            _doc(_access("a", "READER", "one@example.com"), _resource()),
+            [ID], ELEMENTS,
+        )
+        assert out["entries"] == [(ID, URN, None)]
+
+    @pytest.mark.parametrize("parallel", [1, 4])
+    def test_a_batch_projects_on_every_slot(self, parallel):
+        doc = _doc(_access("a", "READER", "one@example.com"))
+        out = index_checkpoints([doc, b"{", doc], None, parallel, ELEMENTS)
+        assert out[0] == index_checkpoint(doc, None, ELEMENTS)
+        assert out[1]["error"].startswith("Not a Pulumi checkpoint: ")
+        assert out[2] == out[0]
+
+    def test_a_batch_that_asks_for_nothing_is_unchanged(self):
+        docs = [DISK, EXPORT]
+        assert index_checkpoints(docs) == index_checkpoints(docs, None, 0, None)
+        assert all(r["entries"] == [(ID, URN)] for r in index_checkpoints(docs))
