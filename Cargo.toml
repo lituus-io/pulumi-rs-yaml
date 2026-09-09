@@ -18,7 +18,9 @@ prost-types = "0.13"
 tonic-build = "0.12"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# `raw_value`: the checkpoint reader captures a resource's `inputs` as a borrowed
+# slice of the caller's buffer, so a projection can be taken after the fact.
+serde_json = { version = "1", features = ["raw_value"] }
 serde_yaml = "0.9"
 thiserror = "2"
 semver = "1"

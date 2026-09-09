@@ -8,7 +8,9 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
 
-use pulumi_rs_yaml_core::checkpoint::{self, CheckpointError, IdFilter, Index};
+use pulumi_rs_yaml_core::checkpoint::{
+    self, CheckpointError, Element, ElementSpec, IdFilter, Index,
+};
 use pulumi_rs_yaml_core::diag::Diagnostics;
 use pulumi_rs_yaml_core::eval::builtins;
 use pulumi_rs_yaml_core::eval::native_str;
@@ -350,10 +352,28 @@ fn checkpoint_err(e: CheckpointError) -> PyErr {
 /// borrowed `Cow` twice on the way out, which is the whole cost the core
 /// reader avoids. `PyTuple::new` over two `&str` is the only copy there is:
 /// the one that makes a Python object.
-fn index_to_py<'py>(py: Python<'py>, index: &Index<'_>) -> PyResult<Bound<'py, PyDict>> {
+///
+/// `with_elements` is the caller's request, not the document's answer: a scan
+/// that asked for no element types produces the pairs 0.5.27 produced, byte
+/// for byte, and one that asked produces triples throughout — including for a
+/// resource that has no element, whose third slot is `None`. A shape that
+/// changed per row would have to be sniffed by the caller.
+fn index_to_py<'py>(
+    py: Python<'py>,
+    index: &Index<'_>,
+    with_elements: bool,
+) -> PyResult<Bound<'py, PyDict>> {
     let entries = PyList::empty(py);
-    for (id, urn) in &index.entries {
-        entries.append(PyTuple::new(py, [id.as_ref(), urn.as_ref()])?)?;
+    for entry in &index.entries {
+        if with_elements {
+            let element = match &entry.element {
+                Some(pairs) => element_to_py(py, pairs)?,
+                None => py.None(),
+            };
+            entries.append((entry.id.as_ref(), entry.urn.as_ref(), element).into_pyobject(py)?)?;
+        } else {
+            entries.append(PyTuple::new(py, [entry.id.as_ref(), entry.urn.as_ref()])?)?;
+        }
     }
     let dict = PyDict::new(py);
     dict.set_item("shape", index.shape.as_str())?;
@@ -361,8 +381,30 @@ fn index_to_py<'py>(py: Python<'py>, index: &Index<'_>) -> PyResult<Bound<'py, P
     Ok(dict)
 }
 
+/// One projected element as a Python dict.
+///
+/// The value arrives as the raw JSON text the core reader borrowed, so it is
+/// parsed here — once, for the few keys that were asked for — and converted by
+/// the same `json_to_py` every other value on this boundary goes through. The
+/// parse cannot fail: the slice was validated when the document was read. It
+/// is still reported rather than unwrapped, because "cannot fail" is an
+/// argument and `unwrap` is a promise.
+fn element_to_py(py: Python<'_>, element: &Element<'_>) -> PyResult<Py<PyAny>> {
+    let dict = PyDict::new(py);
+    for (key, raw) in element {
+        let value: serde_json::Value = serde_json::from_str(raw.get())
+            .map_err(|e| checkpoint_err(CheckpointError::Json(e)))?;
+        dict.set_item(key.as_ref(), json_to_py(py, &value)?)?;
+    }
+    Ok(dict.into_any().unbind())
+}
+
 fn id_filter(targets: Option<&[String]>) -> Option<IdFilter> {
     targets.map(|ids| IdFilter::new(ids.iter().map(String::as_str)))
+}
+
+fn element_spec(element_types: Option<HashMap<String, Vec<String>>>) -> Option<ElementSpec> {
+    element_types.map(ElementSpec::new)
 }
 
 /// Index one checkpoint document into `{"shape": str, "entries": [(id, urn)]}`.
@@ -385,16 +427,26 @@ fn id_filter(targets: Option<&[String]>) -> Option<IdFilter> {
 /// full or as its leaf name alone. Omitting it keeps everything; an empty list
 /// keeps nothing.
 ///
+/// `element_types` maps a provider type token to the `inputs` keys that
+/// identify one element of a parent's array — `{"gcp:bigquery/
+/// datasetAccess:DatasetAccess": ["role", "userByEmail"]}`. Given it, each
+/// entry is `(id, urn, element)` where `element` is a dict of those keys or
+/// `None` for a resource that carries no element. Omitted, entries are the
+/// `(id, urn)` pairs they have always been, and nothing reads a resource's
+/// `inputs`.
+///
 /// The GIL is released for the parse, so a caller reading from many threads
 /// never queues its parses behind one another.
 #[pyfunction]
-#[pyo3(signature = (data, targets=None))]
+#[pyo3(signature = (data, targets=None, element_types=None))]
 fn index_checkpoint(
     py: Python<'_>,
     data: Py<PyBytes>,
     targets: Option<Vec<String>>,
+    element_types: Option<HashMap<String, Vec<String>>>,
 ) -> PyResult<Py<PyAny>> {
     let filter = id_filter(targets.as_deref());
+    let spec = element_spec(element_types);
     // `bytes` is immutable and `data` (a strong reference) outlives this call,
     // so the slice stays valid and unchanged while the GIL is released — the
     // case `Py<PyBytes>::as_bytes` documents. The closure captures only the
@@ -402,9 +454,11 @@ fn index_checkpoint(
     // and would not compile, so the compiler holds the argument up.
     let bytes = data.as_bytes(py);
     let index = py
-        .detach(|| checkpoint::index_checkpoint(bytes, filter.as_ref()))
+        .detach(|| {
+            checkpoint::index_checkpoint_with_elements(bytes, filter.as_ref(), spec.as_ref())
+        })
         .map_err(checkpoint_err)?;
-    Ok(index_to_py(py, &index)?.into_any().unbind())
+    Ok(index_to_py(py, &index, spec.is_some())?.into_any().unbind())
 }
 
 /// Index many documents; one dict per input, in input order.
@@ -416,27 +470,39 @@ fn index_checkpoint(
 /// `parallel`: 0 asks for the machine's available parallelism, 1 is
 /// sequential. The pool is scoped to this call and sized `min(parallel, len)`.
 /// The GIL is released for the whole batch.
+///
+/// `element_types` means here what it means for one document, and applies to
+/// every slot of the batch.
 #[pyfunction]
-#[pyo3(signature = (docs, targets=None, parallel=0))]
+#[pyo3(signature = (docs, targets=None, parallel=0, element_types=None))]
 fn index_checkpoints(
     py: Python<'_>,
     docs: Vec<Py<PyBytes>>,
     targets: Option<Vec<String>>,
     parallel: usize,
+    element_types: Option<HashMap<String, Vec<String>>>,
 ) -> PyResult<Py<PyAny>> {
     let filter = id_filter(targets.as_deref());
+    let spec = element_spec(element_types);
     let parallel = if parallel == 0 {
         std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
     } else {
         parallel
     };
     let slices: Vec<&[u8]> = docs.iter().map(|d| d.as_bytes(py)).collect();
-    let results = py.detach(|| checkpoint::index_checkpoints(&slices, filter.as_ref(), parallel));
+    let results = py.detach(|| {
+        checkpoint::index_checkpoints_with_elements(
+            &slices,
+            filter.as_ref(),
+            parallel,
+            spec.as_ref(),
+        )
+    });
 
     let out = PyList::empty(py);
     for result in &results {
         match result {
-            Ok(index) => out.append(index_to_py(py, index)?)?,
+            Ok(index) => out.append(index_to_py(py, index, spec.is_some())?)?,
             Err(e) => {
                 let dict = PyDict::new(py);
                 dict.set_item("error", format!("Not a Pulumi checkpoint: {}", e))?;

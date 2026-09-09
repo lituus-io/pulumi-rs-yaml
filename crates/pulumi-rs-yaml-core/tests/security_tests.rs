@@ -1654,7 +1654,10 @@ mod literal_resolve_security {
 /// reader cannot vouch for comes back as an error, and that no input turns
 /// into an empty index, a hang, or a dead process.
 mod checkpoint_security {
-    use pulumi_rs_yaml_core::checkpoint::{index_checkpoint, index_checkpoints, IdFilter, Shape};
+    use pulumi_rs_yaml_core::checkpoint::{
+        index_checkpoint, index_checkpoint_with_elements, index_checkpoints,
+        index_checkpoints_with_elements, ElementSpec, IdFilter, Shape,
+    };
     use std::time::Instant;
 
     const URN: &str = "urn:pulumi:dev::app::gcp:workflows/workflow:Workflow::w";
@@ -1688,19 +1691,42 @@ mod checkpoint_security {
 
         // The other half of the boundary. A field the reader never returns is
         // never decoded either — that is what makes it zero-copy — so a bad
-        // byte inside `type` is invisible, exactly as it is to serde_json's
+        // byte inside `outputs` is invisible, exactly as it is to serde_json's
         // own structural scan. This is safe precisely because the strings it
         // DOES hand back are `str`, and the case above is what holds them to
         // it. Pinned here so the difference stays deliberate.
-        let mut bytes = disk(r#"{"urn":"PLACEHOLDER","id":"x","type":"gcp:t:T"}"#).into_bytes();
+        let mut bytes =
+            disk(r#"{"urn":"PLACEHOLDER","id":"x","outputs":{"state":"gcp:t:T"}}"#).into_bytes();
         let Some(at) = bytes.windows(7).position(|w| w == b"gcp:t:T") else {
-            unreachable!("fixture must contain the type value")
+            unreachable!("fixture must contain the outputs value")
         };
         bytes[at + 4] = 0xff;
         let Ok(index) = index_checkpoint(&bytes, None) else {
             unreachable!("an unread field must not be decoded")
         };
         assert_eq!(index.entries.len(), 1);
+    }
+
+    #[test]
+    fn non_utf8_inside_type_or_inputs_is_an_error() {
+        // `type` is read, and `inputs` is captured as a slice — which
+        // validates it — so both moved across the boundary the test above
+        // draws. A checkpoint whose inputs are not UTF-8 is corrupt, and this
+        // is the direction to be wrong in: a refusal, never a quiet answer.
+        // It holds whether or not the scan asked for an element.
+        for fixture in [
+            r#"{"urn":"u","id":"x","type":"gcp:t:PLACEHOLDER"}"#,
+            r#"{"urn":"u","id":"x","type":"gcp:t:T","inputs":{"role":"PLACEHOLDER"}}"#,
+        ] {
+            let mut bytes = disk(fixture).into_bytes();
+            let Some(at) = bytes.windows(11).position(|w| w == b"PLACEHOLDER") else {
+                unreachable!("fixture must contain the placeholder")
+            };
+            bytes[at..at + 11].copy_from_slice(b"\xff\xfe\xfd\xff\xfe\xfd\xff\xfe\xfd\xff\xfe");
+            assert!(is_error(&bytes), "invalid UTF-8 must not be read");
+            let spec = ElementSpec::new([("gcp:t:T", ["role"])]);
+            assert!(index_checkpoint_with_elements(&bytes, None, Some(&spec)).is_err());
+        }
     }
 
     #[test]
@@ -1785,8 +1811,8 @@ mod checkpoint_security {
         };
         assert_eq!(index.shape, Shape::Resources);
         assert_eq!(index.entries.len(), 2);
-        assert_eq!(index.entries[0].1, format!("{URN}-a"));
-        assert_eq!(index.entries[1].1, format!("{URN}-b"));
+        assert_eq!(index.entries[0].urn, format!("{URN}-a"));
+        assert_eq!(index.entries[1].urn, format!("{URN}-b"));
     }
 
     #[test]
@@ -1807,7 +1833,10 @@ mod checkpoint_security {
             let Ok(index) = index_checkpoint(doc.as_bytes(), None) else {
                 unreachable!("{payload:?} must read")
             };
-            assert_eq!(index.entries, vec![(payload.into(), payload.into())]);
+            let [entry] = index.entries.as_slice() else {
+                unreachable!("one entry")
+            };
+            assert_eq!((entry.id.as_ref(), entry.urn.as_ref()), (payload, payload));
         }
     }
 
@@ -1860,6 +1889,167 @@ mod checkpoint_security {
             let out = index_checkpoints(&docs, None, parallel);
             let ok: Vec<bool> = out.iter().map(Result::is_ok).collect();
             assert_eq!(ok, vec![true, false, true, false, false, true]);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // elements — a projection is opt-in, exact, and never invents a row
+    // ---------------------------------------------------------------
+
+    const ACCESS_TYPE: &str = "gcp:bigquery/datasetAccess:DatasetAccess";
+
+    fn access(inputs: &str) -> String {
+        disk(&format!(
+            r#"{{"urn":"{URN}","id":"{ID}","type":"{ACCESS_TYPE}","inputs":{inputs}}}"#
+        ))
+    }
+
+    fn access_spec() -> ElementSpec {
+        ElementSpec::new([(ACCESS_TYPE, ["role", "userByEmail"])])
+    }
+
+    #[test]
+    fn an_element_is_only_ever_produced_for_a_type_that_was_asked_for() {
+        // The dangerous direction here is a projection nobody requested: a
+        // caller comparing elements would then compare against a shape it did
+        // not define. A scan that names no type, or names another one, must
+        // hand back exactly what 0.5.27 handed back.
+        let doc = access(r#"{"role":"READER","userByEmail":"probe@example.com"}"#);
+        for spec in [None, Some(ElementSpec::new([("gcp:t:Other", ["role"])]))] {
+            let Ok(index) = index_checkpoint_with_elements(doc.as_bytes(), None, spec.as_ref())
+            else {
+                unreachable!("fixture must read")
+            };
+            assert_eq!(index.entries.len(), 1);
+            assert!(index.entries[0].element.is_none(), "an unasked projection");
+        }
+    }
+
+    #[test]
+    fn a_hostile_element_value_passes_through_unaltered() {
+        // An element is data on the way to an equality test and, further on,
+        // to an operator's screen. Nothing here interprets it, and nothing
+        // here rewrites it: the bytes that come back are the bytes that went
+        // in, so a comparison against another checkpoint is honest.
+        let hostile = [
+            "'; DROP TABLE resources; --",
+            "{{ 7*7 }}",
+            "${x}",
+            "../../etc/passwd",
+            "<script>alert(1)</script>",
+        ];
+        for payload in hostile {
+            let escaped = payload.replace('\\', "\\\\").replace('"', "\\\"");
+            let doc = access(&format!(r#"{{"role":"{escaped}"}}"#));
+            let spec = access_spec();
+            let Ok(index) = index_checkpoint_with_elements(doc.as_bytes(), None, Some(&spec))
+            else {
+                unreachable!("{payload:?} must read")
+            };
+            let Some(element) = index.entries[0].element.as_ref() else {
+                unreachable!("an element was requested")
+            };
+            let [(key, value)] = element.as_slice() else {
+                unreachable!("one projected key")
+            };
+            assert_eq!(key.as_ref(), "role");
+            assert_eq!(
+                serde_json::from_str::<String>(value.get()).ok().as_deref(),
+                Some(payload)
+            );
+        }
+    }
+
+    #[test]
+    fn a_hostile_element_key_is_never_matched_by_accident() {
+        // Key matching is exact string equality against the requested set. A
+        // key that merely looks like a requested one — a prefix, a case
+        // variant, a homoglyph, one with a zero-width space — is a different
+        // key, and projecting it would put a value the caller never asked for
+        // into an element it will compare for equality.
+        let doc = access(r#"{"Role":1,"role ":2,"\u200brole":3,"rolex":4,"":5,"role":"READER"}"#);
+        let spec = access_spec();
+        let Ok(index) = index_checkpoint_with_elements(doc.as_bytes(), None, Some(&spec)) else {
+            unreachable!("fixture must read")
+        };
+        let Some(element) = index.entries[0].element.as_ref() else {
+            unreachable!("an element was requested")
+        };
+        let keys: Vec<&str> = element.iter().map(|(k, _)| k.as_ref()).collect();
+        assert_eq!(keys, vec!["role"], "a near-miss key was projected");
+    }
+
+    #[test]
+    fn an_element_that_cannot_be_projected_is_an_error_not_an_empty_one() {
+        // `inputs` that is not an object, for a type the caller asked about.
+        // An empty element and an unreadable one are the same value to a gate
+        // comparing elements, and the first one would clear a removal.
+        let spec = access_spec();
+        for inputs in ["[\"role\"]", "\"role\"", "7", "true"] {
+            let doc = access(inputs);
+            assert!(
+                index_checkpoint_with_elements(doc.as_bytes(), None, Some(&spec)).is_err(),
+                "{inputs} must not read as an element"
+            );
+        }
+    }
+
+    #[test]
+    fn a_bomb_inside_inputs_costs_what_skipping_it_always_cost() {
+        // Not the bound the bracket bomb meets. That one fails in microseconds
+        // because the TYPED path trips serde_json's depth limit at 128;
+        // `inputs` is captured through serde_json's ignore path, which is
+        // deliberately iterative — an explicit bracket stack, no depth limit —
+        // so an unclosed run of `[` is scanned to the end of the document.
+        // That is exactly what 0.5.27 did with `inputs` as an unknown field:
+        // skipping is the same scan. So the property is not "fast"; it is
+        // "an error, no overflow, and no slower than serde_json's own scan of
+        // the same bytes" — measured against that scan in this process, so a
+        // debug build on a slow runner compares itself with itself.
+        let bomb = format!(
+            r#"{{"version":3,"checkpoint":{{"latest":{{"resources":[{{"urn":"{URN}","id":"{ID}","type":"{ACCESS_TYPE}","inputs":{}"#,
+            "[".repeat(16 * 1024 * 1024)
+        );
+        let spec = access_spec();
+
+        let control_started = Instant::now();
+        assert!(serde_json::from_slice::<serde::de::IgnoredAny>(bomb.as_bytes()).is_err());
+        let control = control_started.elapsed();
+
+        let started = Instant::now();
+        assert!(index_checkpoint_with_elements(bomb.as_bytes(), None, Some(&spec)).is_err());
+        let elapsed = started.elapsed();
+
+        // Three times serde_json's own pass over the bytes, plus a quarter
+        // second of noise: a reader that had started copying or re-scanning
+        // the captured slice would be far outside this; one that merely
+        // validates it as UTF-8 is inside it.
+        let ceiling = control.as_secs_f64() * 3.0 + 0.25;
+        assert!(
+            elapsed.as_secs_f64() < ceiling,
+            "16 MiB of inputs took {elapsed:?} against serde_json's own {control:?}"
+        );
+    }
+
+    #[test]
+    fn a_batch_projects_the_same_elements_on_every_thread() {
+        // The gate's answer must not depend on how the caller scheduled the
+        // read. The spec is shared by reference across the pool, so this is
+        // also the assertion that nothing in it is written to.
+        let doc = access(r#"{"role":"READER","userByEmail":"probe@example.com"}"#);
+        let spec = access_spec();
+        let docs: Vec<&[u8]> = vec![doc.as_bytes(); 16];
+        let seq = index_checkpoints_with_elements(&docs, None, 1, Some(&spec));
+        let par = index_checkpoints_with_elements(&docs, None, 8, Some(&spec));
+        let Ok(one) = index_checkpoint_with_elements(doc.as_bytes(), None, Some(&spec)) else {
+            unreachable!("fixture must read")
+        };
+        for (a, b) in seq.iter().zip(par.iter()) {
+            let (Ok(a), Ok(b)) = (a, b) else {
+                unreachable!("every slot must read")
+            };
+            assert_eq!(a, b);
+            assert_eq!(a, &one);
         }
     }
 }

@@ -32,13 +32,37 @@
 //!   entries are exactly the unfiltered ones that `IdFilter::matches` accepts,
 //!   in the same order, with the same shape. A filter that silently dropped an
 //!   entry would hide an owner;
+//! - asking for an element changes what an entry carries and never which
+//!   entries there are: the ids and urns are the same, in the same order, as a
+//!   scan that asked for nothing. An element is present only for a resource
+//!   whose type was named, its keys are a subset of the keys requested for
+//!   that type, in the order the document wrote them, and each value is a
+//!   slice of the document handed in rather than a copy of it. A scan that
+//!   names no type at all is byte for byte the scan that asked for nothing —
+//!   that is the property an older caller on a newer reader depends on;
 //! - reading the same document four times in one batch, on four threads,
 //!   agrees with reading it once.
 
 #![no_main]
 use libfuzzer_sys::fuzz_target;
 
-use pulumi_rs_yaml_core::checkpoint::{index_checkpoint, index_checkpoints, IdFilter};
+use std::collections::HashSet;
+
+use pulumi_rs_yaml_core::checkpoint::{
+    index_checkpoint, index_checkpoint_with_elements, index_checkpoints, ElementSpec, IdFilter,
+};
+
+/// The types an element could be asked for. The fuzzer's documents carry
+/// whatever types it invented, so the spec deliberately names a few that will
+/// mostly miss: the interesting cases are the near-misses, and a hit only has
+/// to happen sometimes for the projection properties to be exercised.
+const ELEMENT_TYPES: [(&str, [&str; 4]); 2] = [
+    (
+        "gcp:bigquery/datasetAccess:DatasetAccess",
+        ["role", "userByEmail", "view", "authorizedDataset"],
+    ),
+    ("gcp:t:T", ["a", "b", "role", "view"]),
+];
 
 fn leaf_of(id: &str) -> &str {
     match id.rsplit_once('/') {
@@ -73,7 +97,7 @@ fuzz_target!(|data: &[u8]| {
         .entries
         .iter()
         .step_by(2)
-        .map(|(id, _)| leaf_of(id))
+        .map(|entry| leaf_of(&entry.id))
         .collect();
     let filter = IdFilter::new(targets.iter().copied());
 
@@ -88,12 +112,65 @@ fuzz_target!(|data: &[u8]| {
     let expected: Vec<_> = unfiltered
         .entries
         .iter()
-        .filter(|(id, _)| filter.matches(id))
+        .filter(|entry| filter.matches(&entry.id))
         .collect();
     assert_eq!(
         filtered.entries.iter().collect::<Vec<_>>(),
         expected,
         "filtering kept a different set than IdFilter::matches accepts",
+    );
+
+    // Asking for elements never changes which entries there are, and a scan
+    // that names nothing is the scan above.
+    let spec = ElementSpec::new(ELEMENT_TYPES.map(|(kind, keys)| (kind, keys)));
+    if let Ok(projected) = index_checkpoint_with_elements(data, None, Some(&spec)) {
+        assert_eq!(
+            projected.shape, unfiltered.shape,
+            "a projection changed the document's shape",
+        );
+        assert_eq!(
+            projected.entries.len(),
+            unfiltered.entries.len(),
+            "a projection changed how many entries there are",
+        );
+        for (with, without) in projected.entries.iter().zip(unfiltered.entries.iter()) {
+            assert_eq!(with.id, without.id, "a projection changed an id");
+            assert_eq!(with.urn, without.urn, "a projection changed a urn");
+            assert!(without.element.is_none(), "an element nobody asked for");
+            let Some(element) = with.element.as_ref() else {
+                continue;
+            };
+            let Some(wanted) = ELEMENT_TYPES
+                .iter()
+                .find(|(_, keys)| keys.iter().any(|k| element.iter().any(|(ek, _)| ek == k)))
+                .map(|(_, keys)| keys.iter().copied().collect::<HashSet<&str>>())
+            else {
+                assert!(element.is_empty(), "keys came back for no known type");
+                continue;
+            };
+            let mut seen = HashSet::new();
+            for (key, value) in element {
+                assert!(
+                    wanted.contains(key.as_ref()),
+                    "a key nobody asked for was projected: {key}",
+                );
+                assert!(seen.insert(key.as_ref()), "a key was projected twice");
+                let at = value.get().as_ptr() as usize;
+                let start = data.as_ptr() as usize;
+                assert!(
+                    (start..start + data.len()).contains(&at),
+                    "a value was copied rather than borrowed",
+                );
+            }
+        }
+    }
+
+    let none_named = ElementSpec::default();
+    assert_eq!(
+        index_checkpoint_with_elements(data, None, Some(&none_named))
+            .map_err(|e| e.to_string()),
+        Ok(unfiltered.clone()),
+        "a spec that names no type is not the scan that asked for nothing",
     );
 
     let batch = index_checkpoints(&[data; 4], None, 4);
