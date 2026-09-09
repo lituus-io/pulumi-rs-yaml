@@ -3,6 +3,80 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.28
+
+### An id that belongs to the parent
+
+Some providers give every member of a parent's array the parent's own id. A
+dataset's access list is the clearest case: each entry is a resource in its
+own right, with a URN and a place in a checkpoint, and its id is the dataset's
+path — because the API has no smaller name for it. An index keyed on ids
+therefore reports that two stacks manage "the same" resource when they manage
+two different elements of one array, and a gate reading that index refuses a
+removal it should have allowed. The distinction is real; it is just not in the
+id. It is in the resource's declared `inputs`.
+
+`index_checkpoint_with_elements` reads it out. A caller names the resource
+types it cares about and, per type, the top-level `inputs` keys that make up
+one element — that is `ElementSpec`, built once per scan like `IdFilter` — and
+each entry of a named type comes back with those keys projected into
+`Entry::element`. Everything else is the scan it always was: an unnamed type
+keeps its `inputs` unread, an unnamed key inside a named type is stepped over
+without being captured, and `index_checkpoint` itself, which passes no spec,
+returns exactly what it returned in 0.5.27. `Index::entries` is now a
+`Vec<Entry>` rather than a `Vec<(id, urn)>`; that is the one signature that
+moved, and `Entry` carries the same two strings under the same names.
+
+### Captured, not parsed
+
+The reader still does not build a value for any field it does not return.
+`inputs` is captured as a `RawValue` — a borrowed slice of the caller's
+buffer, taken for every resource because JSON puts no order on `type` and
+`inputs` and the decision to project can only be made once both are in hand.
+Capturing costs a UTF-8 check and a structural scan, both of which
+`serde_json` was already performing; it allocates nothing. The projection
+runs only for a resource whose type was asked for, after the id filter has
+had its say, and reads keys through the same borrowed newtype the ids use —
+a `HashMap<Cow<str>, &RawValue>` would have been shorter and would have copied
+every key, because serde's borrow special-case does not reach map keys. The
+values stay raw. A caller comparing two checkpoints compares text; the Python
+binding parses each kept value once, on the way into a dict, through the same
+converter every other value on that boundary uses.
+
+One boundary moved and is pinned by a test on each side: a byte sequence that
+is not UTF-8 inside `inputs` — or inside `type`, which is now read — is an
+error, where before it was invisible. A checkpoint whose inputs are not UTF-8
+is corrupt, and this is the direction to be wrong in. `outputs` and
+`dependencies` stay unread, and a bad byte inside them stays invisible.
+
+The Python surface gains one keyword on `index_checkpoint` and
+`index_checkpoints`, `element_types`, a mapping from type token to key list.
+Given it, entries are `(id, urn, element)` throughout — a dict for a resource
+that carries an element, `None` for one that does not, and never a shape that
+changes per row. Omitted, entries are the `(id, urn)` pairs they have always
+been, so a caller written against 0.5.26 or 0.5.27 sees no difference at all.
+
+### Tests
+
+Thirteen new unit tests on the reader (elements returned, told apart, absent,
+empty, borrowed rather than copied; unrequested types unread; the filter
+before the projection; a batch agreeing with a single read). Seven new
+security tests (116 -> 123): an element only for a type that was asked for,
+hostile values passed through and hostile keys never matched by accident, an
+element that cannot be projected is an error and not an empty one, a bomb
+inside `inputs` costs what skipping it always cost — serde_json's ignore path
+is iterative by design, so the scan is linear and is compared with serde_json's
+own pass over the same bytes rather than with a clock — a batch projecting
+identically on every thread, and the UTF-8 boundary above. `fuzz_checkpoint`
+gains the projection properties — same entries, subset of the requested keys,
+every value a slice of the input, a spec naming nothing is the scan that asked
+for nothing — with no new target, so the matrix guard is unchanged at
+nineteen. Two new benches: the 37 KiB document read by a scan that asks for
+an element it does not contain, which is the cost every resource pays and must
+stay next to the unfiltered read; and a hundred entries that all carry one.
+Twelve new Python tests for the binding's shapes. `raw_value` is enabled on
+`serde_json`; no other dependency changes.
+
 ## 0.5.27
 
 ### A byte order mark is not a second document

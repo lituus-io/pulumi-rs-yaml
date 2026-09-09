@@ -1543,7 +1543,7 @@ dependencies = [
 
 [[package]]
 name = "pulumi-rs-yaml-converter"
-version = "0.5.27"
+version = "0.5.28"
 dependencies = [
  "base64",
  "heck",
@@ -1561,7 +1561,7 @@ dependencies = [
 
 [[package]]
 name = "pulumi-rs-yaml-core"
-version = "0.5.27"
+version = "0.5.28"
 dependencies = [
  "base64",
  "hcl-rs",
@@ -1595,7 +1595,7 @@ dependencies = [
 
 [[package]]
 name = "pulumi-rs-yaml-proto"
-version = "0.5.27"
+version = "0.5.28"
 dependencies = [
  "prost",
  "prost-types",

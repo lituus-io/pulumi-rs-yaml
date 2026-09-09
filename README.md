@@ -5,7 +5,7 @@
 [![Fuzz](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/fuzz.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/fuzz.yml)
 [![Benchmark](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/benchmark.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/benchmark.yml)
 [![fuzz targets](https://img.shields.io/badge/fuzz%20targets-19-blue)](fuzz/fuzz_targets)
-[![security tests](https://img.shields.io/badge/security%20tests-116-blue)](crates/pulumi-rs-yaml-core/tests/security_tests.rs)
+[![security tests](https://img.shields.io/badge/security%20tests-123-blue)](crates/pulumi-rs-yaml-core/tests/security_tests.rs)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE)
 
 Rust implementation of the [Pulumi](https://www.pulumi.com/) YAML language runtime. Drop-in replacement for the Go-based `pulumi-yaml` with 1:1 compatibility.
