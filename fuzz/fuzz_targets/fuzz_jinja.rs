@@ -61,4 +61,50 @@ fuzz_target!(|data: &[u8]| {
             "has_any must be superset of standalone block detection"
         );
     }
+
+    // A full strict render must never panic, and when it fails the diagnostic
+    // must be honest about where: the column is inside the line, the
+    // expression is what sits at that column, and an include that was
+    // refused says so in its message.
+    {
+        use pulumi_rs_yaml_core::jinja::{
+            IncludeRefusal, JinjaContext, JinjaPreprocessor, RenderErrorKind,
+            TemplatePreprocessor, UndefinedMode,
+        };
+        let config = std::collections::HashMap::new();
+        let extra = std::collections::HashMap::new();
+        let ctx = JinjaContext {
+            project_name: "p",
+            stack_name: "s",
+            cwd: "/nonexistent-fuzz-root",
+            organization: "",
+            root_directory: "/nonexistent-fuzz-root",
+            config: &config,
+            project_dir: "/nonexistent-fuzz-root",
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+        };
+        if let Err(diag) = JinjaPreprocessor::new(&ctx).preprocess(input, "fuzz.yaml") {
+            if diag.column > 0 {
+                let col = (diag.column - 1) as usize;
+                assert!(col <= diag.source_line.len(), "column past the line");
+                assert!(diag.end_column >= diag.column, "end before start");
+                assert!(!diag.expression.is_empty(), "a column with no expression");
+                assert_eq!(
+                    diag.source_line.get(col..col + diag.expression.len()),
+                    Some(diag.expression),
+                    "the expression is not at its column"
+                );
+            } else {
+                assert_eq!(diag.end_column, 0);
+                assert!(diag.expression.is_empty());
+            }
+            if diag.message.starts_with(IncludeRefusal::PREFIX) {
+                assert_eq!(diag.kind, RenderErrorKind::JinjaTemplateNotFound);
+                assert!(IncludeRefusal::suggestion_for(&diag.message).is_some());
+            }
+            let _ = diag.format_rich("fuzz.yaml");
+        }
+    }
 });

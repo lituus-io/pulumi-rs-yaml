@@ -308,6 +308,41 @@ resources:
     });
 }
 
+fn bench_jinja_render_fails(c: &mut Criterion) {
+    // A render that fails on its last line, with a hundred lines before it.
+    // What this measures is the diagnostic: locating the expression and
+    // borrowing the line, which must stay a slice, never a copy — a
+    // regression that started copying the source would show here first.
+    let mut source = String::new();
+    for i in 0..100 {
+        source.push_str(&format!("key{i}: value{i}\n"));
+    }
+    source.push_str("last: {{ undefined_name }}\n");
+    let config = HashMap::new();
+    let ctx = JinjaContext {
+        project_name: "bench",
+        stack_name: "dev",
+        cwd: "/tmp",
+        organization: "org",
+        root_directory: "/home/user",
+        config: &config,
+        project_dir: "/home/user",
+        undefined: UndefinedMode::Strict,
+        provider_templated_packages: &[],
+        extra: &HashMap::new(),
+    };
+    c.bench_function("jinja_preprocessor_render_fails_undefined", |b| {
+        let preprocessor = JinjaPreprocessor::new(&ctx);
+        b.iter(|| {
+            let result = preprocessor.preprocess(black_box(&source), "Pulumi.yaml");
+            let Err(diag) = result else {
+                unreachable!("the fixture must fail")
+            };
+            black_box((diag.line, diag.column, diag.expression.len()));
+        })
+    });
+}
+
 fn bench_validate_rendered_yaml(c: &mut Criterion) {
     let yaml = r#"name: test
 runtime: yaml
@@ -803,6 +838,7 @@ criterion_group!(
     bench_noop_preprocessor,
     bench_jinja_fast_path,
     bench_jinja_rendering,
+    bench_jinja_render_fails,
     bench_validate_rendered_yaml,
     bench_strip_jinja_blocks_50_resources,
     bench_has_jinja_block_syntax,

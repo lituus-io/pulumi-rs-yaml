@@ -6,6 +6,7 @@ import pytest
 from pulumi_yaml_rs import (
     has_jinja_blocks,
     preprocess_jinja,
+    preprocess_jinja_diag,
     strip_jinja_blocks,
     validate_jinja,
 )
@@ -133,3 +134,77 @@ resources:
         # The rendered values should appear
         assert "gcp-jinja-bucket-test" in result
         assert "dev" in result
+
+
+class TestPreprocessJinjaDiag:
+    """The structured surface: the same render, its fault handed over as
+    fields rather than folded into a sentence."""
+
+    CTX = {"project_name": "test", "stack_name": "dev"}
+
+    def test_a_clean_render_answers_with_the_text(self):
+        out = preprocess_jinja_diag('name: "{{ pulumi_project }}"\n', "t.yaml", self.CTX)
+        assert set(out) == {"rendered"}
+        assert "test" in out["rendered"]
+
+    def test_an_undefined_name_is_located_to_the_character(self):
+        source = "a: 1\nname: {{ unknown_var }}\n"
+        out = preprocess_jinja_diag(source, "t.yaml", self.CTX)
+        assert set(out) == {"diagnostic"}
+        d = out["diagnostic"]
+        assert d["kind"] == "jinja_undefined_variable"
+        assert d["line"] == 2
+        assert d["column"] == 10
+        assert d["end_column"] == 21
+        assert d["source_line"] == "name: {{ unknown_var }}"
+        assert d["expression"] == "unknown_var"
+        assert d["message"] == "undefined value"
+        assert "(in " not in d["message"], "the location is a field, not a suffix"
+        assert d["suggestion"]
+
+    def test_the_expression_sits_at_its_column(self):
+        source = "x: {{ a.b[c] }}\n"
+        d = preprocess_jinja_diag(source, "t.yaml", self.CTX)["diagnostic"]
+        col = d["column"] - 1
+        assert d["source_line"][col : col + len(d["expression"])] == d["expression"]
+
+    def test_a_refused_include_says_why(self, tmp_path):
+        (tmp_path / "notes.txt").write_text("hello")
+        ctx = {**self.CTX, "project_dir": str(tmp_path), "root_directory": str(tmp_path)}
+        d = preprocess_jinja_diag(
+            "a: '{% include \"notes.txt\" %}'\n", "t.yaml", ctx)["diagnostic"]
+        assert d["kind"] == "jinja_template_not_found"
+        assert "[extension]" in d["message"]
+        assert "hello" not in d["message"]
+        assert d["suggestion"]
+
+    def test_a_json_include_now_renders(self, tmp_path):
+        (tmp_path / "schemas").mkdir()
+        (tmp_path / "schemas" / "table.json").write_text('[{"name": "id"}]')
+        ctx = {**self.CTX, "project_dir": str(tmp_path), "root_directory": str(tmp_path)}
+        out = preprocess_jinja_diag(
+            "schema: '{% include \"schemas/table.json\" %}'\n", "t.yaml", ctx)
+        # The engine drops a template's trailing newline, as it always has.
+        assert out["rendered"] == "schema: '[{\"name\": \"id\"}]'"
+
+    def test_an_absent_include_is_not_found_by_name(self, tmp_path):
+        ctx = {**self.CTX, "project_dir": str(tmp_path), "root_directory": str(tmp_path)}
+        d = preprocess_jinja_diag(
+            "a: '{% include \"schemas/missing.json\" %}'\n", "t.yaml", ctx)["diagnostic"]
+        assert d["kind"] == "jinja_template_not_found"
+        assert "schemas/missing.json" in d["message"]
+        assert "include refused" not in d["message"]
+
+    def test_the_string_surface_carries_the_same_facts(self):
+        source = "name: {{ unknown_var }}\n"
+        with pytest.raises(ValueError) as exc:
+            preprocess_jinja(source, "t.yaml", self.CTX)
+        text = str(exc.value)
+        assert text.startswith("Jinja preprocessing error: t.yaml:1:10: error: undefined value")
+        assert "\n  1 | name: {{ unknown_var }}" in text
+        assert "^^^^^^^^^^^" in text, "a caret row under the expression"
+        assert "(in " not in text
+
+    def test_a_bad_context_is_this_calls_error_not_a_diagnostic(self):
+        with pytest.raises(TypeError):
+            preprocess_jinja_diag("a: 1\n", "t.yaml", {"k": object()})

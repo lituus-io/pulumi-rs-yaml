@@ -2,6 +2,7 @@
 
 mod convert;
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use pyo3::exceptions::PyValueError;
@@ -136,11 +137,18 @@ fn validate_jinja(source: &str, filename: &str) -> PyResult<()> {
     }
 }
 
-/// Preprocess a YAML source with Jinja rendering.
-#[pyfunction]
-fn preprocess_jinja(source: &str, filename: &str, context: &Bound<'_, PyDict>) -> PyResult<String> {
-    let ctx_map = py_dict_to_string_map(context)?;
-
+/// One render, shared by both Jinja entry points.
+///
+/// The context dictionary was already read under the GIL; everything here
+/// borrows from it and from `source`, so the whole body runs with the GIL
+/// released — a caller's other threads keep going while a template renders.
+/// The diagnostic borrows `source` too: no copy is made of the template to
+/// say where in it the fault lies.
+fn render_jinja<'src>(
+    source: &'src str,
+    filename: &str,
+    ctx_map: &HashMap<String, String>,
+) -> Result<String, pulumi_rs_yaml_core::jinja::RenderDiagnostic<'src>> {
     // Build owned strings, then borrow for JinjaContext
     let project_name = ctx_map.get("project_name").cloned().unwrap_or_default();
     let stack_name = ctx_map.get("stack_name").cloned().unwrap_or_default();
@@ -185,14 +193,80 @@ fn preprocess_jinja(source: &str, filename: &str, context: &Bound<'_, PyDict>) -
         extra: &extra,
     };
 
-    let preprocessor = pulumi_rs_yaml_core::jinja::JinjaPreprocessor::new(&jinja_ctx);
-    use pulumi_rs_yaml_core::jinja::TemplatePreprocessor;
-    match preprocessor.preprocess(source, filename) {
-        Ok(result) => Ok(result.into_owned()),
+    pulumi_rs_yaml_core::jinja::JinjaPreprocessor::new(&jinja_ctx)
+        .render(source, filename)
+        .map(Cow::into_owned)
+}
+
+/// Preprocess a YAML source with Jinja rendering.
+///
+/// The string surface: rendered text, or a `ValueError` whose message is
+/// the diagnostic formatted for a log. The GIL is released for the render.
+#[pyfunction]
+fn preprocess_jinja(
+    py: Python<'_>,
+    source: &str,
+    filename: &str,
+    context: &Bound<'_, PyDict>,
+) -> PyResult<String> {
+    let ctx_map = py_dict_to_string_map(context)?;
+    match py.detach(|| render_jinja(source, filename, &ctx_map)) {
+        Ok(result) => Ok(result),
         Err(e) => Err(PyValueError::new_err(format!(
             "Jinja preprocessing error: {}",
             e.format_rich(filename)
         ))),
+    }
+}
+
+/// Preprocess a YAML source with Jinja rendering, answering in structure.
+///
+/// `{"rendered": str}` on success. On failure `{"diagnostic": {...}}` with
+/// `kind`, `line`, `column`, `end_column`, `message`, `source_line`,
+/// `expression` and `suggestion` — the same facts `preprocess_jinja` folds
+/// into its error text, handed over as fields so a caller can place a caret
+/// rather than parse a sentence. Never raises for a template fault; only a
+/// context that is not a mapping of strings is an error of this call.
+#[pyfunction]
+fn preprocess_jinja_diag(
+    py: Python<'_>,
+    source: &str,
+    filename: &str,
+    context: &Bound<'_, PyDict>,
+) -> PyResult<Py<PyAny>> {
+    let ctx_map = py_dict_to_string_map(context)?;
+    let out = PyDict::new(py);
+    match py.detach(|| render_jinja(source, filename, &ctx_map)) {
+        Ok(rendered) => out.set_item("rendered", rendered)?,
+        Err(diag) => {
+            let d = PyDict::new(py);
+            d.set_item("kind", render_error_kind_name(diag.kind))?;
+            d.set_item("line", diag.line)?;
+            d.set_item("column", diag.column)?;
+            d.set_item("end_column", diag.end_column)?;
+            d.set_item("message", diag.message.as_str())?;
+            d.set_item("source_line", diag.source_line)?;
+            d.set_item("expression", diag.expression)?;
+            d.set_item("suggestion", diag.suggestion)?;
+            out.set_item("diagnostic", d)?;
+        }
+    }
+    Ok(out.into_any().unbind())
+}
+
+/// The kind as a stable snake_case name, which is what a Python caller keys on.
+fn render_error_kind_name(kind: pulumi_rs_yaml_core::jinja::RenderErrorKind) -> &'static str {
+    use pulumi_rs_yaml_core::jinja::RenderErrorKind as K;
+    match kind {
+        K::JinjaSyntax => "jinja_syntax",
+        K::JinjaUndefinedVariable => "jinja_undefined_variable",
+        K::JinjaFilterError => "jinja_filter_error",
+        K::JinjaTypeError => "jinja_type_error",
+        K::JinjaTemplateNotFound => "jinja_template_not_found",
+        K::YamlSyntax => "yaml_syntax",
+        K::YamlIndentation => "yaml_indentation",
+        K::YamlDuplicateKey => "yaml_duplicate_key",
+        K::ProviderScope => "provider_scope",
     }
 }
 
@@ -1287,6 +1361,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(strip_jinja_blocks, m)?)?;
     m.add_function(wrap_pyfunction!(validate_jinja, m)?)?;
     m.add_function(wrap_pyfunction!(preprocess_jinja, m)?)?;
+    m.add_function(wrap_pyfunction!(preprocess_jinja_diag, m)?)?;
     m.add_function(wrap_pyfunction!(evaluate_builtin, m)?)?;
     m.add_function(wrap_pyfunction!(evaluate_str_invoke, m)?)?;
     m.add_function(wrap_pyfunction!(index_checkpoint, m)?)?;
