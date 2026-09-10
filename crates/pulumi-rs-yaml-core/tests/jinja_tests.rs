@@ -1799,7 +1799,9 @@ fn test_import_rejects_absolute_path() {
 }
 
 #[test]
-fn test_import_rejects_non_template_extension() {
+fn test_include_serves_any_text_file_inside_the_root() {
+    // The boundary is containment, not the extension: a text file inside
+    // the tree is served whatever it is called.
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("secret.txt"), "sensitive data").unwrap();
 
@@ -1822,7 +1824,41 @@ fn test_import_rejects_non_template_extension() {
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
     let result = preprocessor.preprocess(main_source, "Pulumi.yaml");
-    assert!(result.is_err(), ".txt imports should be rejected");
+    assert_eq!(result.unwrap().as_ref(), "sensitive data");
+}
+
+#[test]
+fn test_a_nested_stack_includes_a_version_file_from_the_repo_root() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("images/app")).unwrap();
+    std::fs::write(root.path().join("images/app/VERSION"), "1.2.3\n").unwrap();
+    let project = root.path().join("stacks/app/bigquery");
+    std::fs::create_dir_all(&project).unwrap();
+
+    let main_source = "{% set v %}{% include '../../../images/app/VERSION' %}{% endset -%}\n\
+                       name: app\ntag: {{ v | trim }}\n";
+
+    let project_dir: &'static str =
+        Box::leak(project.to_str().unwrap().to_string().into_boxed_str());
+    let root_dir: &'static str =
+        Box::leak(root.path().to_str().unwrap().to_string().into_boxed_str());
+    let config = HashMap::new();
+    let ctx = JinjaContext {
+        project_name: "test",
+        stack_name: "dev",
+        cwd: project_dir,
+        organization: "",
+        root_directory: root_dir,
+        config: &config,
+        project_dir,
+        undefined: UndefinedMode::Strict,
+        provider_templated_packages: &[],
+        extra: &EMPTY_EXTRA,
+    };
+    let out = JinjaPreprocessor::new(&ctx)
+        .preprocess(main_source, "Pulumi.yaml")
+        .unwrap();
+    assert!(out.ends_with("name: app\ntag: 1.2.3"), "{out:?}");
 }
 
 #[test]

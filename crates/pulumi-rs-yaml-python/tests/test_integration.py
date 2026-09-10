@@ -36,6 +36,47 @@ class TestAllAcceptanceProjects:
             assert "levels" in plan, f"Missing levels for {d.name}"
 
 
+class TestAStackIncludesAVersionFile:
+    """A nested stack reads an image's VERSION from the repo root through the
+    loader: the stack directory and the render root differ, the include
+    climbs out of the stack, and containment to the root lets it through."""
+
+    def test_the_include_resolves_through_the_loader(self, tmp_path):
+        from pulumi_yaml_rs import preprocess_jinja_diag
+
+        (tmp_path / "images" / "app").mkdir(parents=True)
+        (tmp_path / "images" / "app" / "VERSION").write_text("1.2.3\n")
+        stack = tmp_path / "stacks" / "app" / "bigquery"
+        stack.mkdir(parents=True)
+        source = (
+            "{% set v %}{% include '../../../images/app/VERSION' %}{% endset -%}\n"
+            "name: app\nruntime: yaml\nvariables:\n  tag: {{ v | trim }}\n"
+        )
+        out = preprocess_jinja_diag(source, str(stack / "Pulumi.yaml"), {
+            "project_name": "app", "stack_name": "dev",
+            "project_dir": str(stack), "root_directory": str(tmp_path),
+        })
+        assert out["rendered"].endswith("variables:\n  tag: 1.2.3")
+
+    def test_the_same_include_outside_the_root_is_an_escape(self, tmp_path):
+        from pulumi_yaml_rs import preprocess_jinja_diag
+
+        (tmp_path / "images" / "app").mkdir(parents=True)
+        (tmp_path / "images" / "app" / "VERSION").write_text("1.2.3\n")
+        stack = tmp_path / "stacks" / "app" / "bigquery"
+        stack.mkdir(parents=True)
+        # The render root is the stack itself: the image directory is
+        # outside it, so the file that exists is refused, not "not found".
+        d = preprocess_jinja_diag(
+            "v: '{% include \"../../../images/app/VERSION\" %}'\n",
+            str(stack / "Pulumi.yaml"),
+            {"project_name": "app", "stack_name": "dev",
+             "project_dir": str(stack), "root_directory": str(stack)},
+        )["diagnostic"]
+        assert "[escape]" in d["message"]
+        assert "1.2.3" not in d["message"]
+
+
 class TestSpecificFixtures:
     def test_gcp_builtins_plan_has_resources(self, acceptance_dir):
         d = str(acceptance_dir / "gcp-builtins")

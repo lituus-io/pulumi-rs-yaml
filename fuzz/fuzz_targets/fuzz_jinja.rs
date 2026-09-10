@@ -85,6 +85,8 @@ fuzz_target!(|data: &[u8]| {
             provider_templated_packages: &[],
             extra: &extra,
         };
+        // Any text read back as a refusal detail answers without panicking.
+        let _ = IncludeRefusal::suggestion_for(input);
         if let Err(diag) = JinjaPreprocessor::new(&ctx).preprocess(input, "fuzz.yaml") {
             if diag.column > 0 {
                 let col = (diag.column - 1) as usize;
@@ -103,6 +105,17 @@ fuzz_target!(|data: &[u8]| {
             if diag.message.starts_with(IncludeRefusal::PREFIX) {
                 assert_eq!(diag.kind, RenderErrorKind::JinjaTemplateNotFound);
                 assert!(IncludeRefusal::suggestion_for(&diag.message).is_some());
+                assert!(
+                    [
+                        IncludeRefusal::TAG_ABSOLUTE,
+                        IncludeRefusal::TAG_ESCAPE,
+                        IncludeRefusal::TAG_BINARY,
+                        IncludeRefusal::TAG_TOO_LARGE,
+                    ]
+                    .iter()
+                    .any(|tag| diag.message.contains(tag)),
+                    "a refusal carries one of the four tags"
+                );
             }
             let _ = diag.format_rich("fuzz.yaml");
         }
