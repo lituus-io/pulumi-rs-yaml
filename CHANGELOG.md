@@ -3,6 +3,81 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.30
+
+### An include is any text the tree contains
+
+The template loader served a file by the extension in its name — `.j2`,
+`.jinja`, `.jinja2`, `.yaml`, `.yml`, and since 0.5.29 `.json` and `.sql` —
+and answered every other name as if the file were not there. A `VERSION`
+kept beside a container image, the one line a stack inlines to name the
+image it deploys, was refused before the filesystem was consulted, and the
+refusal read as absence. The list was never the boundary; containment is.
+A candidate is served only when its own canonicalized path, symlinks and
+`..` resolved first, lies inside the stack directory or the render root —
+unchanged, and re-proven below. Within that tree an include is now any
+UTF-8 text file up to `MAX_INCLUDE_BYTES` (1 MiB, the same bound the SQL
+lineage reader puts on one statement, because both are the text a stack
+keeps beside itself).
+
+Two refusals replace the extension list, each distinct from absence and
+none of them something `ignore missing` can hide: `include refused
+[binary]` for a file inside the tree that is not UTF-8, and `include
+refused [too large]` for one over the cap. The size is decided from the
+file's metadata before any read, so an oversized file costs one `stat` and
+never an allocation; the bytes of a served file are validated in place,
+one allocation, the same as the read they replace. A file that exists
+where the author named it answers at once, served or refused — the loader
+does not fall through to the render root to serve a different file under
+the same name. A directory named as an include is as absent as it always
+was. `ExtensionNotAllowed` and its `[extension]` tag are gone.
+
+What this does not change: rooted names are refused before a path is
+built; a traversal or a symlink out of both roots is an escape and the
+target's contents never appear in the error; a genuinely absent file is
+still not found, by name; `readFile()` stays contained to the stack
+directory alone. A template's own name resolves to the compiled template,
+never to the loader, and a self-include is an error, not an absence. The
+checkout credential a CI runner leaves in `.git/config` is reachable by
+`fn::readFile` at deploy time already and by a workflow step regardless;
+it is a workflow setting (`persist-credentials: false`), not a loader rule,
+and no denylist is added here.
+
+### Tests
+
+Twenty new unit tests on the loader, most of them pinning behaviour that
+existed and nothing tested: any text file inside the tree served (`.json`,
+`.sql`, `VERSION`, `.txt`); the fleet's exact shape — a `{% set %}` around
+an include from a stack three levels below the root, trimmed; a file at
+the cap served and one byte over refused; a directory absent; a refusal on
+the first candidate not retried against the root; the root candidate and
+the stripped `../` candidate each serving on their own; an in-root symlink
+served and an escaping first candidate not hiding a served second; an
+empty render root meaning the stack directory alone; a root that does not
+exist simply not searched; an included file compiled as a template, not
+pasted; exactly one trailing newline of an included file dropped; an
+include reading the caller's `{% set %}` and `{% import %}` names and a
+`{% set %}` inside it visible after; an import reading the parent's names
+and exporting only its own; `with context` accepted and changing nothing;
+a self-include an error, not an absence; extras never overriding built-in
+names (deterministic, where only a fuzz target asserted it); CRLF
+surviving `readFile` marker resolution (the 0.5.23 fix, untested until
+now); a `base64_decode` failure an error, not an empty string. Three
+existing tests rewritten to say what is now true, one integration test
+renamed for the same reason (`test_include_serves_any_text_file_inside_the_root`),
+one added for a nested stack reading a `VERSION` from the repo root. Four
+security tests (130 -> 133): a binary include refused with its bytes absent
+from the error, a file over the cap refused by name, a refused include
+never ignored as missing, and an extensionless escape still an escape. The
+fuzz target reads any input back as a refusal detail without panicking and
+requires every refusal to carry one of the four tags. One bench,
+`jinja_preprocessor_include_at_cap`, pins the largest served include.
+Four Python tests: a `VERSION` served, an oversized include refused by
+name, the refusal rewritten to the binary case, and a render proven to
+release the GIL by a thread that keeps counting while it runs; two
+integration tests drive the nested-stack include through the Python
+surface, served inside the root and refused as an escape outside it.
+
 ## 0.5.29
 
 ### A template that will not render says where, and why
