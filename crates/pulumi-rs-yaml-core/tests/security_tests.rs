@@ -2279,3 +2279,208 @@ mod bom_security {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// A template that will not render says where and why — without giving up
+// containment, and without copying the source to say so.
+// ---------------------------------------------------------------------------
+mod render_diagnostic_security {
+    use std::collections::HashMap;
+
+    use pulumi_rs_yaml_core::jinja::{
+        IncludeRefusal, JinjaContext, JinjaPreprocessor, RenderErrorKind, UndefinedMode,
+    };
+
+    fn ctx<'a>(
+        dir: &'a str,
+        config: &'a HashMap<String, String>,
+        extra: &'a HashMap<String, String>,
+    ) -> JinjaContext<'a> {
+        JinjaContext {
+            project_name: "app",
+            stack_name: "dev",
+            cwd: dir,
+            organization: "org",
+            root_directory: dir,
+            config,
+            project_dir: dir,
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra,
+        }
+    }
+
+    fn render<'s>(
+        dir: &str,
+        source: &'s str,
+    ) -> Result<String, pulumi_rs_yaml_core::jinja::RenderDiagnostic<'s>> {
+        let config = HashMap::new();
+        let extra = HashMap::new();
+        let c = ctx(dir, &config, &extra);
+        // The inherent render: its diagnostic borrows `source` alone, which
+        // is the property the binding depends on and this file proves.
+        JinjaPreprocessor::new(&c)
+            .render(source, "Pulumi.yaml")
+            .map(|r| r.into_owned())
+    }
+
+    #[test]
+    fn an_escaping_json_include_is_refused_not_served() {
+        // The extension is now served; containment is unchanged. A file that
+        // exists outside both roots is named as escaping, never inlined.
+        let outside = tempfile::tempdir().expect("outside");
+        std::fs::write(outside.path().join("secret.json"), "{\"k\": \"v\"}").expect("write");
+        let project = tempfile::tempdir().expect("project");
+        let dir = project.path().to_str().expect("utf-8 path");
+        let name = format!("{}/secret.json", outside.path().display());
+        let rel = pathdiff(project.path(), &name);
+        let source = format!("a: '{{% include \"{}\" %}}'\n", rel);
+        let Err(diag) = render(dir, &source) else {
+            panic!("an escaping include must not render");
+        };
+        assert_eq!(diag.kind, RenderErrorKind::JinjaTemplateNotFound);
+        assert!(
+            diag.message.contains(IncludeRefusal::TAG_ESCAPE),
+            "{}",
+            diag.message
+        );
+        assert!(
+            !diag.message.contains("\"k\""),
+            "the file's contents must not leak"
+        );
+    }
+
+    #[test]
+    fn an_absolute_include_is_refused_by_name() {
+        let project = tempfile::tempdir().expect("project");
+        let dir = project.path().to_str().expect("utf-8 path");
+        std::fs::write(project.path().join("in.yaml"), "x: 1\n").expect("write");
+        let abs = project.path().join("in.yaml");
+        let source = format!("a: '{{% include \"{}\" %}}'\n", abs.display());
+        let Err(diag) = render(dir, &source) else {
+            panic!("an absolute include must not render, even inside the root");
+        };
+        assert_eq!(diag.kind, RenderErrorKind::JinjaTemplateNotFound);
+        assert!(
+            diag.message.contains(IncludeRefusal::TAG_ABSOLUTE),
+            "{}",
+            diag.message
+        );
+    }
+
+    #[test]
+    fn a_disallowed_extension_is_refused_whether_or_not_it_exists() {
+        let project = tempfile::tempdir().expect("project");
+        let dir = project.path().to_str().expect("utf-8 path");
+        std::fs::write(project.path().join("notes.txt"), "text").expect("write");
+        for name in ["notes.txt", "missing.txt"] {
+            let source = format!("a: '{{% include \"{}\" %}}'\n", name);
+            let Err(diag) = render(dir, &source) else {
+                panic!("{name} must not render");
+            };
+            assert!(
+                diag.message.contains(IncludeRefusal::TAG_EXTENSION),
+                "{}",
+                diag.message
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_out_of_both_roots_is_refused_as_an_escape() {
+        let outside = tempfile::tempdir().expect("outside");
+        std::fs::write(outside.path().join("secret.sql"), "SELECT 1").expect("write");
+        let project = tempfile::tempdir().expect("project");
+        std::os::unix::fs::symlink(
+            outside.path().join("secret.sql"),
+            project.path().join("link.sql"),
+        )
+        .expect("symlink");
+        let dir = project.path().to_str().expect("utf-8 path");
+        let Err(diag) = render(dir, "a: '{% include \"link.sql\" %}'\n") else {
+            panic!("a symlink out of the tree must not render");
+        };
+        assert!(
+            diag.message.contains(IncludeRefusal::TAG_ESCAPE),
+            "{}",
+            diag.message
+        );
+        assert!(
+            !diag.message.contains("SELECT"),
+            "the target's contents must not leak"
+        );
+    }
+
+    #[test]
+    fn a_genuinely_absent_include_is_not_found_and_says_which() {
+        let project = tempfile::tempdir().expect("project");
+        let dir = project.path().to_str().expect("utf-8 path");
+        let Err(diag) = render(dir, "a: '{% include \"schemas/table.json\" %}'\n") else {
+            panic!("an absent include must not render");
+        };
+        assert_eq!(diag.kind, RenderErrorKind::JinjaTemplateNotFound);
+        assert!(
+            diag.message.contains("schemas/table.json"),
+            "{}",
+            diag.message
+        );
+        assert!(
+            !diag.message.starts_with(IncludeRefusal::PREFIX),
+            "absent is not refused"
+        );
+    }
+
+    #[test]
+    fn a_fault_on_the_last_line_of_a_huge_source_borrows_and_does_not_copy() {
+        // Sixty-four mebibytes of comment, then one undefined name. The
+        // diagnostic's line and expression must be slices of the input. The
+        // padding is wide rather than tall — four-kibibyte lines — because
+        // the engine counts lines in sixteen bits, and a fault past line
+        // 65535 is reported on a line the file does not have; that is a
+        // separate limit, not the property under test here.
+        let pad = format!("# {}\n", "p".repeat(4094));
+        let mut source = String::with_capacity(64 * 1024 * 1024 + 64);
+        while source.len() < 64 * 1024 * 1024 {
+            source.push_str(&pad);
+        }
+        source.push_str("name: {{ missing_name }}\n");
+        let project = tempfile::tempdir().expect("project");
+        let dir = project.path().to_str().expect("utf-8 path");
+        let Err(diag) = render(dir, &source) else {
+            panic!("must not render");
+        };
+        let start = source.as_ptr() as usize;
+        let end = start + source.len();
+        let line_at = diag.source_line.as_ptr() as usize;
+        let expr_at = diag.expression.as_ptr() as usize;
+        assert!((start..end).contains(&line_at), "source_line was copied");
+        assert!((start..end).contains(&expr_at), "expression was copied");
+        assert_eq!(diag.expression, "missing_name");
+        assert_eq!(diag.column, 10);
+    }
+
+    #[test]
+    fn a_multi_byte_prefix_never_panics_and_keeps_the_caret_honest() {
+        let project = tempfile::tempdir().expect("project");
+        let dir = project.path().to_str().expect("utf-8 path");
+        for prefix in ["é", "日本語", "🚀", "a\u{0301}"] {
+            let source = format!("{}: {{{{ nope }}}}\n", prefix);
+            let Err(diag) = render(dir, &source) else {
+                panic!("must not render");
+            };
+            assert_eq!(diag.expression, "nope", "{prefix}");
+            let col = (diag.column - 1) as usize;
+            assert_eq!(&diag.source_line[col..col + 4], "nope", "{prefix}");
+            let _ = diag.format_rich("Pulumi.yaml");
+        }
+    }
+
+    fn pathdiff(from: &std::path::Path, to: &str) -> String {
+        // Enough `..` to climb out of `from`, then the absolute tail.
+        let ups = from.components().count();
+        let mut rel = "../".repeat(ups);
+        rel.push_str(to.trim_start_matches('/'));
+        rel
+    }
+}

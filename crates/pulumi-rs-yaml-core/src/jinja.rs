@@ -63,6 +63,11 @@ pub enum RenderErrorKind {
     JinjaUndefinedVariable,
     JinjaFilterError,
     JinjaTypeError,
+    /// An `{% include %}` or `{% import %}` the loader could not or would not
+    /// serve: the file is absent from both roots, or it was refused — by
+    /// extension, as an absolute path, or because it resolves outside the
+    /// sandbox. The message says which.
+    JinjaTemplateNotFound,
     YamlSyntax,
     YamlIndentation,
     YamlDuplicateKey,
@@ -73,12 +78,20 @@ pub enum RenderErrorKind {
 }
 
 /// Rich diagnostic from template pre-processing.
-/// `source_line` is a zero-copy slice of the original source.
+///
+/// `source_line` and `expression` are zero-copy slices of the original
+/// source. `column` and `end_column` are 1-based and bound the failing
+/// expression on that line — `expression` is exactly
+/// `source_line[column - 1..end_column - 1]` — or both are `0` and
+/// `expression` is empty when the engine could not say where on the line
+/// the fault lies.
 pub struct RenderDiagnostic<'src> {
     pub kind: RenderErrorKind,
     pub line: u32,
     pub column: u32,
+    pub end_column: u32,
     pub source_line: &'src str,
+    pub expression: &'src str,
     pub message: String,
     pub suggestion: Option<&'static str>,
 }
@@ -95,6 +108,8 @@ impl fmt::Debug for RenderDiagnostic<'_> {
             .field("kind", &self.kind)
             .field("line", &self.line)
             .field("column", &self.column)
+            .field("end_column", &self.end_column)
+            .field("expression", &self.expression)
             .field("message", &self.message)
             .field("suggestion", &self.suggestion)
             .finish()
@@ -103,18 +118,110 @@ impl fmt::Debug for RenderDiagnostic<'_> {
 
 impl RenderDiagnostic<'_> {
     /// Formats as a rich error message with context for stderr output.
+    ///
+    /// `file:line:column: error: message`, then the source line under a
+    /// gutter, then — when the column is known — a caret row under the
+    /// failing expression, then the suggestion. The caret is measured in
+    /// characters of the source line, not bytes, so it lands under the
+    /// token whatever precedes it.
     pub fn format_rich(&self, filename: &str) -> String {
         let mut out = format!(
             "{}:{}:{}: error: {}",
             filename, self.line, self.column, self.message
         );
         if !self.source_line.is_empty() {
-            out.push_str(&format!("\n  {} | {}", self.line, self.source_line));
+            let gutter = format!("  {} | ", self.line);
+            out.push('\n');
+            out.push_str(&gutter);
+            out.push_str(self.source_line);
+            if self.column > 0 {
+                let byte_col = (self.column - 1) as usize;
+                let pad = self
+                    .source_line
+                    .get(..byte_col)
+                    .map_or(byte_col, |prefix| prefix.chars().count());
+                let width = self.expression.chars().count().max(1);
+                out.push('\n');
+                out.push_str(&" ".repeat(gutter.len() - 2));
+                out.push_str("| ");
+                out.push_str(&" ".repeat(pad));
+                out.push_str(&"^".repeat(width));
+            }
         }
         if let Some(suggestion) = self.suggestion {
             out.push_str(&format!("\n  suggestion: {}", suggestion));
         }
         out
+    }
+}
+
+/// Why the template loader declined a name. Built on the failure path only,
+/// carried to the render error as the detail of a `BadInclude` — the one
+/// kind the VM returns verbatim, where a `TemplateNotFound` from a loader is
+/// folded into its own generic message and the reason would be lost.
+///
+/// A file that is simply absent is not a refusal: the loader answers
+/// `Ok(None)` for that, so `{% include "x" ignore missing %}` keeps its
+/// meaning, and the VM's `TemplateNotFound` names the file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IncludeRefusal {
+    /// The name's extension is not one the loader serves.
+    ExtensionNotAllowed { name: String },
+    /// Absolute paths are never served, wherever they point.
+    AbsolutePath { name: String },
+    /// A candidate exists but canonicalizes outside both roots.
+    EscapesSandbox { name: String },
+}
+
+impl IncludeRefusal {
+    /// The stable tag inside the detail text, which is what a classifier
+    /// reads back — one spelling here, one reader there.
+    pub const PREFIX: &'static str = "include refused";
+    pub const TAG_EXTENSION: &'static str = "[extension]";
+    pub const TAG_ABSOLUTE: &'static str = "[absolute]";
+    pub const TAG_ESCAPE: &'static str = "[escape]";
+
+    fn tag(&self) -> &'static str {
+        match self {
+            Self::ExtensionNotAllowed { .. } => Self::TAG_EXTENSION,
+            Self::AbsolutePath { .. } => Self::TAG_ABSOLUTE,
+            Self::EscapesSandbox { .. } => Self::TAG_ESCAPE,
+        }
+    }
+
+    /// The remedy for each refusal, static because there is one per cause.
+    pub fn suggestion_for(detail: &str) -> Option<&'static str> {
+        if !detail.starts_with(Self::PREFIX) {
+            return None;
+        }
+        if detail.contains(Self::TAG_EXTENSION) {
+            Some(
+                "an include must be a template, YAML, JSON or SQL file \
+                 (.j2 .jinja .jinja2 .yaml .yml .json .sql); anything else \
+                 is not served, whether or not it exists",
+            )
+        } else if detail.contains(Self::TAG_ABSOLUTE) {
+            Some("use a path relative to the stack directory or the render root")
+        } else if detail.contains(Self::TAG_ESCAPE) {
+            Some(
+                "the file resolves outside both the stack directory and the \
+                 render root, so it is not served; move it inside the tree \
+                 the render root contains",
+            )
+        } else {
+            None
+        }
+    }
+}
+
+impl fmt::Display for IncludeRefusal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            Self::ExtensionNotAllowed { name }
+            | Self::AbsolutePath { name }
+            | Self::EscapesSandbox { name } => name,
+        };
+        write!(f, "{} {}: {:?}", Self::PREFIX, self.tag(), name)
     }
 }
 
@@ -124,8 +231,8 @@ impl RenderDiagnostic<'_> {
 
 /// Classifies a minijinja error and returns a (kind, suggestion) pair.
 fn classify_jinja_error(err: &minijinja::Error) -> (RenderErrorKind, Option<&'static str>) {
-    let msg = err.to_string();
-    if msg.contains("readFile:") {
+    let detail = err.detail().unwrap_or("");
+    if detail.contains("readFile:") {
         return (
             RenderErrorKind::JinjaFilterError,
             Some("Check the file path. Relative paths are resolved from the project directory."),
@@ -135,6 +242,17 @@ fn classify_jinja_error(err: &minijinja::Error) -> (RenderErrorKind, Option<&'st
         minijinja::ErrorKind::UndefinedError => (
             RenderErrorKind::JinjaUndefinedVariable,
             Some("Check variable name. Available context: config.*, pulumi_*, env.*"),
+        ),
+        minijinja::ErrorKind::TemplateNotFound => (
+            RenderErrorKind::JinjaTemplateNotFound,
+            Some(
+                "the include was looked for relative to the stack directory and \
+                 the render root; check the path, and that the file is in the tree",
+            ),
+        ),
+        minijinja::ErrorKind::BadInclude if detail.starts_with(IncludeRefusal::PREFIX) => (
+            RenderErrorKind::JinjaTemplateNotFound,
+            IncludeRefusal::suggestion_for(detail),
         ),
         minijinja::ErrorKind::SyntaxError => (
             RenderErrorKind::JinjaSyntax,
@@ -568,6 +686,26 @@ impl TemplatePreprocessor for JinjaPreprocessor<'_> {
         source: &'src str,
         filename: &str,
     ) -> Result<Cow<'src, str>, RenderDiagnostic<'src>> {
+        self.render(source, filename)
+    }
+}
+
+impl JinjaPreprocessor<'_> {
+    /// The render itself, with the diagnostic's lifetime tied to `source`
+    /// alone.
+    ///
+    /// The trait spells its error as `Err<'src> where Self: 'src`, which
+    /// binds a diagnostic to the preprocessor's context as well as to the
+    /// source. A caller that builds its context on the stack — the language
+    /// binding does — could then never hand the diagnostic out, and the only
+    /// way round would be to copy the source into it. This method has no
+    /// such bound: what comes back borrows `source` and nothing else, so the
+    /// trait delegates here rather than the other way round.
+    pub fn render<'src>(
+        &self,
+        source: &'src str,
+        filename: &str,
+    ) -> Result<Cow<'src, str>, RenderDiagnostic<'src>> {
         // Zero-copy fast path: no Jinja syntax → return borrowed reference
         if !has_jinja_syntax(source) {
             return Ok(Cow::Borrowed(source));
@@ -603,17 +741,18 @@ impl TemplatePreprocessor for JinjaPreprocessor<'_> {
             self.context.root_directory,
         );
 
-        env.add_template(filename, effective_source.as_ref())
-            .map_err(|e| build_render_diagnostic(source, &e))?;
+        let compiled: &str = effective_source.as_ref();
+        env.add_template(filename, compiled)
+            .map_err(|e| build_render_diagnostic(source, compiled, &e))?;
 
         let tmpl = env
             .get_template(filename)
-            .map_err(|e| build_render_diagnostic(source, &e))?;
+            .map_err(|e| build_render_diagnostic(source, compiled, &e))?;
 
         let mj_ctx = build_minijinja_context(self.context);
         let rendered = tmpl
             .render(&mj_ctx)
-            .map_err(|e| build_render_diagnostic(source, &e))?;
+            .map_err(|e| build_render_diagnostic(source, compiled, &e))?;
 
         // Put provider-templated blocks back before readFile markers are
         // resolved, so a restored block cannot be mistaken for one.
@@ -697,7 +836,7 @@ pub fn validate_jinja_syntax<'src>(
     // Use lenient undefined for syntax-only validation (we don't have context yet)
     env.set_undefined_behavior(minijinja::UndefinedBehavior::Lenient);
     env.add_template(filename, source)
-        .map_err(|e| build_render_diagnostic(source, &e))?;
+        .map_err(|e| build_render_diagnostic(source, source, &e))?;
     Ok(())
 }
 
@@ -717,10 +856,12 @@ fn scope_diagnostic<'src>(
         kind: RenderErrorKind::ProviderScope,
         line,
         column: 0,
+        end_column: 0,
         source_line: source
             .lines()
             .nth(line.saturating_sub(1) as usize)
             .unwrap_or(""),
+        expression: "",
         message: err.to_string(),
         suggestion: Some(
             "provider-templated block scalars are left unrendered; \
@@ -730,8 +871,21 @@ fn scope_diagnostic<'src>(
 }
 
 /// Converts a minijinja::Error into a RenderDiagnostic with zero-copy source reference.
+///
+/// `compiled` is the text minijinja actually compiled — `source` itself on
+/// the common path, or the passthrough-escaped copy of it — because the
+/// error's byte range indexes that text, not the original. The failing
+/// expression is located in `compiled`, then verified against the same line
+/// of `source` before it is trusted: only when the bytes agree does the
+/// diagnostic carry a column and an expression, and both then borrow from
+/// `source`. When they do not — or the engine attached no range — the column
+/// is `0` and the expression empty, which is what every caller read before.
+///
+/// The message is the fault alone: minijinja's `Display` appends
+/// `(in <name>:<line>)`, which repeats the location the caller already has.
 fn build_render_diagnostic<'src>(
     source: &'src str,
+    compiled: &str,
     err: &minijinja::Error,
 ) -> RenderDiagnostic<'src> {
     let line = err.line().unwrap_or(0) as u32;
@@ -740,14 +894,59 @@ fn build_render_diagnostic<'src>(
         .nth(line.saturating_sub(1) as usize)
         .unwrap_or("");
     let (kind, suggestion) = classify_jinja_error(err);
+    let (column, end_column, expression) = locate_expression(source_line, compiled, err);
+    let message = match err.detail() {
+        Some(detail) => detail.to_string(),
+        None => err.kind().to_string(),
+    };
 
     RenderDiagnostic {
         kind,
         line,
-        column: 0,
+        column,
+        end_column,
         source_line,
-        message: err.to_string(),
+        expression,
+        message,
         suggestion,
+    }
+}
+
+/// The failing expression on `source_line`, as `(column, end_column, slice)`,
+/// 1-based; `(0, 0, "")` when it cannot be established.
+///
+/// Every index is checked: the range must lie inside `compiled` on character
+/// boundaries, its line must not run past the range, and the bytes it names
+/// must be the bytes found at the same offset of `source_line`. No slice is
+/// taken unchecked, so a hostile or mismatched input degrades to "no column"
+/// rather than to a panic.
+fn locate_expression<'src>(
+    source_line: &'src str,
+    compiled: &str,
+    err: &minijinja::Error,
+) -> (u32, u32, &'src str) {
+    let Some(range) = err.range() else {
+        return (0, 0, "");
+    };
+    if range.start >= range.end
+        || range.end > compiled.len()
+        || !compiled.is_char_boundary(range.start)
+        || !compiled.is_char_boundary(range.end)
+    {
+        return (0, 0, "");
+    }
+    let line_start = compiled[..range.start].rfind('\n').map_or(0, |i| i + 1);
+    let col = range.start - line_start;
+    let Some(expr) = compiled.get(range.start..range.end) else {
+        return (0, 0, "");
+    };
+    if expr.contains('\n') {
+        return (0, 0, "");
+    }
+    // Trust the location only where the compiled text and the source agree.
+    match source_line.get(col..col + expr.len()) {
+        Some(found) if found == expr => ((col + 1) as u32, (col + expr.len() + 1) as u32, found),
+        _ => (0, 0, ""),
     }
 }
 
@@ -779,7 +978,9 @@ pub fn validate_rendered_yaml<'src>(
             kind,
             line,
             column: col,
+            end_column: 0,
             source_line: rendered_line,
+            expression: "",
             message: format!(
                 "YAML parse error after Jinja rendering at {}:{}:{}: {}",
                 filename, line, col, e
@@ -953,11 +1154,25 @@ fn resolve_readfile_markers(rendered: &str, cache: &ReadFileCache) -> Option<Str
 /// anything that escapes the project directory. Shared by the Jinja
 /// `readFile()` function and static analyzers reading referenced files
 /// (e.g. `fn::readFile` SQL in the lineage exporter).
+/// Whether a name carries its own root — `/x` on every platform, and on
+/// Windows also `\x`, `C:\x`, `C:x` and `\\server\share\x`.
+///
+/// `Path::is_absolute` is the wrong test: on Windows it is false for `/x`,
+/// which `Path::join` would still treat as rooted and place outside the
+/// project directory. A name that supplies any prefix or root component is
+/// refused before a path is built from it.
+pub(crate) fn is_rooted(name: &str) -> bool {
+    matches!(
+        Path::new(name).components().next(),
+        Some(std::path::Component::Prefix(_) | std::path::Component::RootDir)
+    )
+}
+
 pub(crate) fn resolve_contained_path(
     project_dir: &str,
     path: &str,
 ) -> Result<std::path::PathBuf, String> {
-    if Path::new(path).is_absolute() {
+    if is_rooted(path) {
         return Err(format!(
             "readFile: absolute paths are not allowed: '{}'",
             path
@@ -1044,53 +1259,82 @@ fn register_template_loader(
         .filter_map(|d| Path::new(d).canonicalize().ok())
         .collect();
 
+    // What one candidate path turned out to be. `Escaped` is kept apart from
+    // `Missing` because they mean opposite things to the author: one file is
+    // not there, the other is there and will not be served.
+    enum Candidate {
+        Missing,
+        Escaped,
+        Content(String),
+    }
+
     // Read a candidate only if it canonicalizes to a path CONTAINED in an
     // allowed root. canonicalize() resolves `..` and symlinks first, so an
     // escaping traversal or a symlink pointing outside the tree is rejected.
-    let read_if_contained = move |candidate: PathBuf| -> Option<String> {
-        let canonical = candidate.canonicalize().ok()?;
-        let contained = allowed_roots.iter().any(|root| canonical.starts_with(root));
-        if !contained {
-            return None;
+    let resolve = move |candidate: PathBuf| -> Candidate {
+        let Ok(canonical) = candidate.canonicalize() else {
+            return Candidate::Missing;
+        };
+        if !allowed_roots.iter().any(|root| canonical.starts_with(root)) {
+            return Candidate::Escaped;
         }
-        std::fs::read_to_string(&canonical).ok()
+        match std::fs::read_to_string(&canonical) {
+            Ok(content) => Candidate::Content(content),
+            Err(_) => Candidate::Missing,
+        }
     };
 
+    // A refusal crosses the render as the detail of a `BadInclude`: the VM
+    // returns that kind verbatim, where it folds a loader's `TemplateNotFound`
+    // into its own message and the reason would be lost. Built only when
+    // refusing — the success path allocates the file's contents and nothing
+    // else, as before.
+    fn refuse(reason: IncludeRefusal) -> minijinja::Error {
+        minijinja::Error::new(minijinja::ErrorKind::BadInclude, reason.to_string())
+    }
+
     env.set_loader(move |name: &str| {
-        // Only allow template-like extensions
-        let allowed_extensions = [".j2", ".jinja", ".jinja2", ".yaml", ".yml"];
+        // The extension list is not the security boundary — containment is —
+        // it is the set of text an include can sensibly inline: templates and
+        // YAML, and the schemas and queries a stack keeps beside itself.
+        let allowed_extensions = [".j2", ".jinja", ".jinja2", ".yaml", ".yml", ".json", ".sql"];
         if !allowed_extensions.iter().any(|ext| name.ends_with(ext)) {
-            return Ok(None);
+            return Err(refuse(IncludeRefusal::ExtensionNotAllowed {
+                name: name.to_string(),
+            }));
         }
 
-        // Reject absolute paths
-        if Path::new(name).is_absolute() {
-            return Ok(None);
+        if is_rooted(name) {
+            return Err(refuse(IncludeRefusal::AbsolutePath {
+                name: name.to_string(),
+            }));
         }
 
-        // Try relative to project_dir first (handles local and .. paths that
-        // stay inside the tree, e.g. '../environment.j2' at the repo root).
-        if let Some(content) = read_if_contained(Path::new(&base_dir).join(name)) {
-            return Ok(Some(content));
-        }
-
-        // Fall back to root_directory (shared templates at repo root).
-        if root_dir != base_dir {
-            if let Some(content) = read_if_contained(Path::new(&root_dir).join(name)) {
-                return Ok(Some(content));
-            }
-        }
-
-        // Also try the name stripped of leading ../ against root_directory —
-        // '../environment.j2' from a subdir resolving to the project root.
+        // Relative to project_dir first (handles local and .. paths that stay
+        // inside the tree, e.g. '../environment.j2' at the repo root), then the
+        // render root (shared templates), then the name stripped of leading
+        // ../ against the render root — '../environment.j2' from a subdir
+        // resolving to the project root.
         let stripped = name.trim_start_matches("../").trim_start_matches("..\\");
-        if stripped != name {
-            if let Some(content) = read_if_contained(Path::new(&root_dir).join(stripped)) {
-                return Ok(Some(content));
+        let candidates = [
+            Some(Path::new(&base_dir).join(name)),
+            (root_dir != base_dir).then(|| Path::new(&root_dir).join(name)),
+            (stripped != name).then(|| Path::new(&root_dir).join(stripped)),
+        ];
+        let mut escaped = false;
+        for candidate in candidates.into_iter().flatten() {
+            match resolve(candidate) {
+                Candidate::Content(content) => return Ok(Some(content)),
+                Candidate::Escaped => escaped = true,
+                Candidate::Missing => {}
             }
         }
-
-        Ok(None) // not found (or escaped containment) → minijinja errors
+        if escaped {
+            return Err(refuse(IncludeRefusal::EscapesSandbox {
+                name: name.to_string(),
+            }));
+        }
+        Ok(None) // genuinely absent: the VM names it, and `ignore missing` still applies
     });
 }
 
@@ -1420,7 +1664,9 @@ mod tests {
             kind: RenderErrorKind::JinjaSyntax,
             line: 5,
             column: 3,
+            end_column: 0,
             source_line: "{% bad %}",
+            expression: "",
             message: "syntax error".to_string(),
             suggestion: None,
         };
@@ -1436,7 +1682,9 @@ mod tests {
             kind: RenderErrorKind::JinjaUndefinedVariable,
             line: 2,
             column: 0,
+            end_column: 0,
             source_line: "name: {{ unknown }}",
+            expression: "",
             message: "undefined variable".to_string(),
             suggestion: Some("Check variable name"),
         };
@@ -1450,13 +1698,316 @@ mod tests {
             kind: RenderErrorKind::JinjaSyntax,
             line: 1,
             column: 0,
+            end_column: 0,
             source_line: "",
+            expression: "",
             message: "error".to_string(),
             suggestion: None,
         };
         let formatted = diag.format_rich("test.yaml");
         // Should not contain a source line section
         assert!(!formatted.contains(" | "));
+    }
+
+    #[test]
+    fn test_format_rich_caret_under_the_expression() {
+        let diag = RenderDiagnostic {
+            kind: RenderErrorKind::JinjaUndefinedVariable,
+            line: 24,
+            column: 21,
+            end_column: 28,
+            source_line: "  mhda_project: {{ mapping[key] }}",
+            expression: "mapping",
+            message: "undefined value".to_string(),
+            suggestion: None,
+        };
+        let formatted = diag.format_rich("Pulumi.yaml");
+        let lines: Vec<&str> = formatted.lines().collect();
+        assert_eq!(lines[0], "Pulumi.yaml:24:21: error: undefined value");
+        assert_eq!(
+            lines[1],
+            "  24 | \u{20}\u{20}mhda_project: {{ mapping[key] }}"
+        );
+        assert_eq!(lines[2], "     |                     ^^^^^^^");
+        let caret_at = lines[2].find('^').unwrap_or(0) - lines[2].find('|').unwrap_or(0) - 2;
+        assert_eq!(caret_at, 20, "the caret starts under column 21");
+    }
+
+    #[test]
+    fn test_format_rich_caret_is_measured_in_characters() {
+        let diag = RenderDiagnostic {
+            kind: RenderErrorKind::JinjaUndefinedVariable,
+            line: 1,
+            column: 15,
+            end_column: 19,
+            source_line: "日本語: {{ nope }}",
+            expression: "nope",
+            message: "undefined value".to_string(),
+            suggestion: None,
+        };
+        let formatted = diag.format_rich("t.yaml");
+        let caret_row = formatted.lines().nth(2).unwrap_or("");
+        // Three ideographs then ": {{ " — fourteen bytes, eight characters —
+        // so the caret sits at character 8, not at byte 14.
+        let visual = caret_row.find('^').unwrap_or(0) - caret_row.find('|').unwrap_or(0) - 2;
+        assert_eq!(visual, 8);
+    }
+
+    // ---- locating the expression ----
+
+    fn strict_ctx<'a>(
+        config: &'a HashMap<String, String>,
+        extra: &'a HashMap<String, String>,
+    ) -> JinjaContext<'a> {
+        JinjaContext {
+            project_name: "test",
+            stack_name: "dev",
+            cwd: "/tmp",
+            organization: "",
+            root_directory: "",
+            config,
+            project_dir: "",
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra,
+        }
+    }
+
+    fn fail<'s>(source: &'s str) -> RenderDiagnostic<'s> {
+        let config = HashMap::new();
+        let extra = HashMap::new();
+        let ctx = strict_ctx(&config, &extra);
+        let Err(diag) = JinjaPreprocessor::new(&ctx).render(source, "t.yaml") else {
+            panic!("the fixture must fail to render")
+        };
+        diag
+    }
+
+    #[test]
+    fn an_undefined_name_is_located_to_the_character() {
+        let diag = fail("a: 1\nname: {{ unknown_var }}\n");
+        assert_eq!(diag.kind, RenderErrorKind::JinjaUndefinedVariable);
+        assert_eq!((diag.line, diag.column, diag.end_column), (2, 10, 21));
+        assert_eq!(diag.expression, "unknown_var");
+        assert_eq!(diag.source_line, "name: {{ unknown_var }}");
+        assert_eq!(diag.message, "undefined value", "no location suffix");
+    }
+
+    #[test]
+    fn a_failed_subscript_names_the_whole_lookup() {
+        let diag = fail("x: {{ a.b[c] }}\n");
+        assert_eq!(diag.kind, RenderErrorKind::JinjaUndefinedVariable);
+        assert!(diag.column > 0);
+        let col = (diag.column - 1) as usize;
+        assert_eq!(
+            &diag.source_line[col..col + diag.expression.len()],
+            diag.expression
+        );
+    }
+
+    #[test]
+    fn a_filter_error_is_located_too() {
+        let diag = fail("x: {{ 1 | no_such_filter }}\n");
+        assert_eq!(diag.line, 1);
+        assert!(diag.message.contains("no_such_filter"));
+    }
+
+    #[test]
+    fn the_first_and_last_lines_locate_alike() {
+        let first = fail("{{ nope }}\nb: 2\n");
+        assert_eq!((first.line, first.column), (1, 4));
+        assert_eq!(first.expression, "nope");
+        let last = fail("a: 1\nb: 2\n{{ nope }}");
+        assert_eq!((last.line, last.column), (3, 4));
+        assert_eq!(last.expression, "nope");
+    }
+
+    #[test]
+    fn a_multi_byte_prefix_keeps_the_column_a_byte_offset_into_the_line() {
+        let diag = fail("é: {{ nope }}\n");
+        let col = (diag.column - 1) as usize;
+        assert_eq!(&diag.source_line[col..col + 4], "nope");
+        assert_eq!(diag.column, 8, "é is two bytes; the column indexes bytes");
+    }
+
+    #[test]
+    fn the_expression_and_the_line_borrow_the_source() {
+        let source = String::from("a: 1\nname: {{ unknown_var }}\n");
+        let diag = fail(&source);
+        let start = source.as_ptr() as usize;
+        let end = start + source.len();
+        assert!((start..end).contains(&(diag.source_line.as_ptr() as usize)));
+        assert!((start..end).contains(&(diag.expression.as_ptr() as usize)));
+    }
+
+    #[test]
+    fn a_range_the_source_does_not_agree_with_degrades_to_no_column() {
+        // The compiled text is not the source: passthrough escaping rewrote
+        // it, so the range indexes different bytes. The line still names the
+        // fault; the column and expression must not lie about where.
+        let source = "a: 1\nb: {{ nope }}\n";
+        let rewritten = "a: 1\nb: {% raw %}{{ ref('m') }}{% endraw %}{{ nope }}\n";
+        let mut env = minijinja::Environment::new();
+        env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
+        env.add_template("t", rewritten).expect("compiles");
+        let err = env
+            .get_template("t")
+            .expect("registered")
+            .render(minijinja::context! {})
+            .expect_err("nope is undefined");
+        let diag = build_render_diagnostic(source, rewritten, &err);
+        assert_eq!(diag.line, 2);
+        assert_eq!((diag.column, diag.end_column), (0, 0));
+        assert_eq!(diag.expression, "");
+        assert_eq!(diag.source_line, "b: {{ nope }}");
+    }
+
+    #[test]
+    fn an_error_with_no_range_has_no_column() {
+        let err = minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, "x");
+        let diag = build_render_diagnostic("a: 1\n", "a: 1\n", &err);
+        assert_eq!((diag.line, diag.column, diag.end_column), (0, 0, 0));
+        assert_eq!(diag.expression, "");
+        assert_eq!(diag.message, "x");
+    }
+
+    #[test]
+    fn a_message_without_detail_is_the_kind() {
+        let err = minijinja::Error::from(minijinja::ErrorKind::UndefinedError);
+        let diag = build_render_diagnostic("", "", &err);
+        assert_eq!(diag.message, "undefined value");
+    }
+
+    // ---- includes ----
+
+    fn render_in(dir: &std::path::Path, source: &str) -> Result<String, String> {
+        let d = dir.to_str().expect("utf-8 path").to_string();
+        let config = HashMap::new();
+        let extra = HashMap::new();
+        let ctx = JinjaContext {
+            project_dir: &d,
+            root_directory: &d,
+            cwd: &d,
+            ..strict_ctx(&config, &extra)
+        };
+        JinjaPreprocessor::new(&ctx)
+            .render(source, "Pulumi.yaml")
+            .map(|r| r.into_owned())
+            .map_err(|e| format!("{:?}|{}", e.kind, e.message))
+    }
+
+    #[test]
+    fn json_and_sql_includes_are_served() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(dir.path().join("schemas")).expect("mkdir");
+        std::fs::write(dir.path().join("schemas/t.json"), "[1]").expect("write");
+        std::fs::write(dir.path().join("q.sql"), "SELECT 1").expect("write");
+        assert_eq!(
+            render_in(dir.path(), "a: '{% include \"schemas/t.json\" %}'\n"),
+            Ok("a: '[1]'".to_string())
+        );
+        assert_eq!(
+            render_in(dir.path(), "q: '{% include \"q.sql\" %}'\n"),
+            Ok("q: 'SELECT 1'".to_string())
+        );
+    }
+
+    #[test]
+    fn each_refusal_is_reported_distinctly() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("n.txt"), "x").expect("write");
+        let ext = render_in(dir.path(), "a: '{% include \"n.txt\" %}'\n").unwrap_err();
+        assert!(
+            ext.starts_with("JinjaTemplateNotFound|include refused [extension]"),
+            "{ext}"
+        );
+        let abs = render_in(dir.path(), "a: '{% include \"/etc/hosts.yaml\" %}'\n").unwrap_err();
+        assert!(
+            abs.starts_with("JinjaTemplateNotFound|include refused [absolute]"),
+            "{abs}"
+        );
+        let missing = render_in(dir.path(), "a: '{% include \"gone.yaml\" %}'\n").unwrap_err();
+        assert!(missing.starts_with("JinjaTemplateNotFound|"), "{missing}");
+        assert!(
+            missing.contains("gone.yaml") && !missing.contains("refused"),
+            "{missing}"
+        );
+    }
+
+    #[test]
+    fn a_rooted_name_is_refused_on_every_platform() {
+        assert!(is_rooted("/etc/hosts.yaml"));
+        assert!(!is_rooted("a/b.yaml"));
+        assert!(!is_rooted("../environment.j2"));
+        assert!(!is_rooted(""));
+        #[cfg(windows)]
+        {
+            assert!(is_rooted("\\x.yaml"));
+            assert!(is_rooted("C:\\x.yaml"));
+            assert!(is_rooted("C:x.yaml"));
+            assert!(is_rooted("\\\\server\\share\\x.yaml"));
+        }
+        let dir = tempfile::tempdir().expect("tempdir");
+        let abs = render_in(dir.path(), "a: '{% include \"/etc/hosts.yaml\" %}'\n").unwrap_err();
+        assert!(abs.contains("[absolute]"), "{abs}");
+        assert_eq!(
+            resolve_contained_path(dir.path().to_str().expect("utf-8"), "/etc/hosts").unwrap_err(),
+            "readFile: absolute paths are not allowed: '/etc/hosts'"
+        );
+    }
+
+    #[test]
+    fn ignore_missing_still_ignores_an_absent_file_but_never_a_refusal() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert_eq!(
+            render_in(
+                dir.path(),
+                "a: '{% include \"gone.yaml\" ignore missing %}'\n"
+            ),
+            Ok("a: ''".to_string())
+        );
+        let refused = render_in(
+            dir.path(),
+            "a: '{% include \"/abs.yaml\" ignore missing %}'\n",
+        );
+        assert!(refused.is_err(), "a refusal is not something to ignore");
+    }
+
+    #[test]
+    fn the_refusal_reads_back_its_own_suggestion() {
+        for reason in [
+            IncludeRefusal::ExtensionNotAllowed {
+                name: "a.txt".into(),
+            },
+            IncludeRefusal::AbsolutePath {
+                name: "/a.yaml".into(),
+            },
+            IncludeRefusal::EscapesSandbox {
+                name: "../a.yaml".into(),
+            },
+        ] {
+            let text = reason.to_string();
+            assert!(text.starts_with(IncludeRefusal::PREFIX));
+            assert!(IncludeRefusal::suggestion_for(&text).is_some(), "{text}");
+        }
+        assert!(IncludeRefusal::suggestion_for("something else").is_none());
+    }
+
+    #[test]
+    fn the_trait_and_the_inherent_render_are_one_body() {
+        let config = HashMap::new();
+        let extra = HashMap::new();
+        let ctx = strict_ctx(&config, &extra);
+        let pre = JinjaPreprocessor::new(&ctx);
+        for source in ["a: {{ pulumi_project }}\n", "a: {{ nope }}\n", "plain: 1\n"] {
+            let via_trait = pre
+                .preprocess(source, "t.yaml")
+                .map_err(|e| e.format_rich("t.yaml"));
+            let inherent = pre
+                .render(source, "t.yaml")
+                .map_err(|e| e.format_rich("t.yaml"));
+            assert_eq!(via_trait, inherent, "{source}");
+        }
     }
 
     // ---- Display impl ----
@@ -1467,7 +2018,9 @@ mod tests {
             kind: RenderErrorKind::JinjaSyntax,
             line: 1,
             column: 0,
+            end_column: 0,
             source_line: "",
+            expression: "",
             message: "test message".to_string(),
             suggestion: None,
         };
