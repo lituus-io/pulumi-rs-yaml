@@ -3,6 +3,101 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.29
+
+### A template that will not render says where, and why
+
+A render that failed reported its line and a column of `0`, a message that
+ended by repeating the file and line it had just been given, and — for an
+include — a sentence that was not true. The diagnostic carried a copy of
+the source line and a suggestion; the column was hardcoded, the expression
+that failed was never named, and the loader answered every refusal with
+the same `None` it gave a file that was not there.
+
+The diagnostic is now located. `minijinja` attaches the byte range of the
+failing expression to every error it raises, whatever the debug setting;
+`build_render_diagnostic` reads it, finds the line it falls on in the text
+the engine compiled, and takes the expression as a slice. The slice is then
+checked against the same offset of the original source line, and only
+where the two agree does the diagnostic carry a column, an end column and
+an expression — both borrowed from the source, as the line already was.
+Where they disagree, or no range was attached, the column is `0` and the
+expression empty, which is what every caller read before. The message is
+the fault alone: the `(in <name>:<line>)` suffix `Display` appended is
+gone, because the caller already holds all three. `format_rich` prints the
+column, and a caret row under the expression, measured in characters so
+it lands where the eye does.
+
+### An include that is refused says it was refused
+
+The loader would not serve a name whose extension it did not know, an
+absolute path, or a file that resolved outside both roots — and for all
+three it returned `Ok(None)`, the answer for a file that does not exist.
+The render then said `tried to include non-existing template`, and the
+author went looking for a file that was sitting where they had put it.
+
+Three refusals are now three errors, each naming its cause, and each is
+distinct from absence. A loader cannot carry a reason inside a
+`TemplateNotFound`: the VM folds that kind into its own message. It returns
+verbatim any other kind, so a refusal travels as the detail of a
+`BadInclude` — `include refused [extension]: "notes.txt"`,
+`[absolute]`, `[escape]` — and the classifier reads the tag back into a
+`JinjaTemplateNotFound` with the remedy for that cause. A file that is
+simply absent still answers `Ok(None)`: the VM names it, and
+`{% include "x" ignore missing %}` keeps its meaning — for absence only.
+A refusal is not something `ignore missing` can hide; a path that escapes
+the sandbox is not a missing file.
+
+`.json` and `.sql` join the extensions the loader serves. The boundary was
+never the extension list; it is containment, unchanged: canonicalize, then
+`starts_with` on the two roots, so a traversal or a symlink out of the tree
+is refused as an escape and the file's contents never appear in the error.
+A schema or a query is exactly the text a stack keeps beside itself, and
+`readFile` — contained to the stack directory alone — could not reach a
+sibling directory's copy of it.
+
+### One body, two surfaces, no GIL
+
+`JinjaPreprocessor::render` is the render, with the diagnostic's lifetime
+tied to `source` alone; the trait method delegates to it. The trait spells
+its error as `Err<'src> where Self: 'src`, which also binds the diagnostic
+to the preprocessor's context — and a caller that builds that context on
+the stack could never hand the diagnostic out without copying the source
+into it. The binding does exactly that, so the bound is lifted at the one
+place it mattered.
+
+`preprocess_jinja_diag` answers in structure: `{"rendered": str}`, or
+`{"diagnostic": {kind, line, column, end_column, message, source_line,
+expression, suggestion}}` — the same facts `preprocess_jinja` folds into
+its error text, as fields, so a caller can place a caret rather than parse
+a sentence. Both entry points share `render_jinja`, and both release the
+GIL for the render: the context dictionary is read under it, everything
+after borrows, and a caller's other threads keep going while a template
+renders. `preprocess_jinja`'s signature is unchanged; its error text gains
+the column and the caret row and loses the redundant suffix.
+
+### Tests
+
+Nineteen new unit tests on the diagnostic (the caret in bytes and in
+characters; an undefined name, a failed subscript and a filter error
+located to the character on the first, last and a multi-byte line; the
+line and expression proven to borrow the source by pointer range; a range
+the source disagrees with, and an error with no range, both degrading to
+no column; a message with no detail; `.json` and `.sql` served; each
+refusal distinct; `ignore missing` still ignoring absence and never a
+refusal; the trait and the inherent render agreeing on every input).
+Seven new security tests (123 -> 130): an escaping `.json` refused and its
+contents absent from the error, an absolute include refused inside the
+root, a disallowed extension refused whether or not the file exists, a
+symlink out of both roots refused as an escape, a genuinely absent include
+not found by name, a fault on the last line of sixty-four mebibytes
+borrowing rather than copying, and multi-byte prefixes keeping the caret
+honest. `fuzz_jinja` gains a strict render with the location properties —
+no new target, so the matrix guard is unchanged at nineteen. One new
+bench, `jinja_preprocessor_render_fails_undefined`, pins the diagnostic's
+cost; the render benches are unchanged. Eight new Python tests for the
+structured surface and the string surface's new text.
+
 ## 0.5.28
 
 ### An id that belongs to the parent
