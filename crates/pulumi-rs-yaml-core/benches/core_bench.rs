@@ -343,6 +343,48 @@ fn bench_jinja_render_fails(c: &mut Criterion) {
     });
 }
 
+fn bench_jinja_include_at_cap(c: &mut Criterion) {
+    // The largest include the loader serves: one `stat`, one read, one
+    // in-place UTF-8 check. A copy creeping into that path would show here.
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        dir.path().join("cap.txt"),
+        vec![b'x'; pulumi_rs_yaml_core::jinja::MAX_INCLUDE_BYTES as usize],
+    )
+    .expect("write");
+    let root: &'static str = Box::leak(
+        dir.path()
+            .to_str()
+            .expect("utf-8")
+            .to_string()
+            .into_boxed_str(),
+    );
+    let config = HashMap::new();
+    let ctx = JinjaContext {
+        project_name: "bench",
+        stack_name: "dev",
+        cwd: root,
+        organization: "org",
+        root_directory: root,
+        config: &config,
+        project_dir: root,
+        undefined: UndefinedMode::Strict,
+        provider_templated_packages: &[],
+        extra: &HashMap::new(),
+    };
+    let source = "a: '{% include \"cap.txt\" %}'\n";
+    c.bench_function("jinja_preprocessor_include_at_cap", |b| {
+        let preprocessor = JinjaPreprocessor::new(&ctx);
+        b.iter(|| {
+            let out = preprocessor
+                .preprocess(black_box(source), "Pulumi.yaml")
+                .unwrap();
+            black_box(out.len());
+        })
+    });
+    drop(dir);
+}
+
 fn bench_validate_rendered_yaml(c: &mut Criterion) {
     let yaml = r#"name: test
 runtime: yaml
@@ -839,6 +881,7 @@ criterion_group!(
     bench_jinja_fast_path,
     bench_jinja_rendering,
     bench_jinja_render_fails,
+    bench_jinja_include_at_cap,
     bench_validate_rendered_yaml,
     bench_strip_jinja_blocks_50_resources,
     bench_has_jinja_block_syntax,

@@ -2289,6 +2289,7 @@ mod render_diagnostic_security {
 
     use pulumi_rs_yaml_core::jinja::{
         IncludeRefusal, JinjaContext, JinjaPreprocessor, RenderErrorKind, UndefinedMode,
+        MAX_INCLUDE_BYTES,
     };
 
     fn ctx<'a>(
@@ -2369,21 +2370,91 @@ mod render_diagnostic_security {
     }
 
     #[test]
-    fn a_disallowed_extension_is_refused_whether_or_not_it_exists() {
+    fn a_binary_include_is_refused_and_its_bytes_never_appear_in_the_error() {
         let project = tempfile::tempdir().expect("project");
         let dir = project.path().to_str().expect("utf-8 path");
-        std::fs::write(project.path().join("notes.txt"), "text").expect("write");
-        for name in ["notes.txt", "missing.txt"] {
-            let source = format!("a: '{{% include \"{}\" %}}'\n", name);
+        std::fs::write(
+            project.path().join("logo.png"),
+            [0x89, b'P', b'N', b'G', 0xff, 0xfe],
+        )
+        .expect("write");
+        let Err(diag) = render(dir, "a: '{% include \"logo.png\" %}'\n") else {
+            panic!("a binary file must not render");
+        };
+        assert_eq!(diag.kind, RenderErrorKind::JinjaTemplateNotFound);
+        assert_eq!(diag.message, "include refused [binary]: \"logo.png\"");
+    }
+
+    #[test]
+    fn a_file_over_the_cap_is_refused_by_name() {
+        let project = tempfile::tempdir().expect("project");
+        let dir = project.path().to_str().expect("utf-8 path");
+        std::fs::write(
+            project.path().join("big.txt"),
+            vec![b'S'; MAX_INCLUDE_BYTES as usize + 1],
+        )
+        .expect("write");
+        let Err(diag) = render(dir, "a: '{% include \"big.txt\" %}'\n") else {
+            panic!("an oversized file must not render");
+        };
+        assert_eq!(diag.message, "include refused [too large]: \"big.txt\"");
+        assert!(
+            diag.suggestion.is_some_and(|s| s.contains("1 MiB")),
+            "{:?}",
+            diag.suggestion
+        );
+    }
+
+    #[test]
+    fn a_refused_include_is_never_ignored_as_missing() {
+        let project = tempfile::tempdir().expect("project");
+        let dir = project.path().to_str().expect("utf-8 path");
+        std::fs::write(project.path().join("logo.png"), [0xff, 0xfe]).expect("write");
+        std::fs::write(
+            project.path().join("big.txt"),
+            vec![b'S'; MAX_INCLUDE_BYTES as usize + 1],
+        )
+        .expect("write");
+        for name in ["logo.png", "big.txt", "/etc/hosts"] {
+            let source = format!("a: '{{% include \"{name}\" ignore missing %}}'\n");
             let Err(diag) = render(dir, &source) else {
-                panic!("{name} must not render");
+                panic!("{name}: a refusal is not something to ignore");
             };
             assert!(
-                diag.message.contains(IncludeRefusal::TAG_EXTENSION),
+                diag.message.starts_with(IncludeRefusal::PREFIX),
                 "{}",
                 diag.message
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_extensionless_escape_is_still_an_escape() {
+        // Removing the extension gate widened what is served, never where
+        // from: a VERSION that resolves outside both roots is refused as an
+        // escape, and its contents stay out of the message.
+        let outside = tempfile::tempdir().expect("outside");
+        std::fs::write(outside.path().join("VERSION"), "9.9.9").expect("write");
+        let project = tempfile::tempdir().expect("project");
+        std::os::unix::fs::symlink(
+            outside.path().join("VERSION"),
+            project.path().join("VERSION"),
+        )
+        .expect("symlink");
+        let dir = project.path().to_str().expect("utf-8 path");
+        let Err(diag) = render(dir, "v: '{% include \"VERSION\" %}'\n") else {
+            panic!("an escaping VERSION must not render");
+        };
+        assert!(
+            diag.message.contains(IncludeRefusal::TAG_ESCAPE),
+            "{}",
+            diag.message
+        );
+        assert!(
+            !diag.message.contains("9.9.9"),
+            "the target's contents must not leak"
+        );
     }
 
     #[cfg(unix)]

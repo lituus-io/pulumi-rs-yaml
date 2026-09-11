@@ -169,14 +169,64 @@ class TestPreprocessJinjaDiag:
         assert d["source_line"][col : col + len(d["expression"])] == d["expression"]
 
     def test_a_refused_include_says_why(self, tmp_path):
-        (tmp_path / "notes.txt").write_text("hello")
+        (tmp_path / "logo.png").write_bytes(b"\x89PNG\xff\xfe")
         ctx = {**self.CTX, "project_dir": str(tmp_path), "root_directory": str(tmp_path)}
         d = preprocess_jinja_diag(
-            "a: '{% include \"notes.txt\" %}'\n", "t.yaml", ctx)["diagnostic"]
+            "a: '{% include \"logo.png\" %}'\n", "t.yaml", ctx)["diagnostic"]
         assert d["kind"] == "jinja_template_not_found"
-        assert "[extension]" in d["message"]
-        assert "hello" not in d["message"]
+        assert d["message"] == 'include refused [binary]: "logo.png"'
+        assert "PNG" not in d["suggestion"]
         assert d["suggestion"]
+
+    def test_an_extensionless_text_file_is_served(self, tmp_path):
+        (tmp_path / "VERSION").write_text("1.2.3\n")
+        ctx = {**self.CTX, "project_dir": str(tmp_path), "root_directory": str(tmp_path)}
+        out = preprocess_jinja_diag(
+            "{% set v %}{% include 'VERSION' %}{% endset -%}\ntag: {{ v | trim }}\n",
+            "t.yaml", ctx)
+        assert out["rendered"] == "tag: 1.2.3"
+
+    def test_an_oversized_include_is_refused_by_name(self, tmp_path):
+        (tmp_path / "big.txt").write_bytes(b"x" * (1024 * 1024 + 1))
+        ctx = {**self.CTX, "project_dir": str(tmp_path), "root_directory": str(tmp_path)}
+        d = preprocess_jinja_diag(
+            "a: '{% include \"big.txt\" %}'\n", "t.yaml", ctx)["diagnostic"]
+        assert d["message"] == 'include refused [too large]: "big.txt"'
+        assert "xxxx" not in d["suggestion"]
+
+    def test_a_render_releases_the_gil(self):
+        """Another thread keeps running while a render is in progress —
+        the observable form of the GIL being released around it."""
+        import threading
+        import time
+
+        counter = 0
+        stop = threading.Event()
+
+        def spin():
+            nonlocal counter
+            while not stop.is_set():
+                counter += 1
+
+        # A render big enough to dominate the call.
+        # `range` is capped per call, so the work is two nested loops.
+        source = ("{% for i in range(1000) %}{% for j in range(200) %}"
+                  "k{{ i }}_{{ j }}: {{ i * j }}\n{% endfor %}{% endfor %}")
+        worker = threading.Thread(target=spin, daemon=True)
+        worker.start()
+        try:
+            time.sleep(0.05)
+            before = counter
+            started = time.perf_counter()
+            out = preprocess_jinja_diag(source, "t.yaml", self.CTX)
+            elapsed = time.perf_counter() - started
+            during = counter - before
+        finally:
+            stop.set()
+            worker.join(timeout=5)
+        assert "rendered" in out
+        assert elapsed > 0.01, "the render was too fast to prove anything"
+        assert during > 0, "the counter did not advance while the template rendered: the GIL was held"
 
     def test_a_json_include_now_renders(self, tmp_path):
         (tmp_path / "schemas").mkdir()

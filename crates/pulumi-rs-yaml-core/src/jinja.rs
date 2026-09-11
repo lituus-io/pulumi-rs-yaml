@@ -165,27 +165,37 @@ impl RenderDiagnostic<'_> {
 /// meaning, and the VM's `TemplateNotFound` names the file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IncludeRefusal {
-    /// The name's extension is not one the loader serves.
-    ExtensionNotAllowed { name: String },
     /// Absolute paths are never served, wherever they point.
     AbsolutePath { name: String },
     /// A candidate exists but canonicalizes outside both roots.
     EscapesSandbox { name: String },
+    /// The file is inside the tree but is not UTF-8 text.
+    NotText { name: String },
+    /// The file is inside the tree but larger than [`MAX_INCLUDE_BYTES`].
+    TooLarge { name: String },
 }
+
+/// The most an include inlines: the same bound the SQL lineage reader puts
+/// on one statement, because both are "the text a stack keeps beside
+/// itself". Decided from the file's size before it is read, so an oversized
+/// file costs one `stat` and no allocation.
+pub const MAX_INCLUDE_BYTES: u64 = 1024 * 1024;
 
 impl IncludeRefusal {
     /// The stable tag inside the detail text, which is what a classifier
     /// reads back — one spelling here, one reader there.
     pub const PREFIX: &'static str = "include refused";
-    pub const TAG_EXTENSION: &'static str = "[extension]";
     pub const TAG_ABSOLUTE: &'static str = "[absolute]";
     pub const TAG_ESCAPE: &'static str = "[escape]";
+    pub const TAG_BINARY: &'static str = "[binary]";
+    pub const TAG_TOO_LARGE: &'static str = "[too large]";
 
     fn tag(&self) -> &'static str {
         match self {
-            Self::ExtensionNotAllowed { .. } => Self::TAG_EXTENSION,
             Self::AbsolutePath { .. } => Self::TAG_ABSOLUTE,
             Self::EscapesSandbox { .. } => Self::TAG_ESCAPE,
+            Self::NotText { .. } => Self::TAG_BINARY,
+            Self::TooLarge { .. } => Self::TAG_TOO_LARGE,
         }
     }
 
@@ -194,19 +204,24 @@ impl IncludeRefusal {
         if !detail.starts_with(Self::PREFIX) {
             return None;
         }
-        if detail.contains(Self::TAG_EXTENSION) {
-            Some(
-                "an include must be a template, YAML, JSON or SQL file \
-                 (.j2 .jinja .jinja2 .yaml .yml .json .sql); anything else \
-                 is not served, whether or not it exists",
-            )
-        } else if detail.contains(Self::TAG_ABSOLUTE) {
+        if detail.contains(Self::TAG_ABSOLUTE) {
             Some("use a path relative to the stack directory or the render root")
         } else if detail.contains(Self::TAG_ESCAPE) {
             Some(
                 "the file resolves outside both the stack directory and the \
                  render root, so it is not served; move it inside the tree \
                  the render root contains",
+            )
+        } else if detail.contains(Self::TAG_BINARY) {
+            Some(
+                "an include inlines text, and this file is not UTF-8; keep the \
+                 value as text, or read the file at deploy time with fn::readFile",
+            )
+        } else if detail.contains(Self::TAG_TOO_LARGE) {
+            Some(
+                "the file is over 1 MiB, the most an include inlines; keep large \
+                 data beside the stack and read it at deploy time with \
+                 fn::readFile, or split it",
             )
         } else {
             None
@@ -217,9 +232,10 @@ impl IncludeRefusal {
 impl fmt::Display for IncludeRefusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let name = match self {
-            Self::ExtensionNotAllowed { name }
-            | Self::AbsolutePath { name }
-            | Self::EscapesSandbox { name } => name,
+            Self::AbsolutePath { name }
+            | Self::EscapesSandbox { name }
+            | Self::NotText { name }
+            | Self::TooLarge { name } => name,
         };
         write!(f, "{} {}: {:?}", Self::PREFIX, self.tag(), name)
     }
@@ -1236,8 +1252,10 @@ fn register_readfile_function(
 /// found relative to `project_dir`, it is tried relative to `root_directory`.
 /// This supports the common pattern where shared templates live at the repo root.
 ///
-/// Only `.j2`, `.jinja`, `.jinja2`, `.yaml`, and `.yml` extensions are loaded
-/// to prevent arbitrary file reads. Absolute paths are rejected.
+/// Containment is the boundary: a candidate is served only when its own
+/// canonicalized path lies inside the stack directory or the render root.
+/// Within that tree an include is any UTF-8 text file up to
+/// [`MAX_INCLUDE_BYTES`]; a rooted name is refused before a path is built.
 fn register_template_loader(
     env: &mut minijinja::Environment<'_>,
     project_dir: &str,
@@ -1265,6 +1283,8 @@ fn register_template_loader(
     enum Candidate {
         Missing,
         Escaped,
+        NotText,
+        TooLarge,
         Content(String),
     }
 
@@ -1278,9 +1298,25 @@ fn register_template_loader(
         if !allowed_roots.iter().any(|root| canonical.starts_with(root)) {
             return Candidate::Escaped;
         }
-        match std::fs::read_to_string(&canonical) {
+        // The size is decided from the metadata, before any read, so an
+        // oversized file costs one `stat` and never an allocation; a
+        // directory is as absent to an include as it always was.
+        let Ok(meta) = std::fs::metadata(&canonical) else {
+            return Candidate::Missing;
+        };
+        if !meta.is_file() {
+            return Candidate::Missing;
+        }
+        if meta.len() > MAX_INCLUDE_BYTES {
+            return Candidate::TooLarge;
+        }
+        let Ok(bytes) = std::fs::read(&canonical) else {
+            return Candidate::Missing;
+        };
+        // Validated in place: one allocation, the same as `read_to_string`.
+        match String::from_utf8(bytes) {
             Ok(content) => Candidate::Content(content),
-            Err(_) => Candidate::Missing,
+            Err(_) => Candidate::NotText,
         }
     };
 
@@ -1294,16 +1330,6 @@ fn register_template_loader(
     }
 
     env.set_loader(move |name: &str| {
-        // The extension list is not the security boundary — containment is —
-        // it is the set of text an include can sensibly inline: templates and
-        // YAML, and the schemas and queries a stack keeps beside itself.
-        let allowed_extensions = [".j2", ".jinja", ".jinja2", ".yaml", ".yml", ".json", ".sql"];
-        if !allowed_extensions.iter().any(|ext| name.ends_with(ext)) {
-            return Err(refuse(IncludeRefusal::ExtensionNotAllowed {
-                name: name.to_string(),
-            }));
-        }
-
         if is_rooted(name) {
             return Err(refuse(IncludeRefusal::AbsolutePath {
                 name: name.to_string(),
@@ -1321,10 +1347,23 @@ fn register_template_loader(
             (root_dir != base_dir).then(|| Path::new(&root_dir).join(name)),
             (stripped != name).then(|| Path::new(&root_dir).join(stripped)),
         ];
+        // A file that exists where the author named it answers at once,
+        // served or refused: falling through to the render root would serve
+        // a different file under the same name, silently.
         let mut escaped = false;
         for candidate in candidates.into_iter().flatten() {
             match resolve(candidate) {
                 Candidate::Content(content) => return Ok(Some(content)),
+                Candidate::NotText => {
+                    return Err(refuse(IncludeRefusal::NotText {
+                        name: name.to_string(),
+                    }))
+                }
+                Candidate::TooLarge => {
+                    return Err(refuse(IncludeRefusal::TooLarge {
+                        name: name.to_string(),
+                    }))
+                }
                 Candidate::Escaped => escaped = true,
                 Candidate::Missing => {}
             }
@@ -1880,14 +1919,21 @@ mod tests {
 
     // ---- includes ----
 
-    fn render_in(dir: &std::path::Path, source: &str) -> Result<String, String> {
-        let d = dir.to_str().expect("utf-8 path").to_string();
+    /// A render whose stack directory and render root may differ — the
+    /// shape every nested stack has.
+    fn render_in_roots(
+        project: &std::path::Path,
+        root: &std::path::Path,
+        source: &str,
+    ) -> Result<String, String> {
+        let p = project.to_str().expect("utf-8 path").to_string();
+        let r = root.to_str().expect("utf-8 path").to_string();
         let config = HashMap::new();
         let extra = HashMap::new();
         let ctx = JinjaContext {
-            project_dir: &d,
-            root_directory: &d,
-            cwd: &d,
+            project_dir: &p,
+            root_directory: &r,
+            cwd: &p,
             ..strict_ctx(&config, &extra)
         };
         JinjaPreprocessor::new(&ctx)
@@ -1896,30 +1942,73 @@ mod tests {
             .map_err(|e| format!("{:?}|{}", e.kind, e.message))
     }
 
+    fn render_in(dir: &std::path::Path, source: &str) -> Result<String, String> {
+        render_in_roots(dir, dir, source)
+    }
+
+    /// A repo root with `images/app/VERSION` and a stack three levels down.
+    fn nested_stack(root: &std::path::Path) -> std::path::PathBuf {
+        std::fs::create_dir_all(root.join("images/app")).expect("mkdir");
+        std::fs::write(root.join("images/app/VERSION"), "1.2.3\n").expect("write");
+        let project = root.join("stacks/app/bigquery");
+        std::fs::create_dir_all(&project).expect("mkdir");
+        project
+    }
+
     #[test]
-    fn json_and_sql_includes_are_served() {
+    fn any_text_file_inside_the_tree_is_served() {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::create_dir(dir.path().join("schemas")).expect("mkdir");
         std::fs::write(dir.path().join("schemas/t.json"), "[1]").expect("write");
         std::fs::write(dir.path().join("q.sql"), "SELECT 1").expect("write");
-        assert_eq!(
-            render_in(dir.path(), "a: '{% include \"schemas/t.json\" %}'\n"),
-            Ok("a: '[1]'".to_string())
-        );
-        assert_eq!(
-            render_in(dir.path(), "q: '{% include \"q.sql\" %}'\n"),
-            Ok("q: 'SELECT 1'".to_string())
-        );
+        std::fs::write(dir.path().join("VERSION"), "1.2.3\n").expect("write");
+        std::fs::write(dir.path().join("notes.txt"), "text").expect("write");
+        for (name, body) in [
+            ("schemas/t.json", "[1]"),
+            ("q.sql", "SELECT 1"),
+            ("VERSION", "1.2.3"),
+            ("notes.txt", "text"),
+        ] {
+            assert_eq!(
+                render_in(dir.path(), &format!("a: '{{% include \"{name}\" %}}'\n")),
+                Ok(format!("a: '{body}'")),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_set_block_around_an_include_trims_to_the_version() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let project = nested_stack(root.path());
+        let out = render_in_roots(
+            &project,
+            root.path(),
+            "{% set v %}{% include '../../../images/app/VERSION' %}{% endset -%}\n\
+             name: app\ntag: {{ v | trim }}\n",
+        )
+        .expect("renders");
+        assert!(out.ends_with("name: app\ntag: 1.2.3"), "{out:?}");
     }
 
     #[test]
     fn each_refusal_is_reported_distinctly() {
         let dir = tempfile::tempdir().expect("tempdir");
-        std::fs::write(dir.path().join("n.txt"), "x").expect("write");
-        let ext = render_in(dir.path(), "a: '{% include \"n.txt\" %}'\n").unwrap_err();
+        std::fs::write(dir.path().join("logo.png"), [0x89, 0x50, 0xff, 0xfe, 0x00]).expect("write");
+        let bin = render_in(dir.path(), "a: '{% include \"logo.png\" %}'\n").unwrap_err();
         assert!(
-            ext.starts_with("JinjaTemplateNotFound|include refused [extension]"),
-            "{ext}"
+            bin.starts_with("JinjaTemplateNotFound|include refused [binary]"),
+            "{bin}"
+        );
+        std::fs::write(
+            dir.path().join("big.txt"),
+            vec![b'x'; MAX_INCLUDE_BYTES as usize + 1],
+        )
+        .expect("write");
+        let big = render_in(dir.path(), "a: '{% include \"big.txt\" %}'\n").unwrap_err();
+        assert!(
+            big.starts_with("JinjaTemplateNotFound|include refused [too large]"),
+            "{big}"
         );
         let abs = render_in(dir.path(), "a: '{% include \"/etc/hosts.yaml\" %}'\n").unwrap_err();
         assert!(
@@ -1966,24 +2055,296 @@ mod tests {
             ),
             Ok("a: ''".to_string())
         );
-        let refused = render_in(
-            dir.path(),
-            "a: '{% include \"/abs.yaml\" ignore missing %}'\n",
+        std::fs::write(dir.path().join("logo.png"), [0xff, 0xfe]).expect("write");
+        std::fs::write(
+            dir.path().join("big.txt"),
+            vec![b'x'; MAX_INCLUDE_BYTES as usize + 1],
+        )
+        .expect("write");
+        for name in ["/abs.yaml", "logo.png", "big.txt"] {
+            let refused = render_in(
+                dir.path(),
+                &format!("a: '{{% include \"{name}\" ignore missing %}}'\n"),
+            );
+            assert!(
+                refused.is_err(),
+                "{name}: a refusal is not something to ignore"
+            );
+        }
+    }
+
+    #[test]
+    fn a_file_at_the_cap_is_served_and_one_byte_over_is_not() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("cap.txt"),
+            vec![b'x'; MAX_INCLUDE_BYTES as usize],
+        )
+        .expect("write");
+        let out = render_in(dir.path(), "{% include \"cap.txt\" %}").expect("at the cap");
+        assert_eq!(out.len(), MAX_INCLUDE_BYTES as usize);
+        std::fs::write(
+            dir.path().join("over.txt"),
+            vec![b'x'; MAX_INCLUDE_BYTES as usize + 1],
+        )
+        .expect("write");
+        let err = render_in(dir.path(), "{% include \"over.txt\" %}").unwrap_err();
+        assert!(err.contains(IncludeRefusal::TAG_TOO_LARGE), "{err}");
+        assert!(!err.contains("xxxx"), "no contents in the error");
+    }
+
+    #[test]
+    fn a_directory_named_as_an_include_is_absent() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(dir.path().join("dir.txt")).expect("mkdir");
+        let err = render_in(dir.path(), "a: '{% include \"dir.txt\" %}'\n").unwrap_err();
+        assert!(err.contains("dir.txt") && !err.contains("refused"), "{err}");
+        assert_eq!(
+            render_in(
+                dir.path(),
+                "a: '{% include \"dir.txt\" ignore missing %}'\n"
+            ),
+            Ok("a: ''".to_string())
         );
-        assert!(refused.is_err(), "a refusal is not something to ignore");
+    }
+
+    #[test]
+    fn a_refusal_on_the_first_candidate_is_not_retried_against_the_root() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let project = nested_stack(root.path());
+        std::fs::write(root.path().join("x.txt"), "root copy").expect("write");
+        std::fs::write(project.join("x.txt"), [0xff, 0xfe]).expect("write");
+        let err =
+            render_in_roots(&project, root.path(), "a: '{% include \"x.txt\" %}'\n").unwrap_err();
+        assert!(err.contains(IncludeRefusal::TAG_BINARY), "{err}");
+    }
+
+    #[test]
+    fn the_root_candidate_serves_a_shared_template() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let project = nested_stack(root.path());
+        std::fs::write(root.path().join("shared.txt"), "S").expect("write");
+        assert_eq!(
+            render_in_roots(&project, root.path(), "a: '{% include \"shared.txt\" %}'\n"),
+            Ok("a: 'S'".to_string())
+        );
+    }
+
+    #[test]
+    fn every_leading_dotdot_is_stripped_against_the_root() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let project = nested_stack(root.path());
+        std::fs::write(root.path().join("shared.txt"), "S").expect("write");
+        // Five levels up from a stack three levels down: the first candidate
+        // resolves above the root (and does not exist there); the stripped
+        // name against the root is what serves it.
+        assert_eq!(
+            render_in_roots(
+                &project,
+                root.path(),
+                "a: '{% include \"../../../../../shared.txt\" %}'\n"
+            ),
+            Ok("a: 'S'".to_string())
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_in_root_symlink_is_served() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let project = nested_stack(root.path());
+        std::fs::write(root.path().join("real.txt"), "R").expect("write");
+        std::os::unix::fs::symlink(root.path().join("real.txt"), project.join("link.txt"))
+            .expect("symlink");
+        assert_eq!(
+            render_in_roots(&project, root.path(), "a: '{% include \"link.txt\" %}'\n"),
+            Ok("a: 'R'".to_string())
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_escaping_first_candidate_does_not_hide_a_served_second() {
+        let outside = tempfile::tempdir().expect("outside");
+        std::fs::write(outside.path().join("x.txt"), "OUTSIDE").expect("write");
+        let root = tempfile::tempdir().expect("tempdir");
+        let project = nested_stack(root.path());
+        std::os::unix::fs::symlink(outside.path().join("x.txt"), project.join("x.txt"))
+            .expect("symlink");
+        std::fs::write(root.path().join("x.txt"), "R").expect("write");
+        assert_eq!(
+            render_in_roots(&project, root.path(), "a: '{% include \"x.txt\" %}'\n"),
+            Ok("a: 'R'".to_string())
+        );
+    }
+
+    #[test]
+    fn an_empty_root_directory_means_the_stack_dir_alone() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let project = nested_stack(root.path());
+        std::fs::write(root.path().join("shared.txt"), "S").expect("write");
+        let err = render_in_roots(
+            &project,
+            std::path::Path::new(""),
+            "a: '{% include \"shared.txt\" %}'\n",
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("shared.txt") && !err.contains("refused"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn a_root_that_does_not_exist_is_simply_not_searched() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("a.txt"), "A").expect("write");
+        assert_eq!(
+            render_in_roots(
+                dir.path(),
+                std::path::Path::new("/nonexistent-render-root"),
+                "a: '{% include \"a.txt\" %}'\n"
+            ),
+            Ok("a: 'A'".to_string())
+        );
+    }
+
+    #[test]
+    fn an_included_file_is_a_template_not_a_verbatim_paste() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("frag.txt"), "{{ 1 + 1 }}").expect("write");
+        assert_eq!(
+            render_in(dir.path(), "a: '{% include \"frag.txt\" %}'\n"),
+            Ok("a: '2'".to_string())
+        );
+    }
+
+    #[test]
+    fn an_included_files_trailing_newline_is_dropped() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("one.txt"), "v\n").expect("write");
+        std::fs::write(dir.path().join("two.txt"), "v\n\n").expect("write");
+        assert_eq!(
+            render_in(dir.path(), "a: '{% include \"one.txt\" %}'"),
+            Ok("a: 'v'".to_string())
+        );
+        assert_eq!(
+            render_in(dir.path(), "a: '{% include \"two.txt\" %}'"),
+            Ok("a: 'v\n'".to_string()),
+            "exactly one trailing newline is dropped"
+        );
+    }
+
+    #[test]
+    fn an_include_reads_the_callers_set_and_import_names() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("m.j2"), "{% set x = 'M' %}").expect("write");
+        std::fs::write(dir.path().join("frag.txt"), "{{ y }}-{{ m.x }}").expect("write");
+        assert_eq!(
+            render_in(
+                dir.path(),
+                "{% import 'm.j2' as m %}{% set y = 'Y' %}a: '{% include \"frag.txt\" %}'"
+            ),
+            Ok("a: 'Y-M'".to_string())
+        );
+    }
+
+    #[test]
+    fn a_set_inside_an_include_is_visible_after_it() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("frag.txt"), "{% set z = 'Z' %}").expect("write");
+        assert_eq!(
+            render_in(dir.path(), "{% include 'frag.txt' %}a: '{{ z }}'"),
+            Ok("a: 'Z'".to_string())
+        );
+    }
+
+    #[test]
+    fn an_import_exports_only_its_own_names() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("m.j2"), "{% set inner = y %}").expect("write");
+        assert_eq!(
+            render_in(
+                dir.path(),
+                "{% set y = 'Y' %}{% import 'm.j2' as m %}a: '{{ m.inner }}'"
+            ),
+            Ok("a: 'Y'".to_string()),
+            "an import reads the parent's names"
+        );
+        let err = render_in(
+            dir.path(),
+            "{% set y = 'Y' %}{% import 'm.j2' as m %}a: '{{ m.y }}'",
+        )
+        .unwrap_err();
+        assert!(err.starts_with("JinjaUndefinedVariable|"), "{err}");
+    }
+
+    #[test]
+    fn with_context_is_accepted_and_changes_nothing() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("m.j2"), "{% set x = 'M' %}").expect("write");
+        let plain = render_in(dir.path(), "{% import 'm.j2' as m %}a: '{{ m.x }}'");
+        let with = render_in(
+            dir.path(),
+            "{% import 'm.j2' as m with context %}a: '{{ m.x }}'",
+        );
+        assert_eq!(plain, Ok("a: 'M'".to_string()));
+        assert_eq!(with, plain);
+    }
+
+    #[test]
+    fn a_self_including_file_is_an_error_not_an_absence() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // The render's own name resolves to the compiled template, not the
+        // loader: it is the file's own text, bounded by the recursion limit,
+        // and it never reads as a missing file.
+        let err = render_in(dir.path(), "{% include 'Pulumi.yaml' %}").unwrap_err();
+        assert!(!err.starts_with("JinjaTemplateNotFound|"), "{err}");
+    }
+
+    #[test]
+    fn extras_never_override_builtins() {
+        let config = HashMap::new();
+        let mut extra = HashMap::new();
+        extra.insert("pulumi_project".to_string(), "evil".to_string());
+        let ctx = strict_ctx(&config, &extra);
+        let out = JinjaPreprocessor::new(&ctx)
+            .render("{{ pulumi_project }}", "Pulumi.yaml")
+            .expect("renders");
+        assert_ne!(out, "evil");
+        assert_eq!(out, ctx.project_name);
+    }
+
+    #[test]
+    fn crlf_survives_readfile_marker_resolution() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("f.txt"), "X").expect("write");
+        let out = render_in(dir.path(), "a: 1\r\nb: {{ readFile('f.txt') }}\r\nc: 3\r\n")
+            .expect("renders");
+        assert!(out.contains("a: 1\r\nb: X\r\nc: 3"), "{out:?}");
+    }
+
+    #[test]
+    fn a_base64_decode_failure_is_a_filter_error_not_empty() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let err = render_in(dir.path(), "a: {{ '!!!' | base64_decode }}").unwrap_err();
+        assert!(err.contains("base64"), "{err}");
     }
 
     #[test]
     fn the_refusal_reads_back_its_own_suggestion() {
         for reason in [
-            IncludeRefusal::ExtensionNotAllowed {
-                name: "a.txt".into(),
-            },
             IncludeRefusal::AbsolutePath {
                 name: "/a.yaml".into(),
             },
             IncludeRefusal::EscapesSandbox {
                 name: "../a.yaml".into(),
+            },
+            IncludeRefusal::NotText {
+                name: "logo.png".into(),
+            },
+            IncludeRefusal::TooLarge {
+                name: "big.txt".into(),
             },
         ] {
             let text = reason.to_string();
