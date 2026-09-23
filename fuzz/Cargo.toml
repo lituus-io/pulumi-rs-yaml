@@ -118,3 +118,8 @@ doc = false
 name = "fuzz_checkpoint"
 path = "fuzz_targets/fuzz_checkpoint.rs"
 doc = false
+
+[[bin]]
+name = "fuzz_string_filters"
+path = "fuzz_targets/fuzz_string_filters.rs"
+doc = false

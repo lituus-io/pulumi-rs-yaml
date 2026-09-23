@@ -6479,3 +6479,72 @@ resources:
         .expect("label reached the provider");
     assert_eq!(label, "A${data()}B");
 }
+
+#[test]
+fn the_string_filters_reach_a_registered_resource_input() {
+    // The whole pipeline, not just the render: a program that computes a
+    // resource id with `truncate` must arrive at the provider with the computed
+    // value. A filter that rendered correctly and then lost its value somewhere
+    // between the preprocessor and `RegisterResource` would satisfy the render
+    // tests and fail every deploy.
+    use std::collections::HashMap as Map;
+
+    use pulumi_rs_yaml_core::jinja::{
+        JinjaContext, JinjaPreprocessor, TemplatePreprocessor, UndefinedMode,
+    };
+
+    let template = r#"
+{% set main = {'dataProductId': 'ran_agnostic'} %}
+{% set asset = {'dataAssetId': 'kpi_table_with_a_very_long_trailing_name'} %}
+name: test
+runtime: yaml
+resources:
+  asset:
+    type: gcp:dataplex:DataProductDataAsset
+    properties:
+      dataAssetId: "{{ (main.dataProductId ~ '-' ~ asset.dataAssetId) | replace('_','-') | truncate(30, False, '', 0) }}"
+      banner: "{{ 'ok' | center(8) }}"
+      note: "{{ 'alpha beta gamma' | wordwrap(11) | replace('\n', ' / ') }}"
+"#;
+
+    let config = Map::new();
+    let extra = Map::new();
+    let ctx = JinjaContext {
+        project_name: "test",
+        stack_name: "dev",
+        cwd: "/tmp",
+        organization: "org",
+        root_directory: "/tmp",
+        config: &config,
+        project_dir: "/tmp",
+        undefined: UndefinedMode::Strict,
+        provider_templated_packages: &[],
+        extra: &extra,
+    };
+    let rendered = JinjaPreprocessor::new(&ctx)
+        .preprocess(template, "Pulumi.yaml")
+        .expect("the template renders");
+
+    let mock = MockCallback::new();
+    let (eval, has_errors) = eval_with_mock(&rendered, mock);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
+
+    let regs = eval.callback().registrations();
+    assert_eq!(regs.len(), 1);
+    let get = |k: &str| {
+        regs[0]
+            .inputs
+            .get(k)
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .unwrap_or_else(|| panic!("{k} did not reach the provider"))
+    };
+
+    // 30-character cap, cut at a word boundary, hyphens throughout.
+    let id = get("dataAssetId");
+    assert_eq!(id.chars().count(), 30, "id was {id:?}");
+    assert!(id.starts_with("ran-agnostic-kpi-table-"), "id was {id:?}");
+    assert!(!id.contains('_'), "the replace did not apply: {id:?}");
+
+    assert_eq!(get("banner"), "   ok   ");
+    assert_eq!(get("note"), "alpha beta / gamma");
+}
