@@ -17,6 +17,42 @@ pub struct InterpolationPart<'src> {
     pub value: Option<PropertyAccess<'src>>,
 }
 
+/// Appends a borrowed run of `input` to the part being built.
+///
+/// A segment with no escape in it is one run, so it is borrowed and never
+/// allocated. The first escape is what forces a copy, and from then on the
+/// buffer grows in place.
+#[inline]
+fn push_run<'src>(text: &mut Cow<'src, str>, run: &'src str) {
+    if run.is_empty() {
+        return;
+    }
+    match text {
+        Cow::Borrowed("") => *text = Cow::Borrowed(run),
+        Cow::Borrowed(prev) => {
+            let mut owned = String::with_capacity(prev.len() + run.len());
+            owned.push_str(prev);
+            owned.push_str(run);
+            *text = Cow::Owned(owned);
+        }
+        Cow::Owned(owned) => owned.push_str(run),
+    }
+}
+
+/// Appends the single `$` an escape collapses to.
+#[inline]
+fn push_dollar(text: &mut Cow<'_, str>) {
+    match text {
+        Cow::Borrowed(prev) => {
+            let mut owned = String::with_capacity(prev.len() + 1);
+            owned.push_str(prev);
+            owned.push('$');
+            *text = Cow::Owned(owned);
+        }
+        Cow::Owned(owned) => owned.push('$'),
+    }
+}
+
 /// Parses an interpolated string into its constituent parts.
 ///
 /// Syntax:
@@ -29,78 +65,83 @@ pub fn parse_interpolation<'src>(
     diags: &mut Diagnostics,
 ) -> Vec<InterpolationPart<'src>> {
     let mut parts: Vec<InterpolationPart<'src>> = Vec::new();
-    let mut current_text = String::new();
+    // The part being built. Borrowed from `input` until an escape collapses,
+    // so a string whose only marker is `${...}` copies no text at all.
+    let mut text: Cow<'src, str> = Cow::Borrowed("");
+    // Start of the run of bytes that can still be handed over as a borrow.
+    let mut run_start = 0usize;
     let bytes = input.as_bytes();
-    let mut i = 0;
+    let mut i = 0usize;
 
+    // Scanning bytes rather than chars is safe here and needs no boundary
+    // check: `input` is `&str`, so it is valid UTF-8, and `$` (0x24) is ASCII,
+    // so it can never appear inside a multi-byte sequence -- every byte that
+    // stops the scan is therefore a char boundary, and so is every index this
+    // loop slices at. Multi-byte text inside a run is copied as bytes, which
+    // is what it already was.
     while i < bytes.len() {
-        if bytes[i] == b'$' && i + 1 < bytes.len() {
-            match bytes[i + 1] {
-                b'$' => {
-                    // Escaped dollar sign
-                    current_text.push('$');
-                    i += 2;
-                }
-                b'{' => {
-                    // Property access interpolation
-                    let after_brace = &input[i + 2..];
-                    let (rest, access) = parse_property_access(after_brace, span, diags);
-
-                    if let Some(access) = access {
-                        let text = if current_text.is_empty() {
-                            Cow::Borrowed("")
-                        } else {
-                            Cow::Owned(std::mem::take(&mut current_text))
-                        };
-                        parts.push(InterpolationPart {
-                            text,
-                            value: Some(access),
-                        });
-                    }
-
-                    // Calculate new position: input[i+2..] -> rest means we consumed
-                    let consumed = after_brace.len() - rest.len();
-                    i = i + 2 + consumed;
-                }
-                _ => {
-                    current_text.push('$');
-                    i += 1;
-                }
-            }
-        } else if bytes[i].is_ascii() {
-            current_text.push(bytes[i] as char);
+        if bytes[i] != b'$' {
             i += 1;
-        } else {
-            let ch = input[i..].chars().next().unwrap();
-            current_text.push(ch);
-            i += ch.len_utf8();
+            continue;
+        }
+        match bytes.get(i + 1) {
+            // `$$` -- an escaped dollar sign.
+            Some(b'$') => {
+                push_run(&mut text, &input[run_start..i]);
+                push_dollar(&mut text);
+                i += 2;
+                run_start = i;
+            }
+            // `${...}` -- a property access.
+            Some(b'{') => {
+                push_run(&mut text, &input[run_start..i]);
+                let after_brace = &input[i + 2..];
+                let (rest, access) = parse_property_access(after_brace, span, diags);
+
+                if let Some(access) = access {
+                    parts.push(InterpolationPart {
+                        text: std::mem::replace(&mut text, Cow::Borrowed("")),
+                        value: Some(access),
+                    });
+                }
+
+                // input[i+2..] -> rest means this much was consumed.
+                let consumed = after_brace.len() - rest.len();
+                i = i + 2 + consumed;
+                run_start = i;
+            }
+            // A lone `$`, including one at the very end: literal text, so it
+            // stays inside the run and costs nothing.
+            _ => i += 1,
         }
     }
 
     // Trailing text
-    if !current_text.is_empty() {
-        parts.push(InterpolationPart {
-            text: Cow::Owned(current_text),
-            value: None,
-        });
+    push_run(&mut text, &input[run_start..]);
+    if !text.is_empty() {
+        parts.push(InterpolationPart { text, value: None });
     }
 
     parts
 }
 
-/// Returns true if the string contains any `${...}` interpolation markers.
-pub fn has_interpolations(s: &str) -> bool {
+/// Returns true when `s` has to go through [`parse_interpolation`].
+///
+/// Two markers require the pass, and both are the parser's own syntax: `${` in
+/// front of a property access, which resolves to a value, and `$$`, which
+/// collapses to one `$`. A string carrying only the escape has nothing to
+/// resolve, but the text it stands for is not the text that was written, so it
+/// is not a literal either.
+///
+/// Asking for `${` alone is what made `"FROM $${data()}"` a literal: the
+/// predicate stepped over the escape looking for an interpolation, found none,
+/// and the caller handed both dollars to a provider verbatim.
+pub fn needs_interpolation_pass(s: &str) -> bool {
     let bytes = s.as_bytes();
     let mut i = 0;
     while i + 1 < bytes.len() {
-        if bytes[i] == b'$' {
-            if bytes[i + 1] == b'{' {
-                return true;
-            }
-            if bytes[i + 1] == b'$' {
-                i += 2;
-                continue;
-            }
+        if bytes[i] == b'$' && (bytes[i + 1] == b'{' || bytes[i + 1] == b'$') {
+            return true;
         }
         i += 1;
     }
@@ -178,13 +219,28 @@ mod tests {
     }
 
     #[test]
-    fn test_has_interpolations() {
-        assert!(has_interpolations("${foo}"));
-        assert!(has_interpolations("hello ${foo} world"));
-        assert!(!has_interpolations("hello world"));
-        assert!(!has_interpolations("$${escaped}"));
-        assert!(!has_interpolations("$100"));
-        assert!(!has_interpolations(""));
+    fn a_property_access_needs_the_pass() {
+        assert!(needs_interpolation_pass("${foo}"));
+        assert!(needs_interpolation_pass("hello ${foo} world"));
+    }
+
+    #[test]
+    fn an_escape_needs_the_pass_with_no_interpolation_in_sight() {
+        // The regression: each of these carries an escape and nothing to
+        // resolve. Answering false here left both dollars in the value.
+        assert!(needs_interpolation_pass("$${escaped}"));
+        assert!(needs_interpolation_pass("FROM $${data()}"));
+        assert!(needs_interpolation_pass("cost is $$100"));
+        assert!(needs_interpolation_pass("$$"));
+    }
+
+    #[test]
+    fn text_with_no_marker_skips_the_pass() {
+        assert!(!needs_interpolation_pass("hello world"));
+        assert!(!needs_interpolation_pass("$100"));
+        assert!(!needs_interpolation_pass("trailing $"));
+        assert!(!needs_interpolation_pass("$"));
+        assert!(!needs_interpolation_pass(""));
     }
 
     #[test]

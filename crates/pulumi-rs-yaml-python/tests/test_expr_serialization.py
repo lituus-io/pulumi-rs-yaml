@@ -185,3 +185,57 @@ class TestExprComplex:
         """)
         val = get_variable_value(plan, "joined")
         assert val["t"] == "join"
+
+
+class TestEscapedDollar:
+    """`$$` is the escape for a literal dollar, all the way to the plan.
+
+    A data-quality rule names the scanning service's own `${data()}`
+    placeholder, so the author escapes the dollar to keep the engine from
+    reading it as a reference. Both dollars used to survive into the plan, and
+    the service answered `Syntax error: Unexpected "$"`.
+    """
+
+    def test_an_escape_collapses_in_a_property(self, tmp_project):
+        plan = get_plan(tmp_project, """\
+            name: test
+            runtime: yaml
+            resources:
+              scan:
+                type: gcp:dataplex:Datascan
+                properties:
+                  sqlStatement: "SELECT insert_ts FROM $${data()}"
+        """)
+        val = get_resource_property(plan, "scan", "sqlStatement")
+        assert val["t"] == "string"
+        assert val["v"] == "SELECT insert_ts FROM ${data()}"
+
+    def test_an_escape_collapses_in_a_block_scalar(self, tmp_project):
+        plan = get_plan(tmp_project, """\
+            name: test
+            runtime: yaml
+            resources:
+              scan:
+                type: gcp:dataplex:Datascan
+                properties:
+                  sqlStatement: |
+                    SELECT insert_ts
+                    FROM $${data()}
+        """)
+        val = get_resource_property(plan, "scan", "sqlStatement")
+        assert val["t"] == "string"
+        assert val["v"] == "SELECT insert_ts\nFROM ${data()}\n"
+
+    def test_a_lone_dollar_is_left_alone(self, tmp_project):
+        plan = get_plan(tmp_project, """\
+            name: test
+            runtime: yaml
+            resources:
+              scan:
+                type: gcp:dataplex:Datascan
+                properties:
+                  sqlStatement: "cost is $100"
+        """)
+        val = get_resource_property(plan, "scan", "sqlStatement")
+        assert val["t"] == "string"
+        assert val["v"] == "cost is $100"

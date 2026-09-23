@@ -1,7 +1,7 @@
 // Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 
 use crate::ast::expr::{Expr, InvokeExpr, InvokeOptions, ObjectProperty, StarlarkCallExpr};
-use crate::ast::interpolation::{has_interpolations, parse_interpolation};
+use crate::ast::interpolation::{needs_interpolation_pass, parse_interpolation};
 use crate::ast::template::*;
 use crate::diag::{unexpected_casing, Diagnostics};
 use crate::encoding::strip_bom;
@@ -116,7 +116,7 @@ pub fn parse_expr(value: &serde_yaml::Value, diags: &mut Diagnostics) -> Expr<'s
 
 /// Parses an owned string that may contain interpolations.
 fn parse_string_expr_owned(s: &str, meta: ExprMeta, diags: &mut Diagnostics) -> Expr<'static> {
-    if !has_interpolations(s) {
+    if !needs_interpolation_pass(s) {
         return Expr::String(meta, Cow::Owned(s.to_string()));
     }
 
@@ -1288,6 +1288,95 @@ fn parse_string_list_owned(value: &serde_yaml::Value) -> Option<Vec<Cow<'static,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `parse_interpolation` collapsed `$$` from the day it was written, and
+    /// the guard in front of it turned those strings away. Each test below
+    /// goes through `parse_expr`, which is the composition the engine uses and
+    /// the only place the disagreement was visible.
+    fn parsed_string(input: &str) -> String {
+        let mut diags = Diagnostics::new();
+        let expr = parse_expr(&serde_yaml::Value::String(input.to_string()), &mut diags);
+        assert!(!diags.has_errors(), "errors for {input:?}: {diags}");
+        match expr {
+            Expr::String(_, text) => text.into_owned(),
+            other => panic!("expected a string expr for {input:?}, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_escape_collapses_with_nothing_to_interpolate() {
+        // The field failure: a SQL statement naming its own placeholder. Both
+        // dollars used to reach the provider, and the service read the first
+        // one as a syntax error.
+        assert_eq!(parsed_string("FROM $${data()}"), "FROM ${data()}");
+        assert_eq!(parsed_string("A$${data()}B"), "A${data()}B");
+        assert_eq!(parsed_string("$${escaped}"), "${escaped}");
+        assert_eq!(parsed_string("cost is $$100"), "cost is $100");
+        assert_eq!(parsed_string("$$"), "$");
+    }
+
+    #[test]
+    fn an_escape_collapses_once_per_escape() {
+        assert_eq!(
+            parsed_string("$${data()} and $${data()}"),
+            "${data()} and ${data()}"
+        );
+        assert_eq!(parsed_string("$$$$"), "$$");
+    }
+
+    #[test]
+    fn a_string_with_no_marker_is_returned_as_written() {
+        assert_eq!(parsed_string("plain text"), "plain text");
+        assert_eq!(parsed_string("$100"), "$100");
+        assert_eq!(parsed_string("trailing $"), "trailing $");
+        assert_eq!(parsed_string(""), "");
+    }
+
+    #[test]
+    fn an_escape_beside_a_real_interpolation_keeps_both_meanings() {
+        let mut diags = Diagnostics::new();
+        let expr = parse_expr(
+            &serde_yaml::Value::String("$${data()} in ${ds.datasetId}".to_string()),
+            &mut diags,
+        );
+        assert!(!diags.has_errors(), "errors: {diags}");
+        // The escape is literal text; the interpolation stays a reference, so
+        // the value is still an interpolation expression rather than a string.
+        let Expr::Interpolate(_, parts) = expr else {
+            panic!("expected an interpolation, got {expr:?}");
+        };
+        assert_eq!(parts[0].text.as_ref(), "${data()} in ");
+        assert_eq!(parts[0].value.as_ref().unwrap().root_name().unwrap(), "ds");
+    }
+
+    #[test]
+    fn an_escape_inside_a_block_scalar_property_collapses() {
+        let source = r#"
+name: test
+runtime: yaml
+resources:
+  scan:
+    type: gcp:dataplex:Datascan
+    properties:
+      sqlStatement: |
+        SELECT insert_ts
+        FROM $${data()}
+"#;
+        let (template, diags) = parse_template(source, None);
+        assert!(!diags.has_errors(), "errors: {diags}");
+        let ResourceProperties::Map(props) = &template.resources[0].resource.properties else {
+            panic!("expected a property map");
+        };
+        let value = props
+            .iter()
+            .find(|p| p.key.as_ref() == "sqlStatement")
+            .map(|p| &p.value)
+            .expect("sqlStatement");
+        let Expr::String(_, text) = value else {
+            panic!("expected a string, got {value:?}");
+        };
+        assert_eq!(text.as_ref(), "SELECT insert_ts\nFROM ${data()}\n");
+    }
 
     #[test]
     fn test_parse_minimal_template() {

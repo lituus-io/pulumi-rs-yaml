@@ -3,6 +3,57 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.31
+
+### An escaped dollar is not a literal pair of dollars
+
+`$$` has been the escape for a literal `$` since the interpolation parser was
+written, and the parser collapsed it correctly. The guard in front of the
+parser did not. `needs_interpolation_pass` — then named `has_interpolations` —
+looked for `${`, stepped over `$$` on its way, and answered false for a string
+whose only marker was the escape. Its caller reads that answer as "this is a
+literal" and hands the source text through untouched, so `$${data()}` left the
+engine with both dollars intact.
+
+The strings this reached are the ones that name another system's placeholder
+syntax and have to keep it: a data-quality rule whose SQL says
+`FROM $${data()}` so that the scanning service substitutes the table, a price
+written `$$100`, any value where `${` is text rather than a reference. Each
+arrived at its provider in a spelling nobody wrote, and where the receiving
+service parsed the value, it failed there rather than here — a data scan
+answered `Syntax error: Unexpected "$"` at the column of the first dollar,
+which is the same column the escaped form occupies, so the position said
+nothing about which spelling had been sent.
+
+The guard now admits a string carrying either marker, and says why in its
+name: `${` is a reference to resolve, `$$` is an escape to collapse, and a
+string with neither is the only kind that is already its own value. The scan
+returns on the first marker instead of stepping past escapes, so it is also
+shorter than the one it replaces; nothing else about the fast path changes,
+and a string with no marker still allocates nothing.
+
+Two tests disagreed about this and both were green, because nothing exercised
+the composition: `parse_interpolation` was proven to collapse `$${not.interp}`
+in one file while the guard was proven to turn that same string away in
+another. The behaviour they compose to is now pinned at every level — the
+guard, `parse_expr`, an evaluated registration, and the plan the Python
+binding returns.
+
+`has_interpolations` is renamed rather than kept beside the new predicate: it
+had one caller, and its name is what made the wrong question look like the
+right one.
+
+Four unit tests on the guard and five on `parse_expr`, including the field
+statement as a block scalar inside a sequence inside a nested map; one
+integration test asserting the value a provider is registered with; four
+security tests, covering collapse-exactly-once (so a collapsed `$$$${x}` is
+never rescanned into a reference to `x`), the escape that precedes a real
+reference, guard/parser agreement, and a 200k-dollar run that stays linear
+(133 -> 137); the fuzz target now asserts the guard only turns away strings
+the parser would return unchanged; one bench on the guard's worst admitted
+case. One integration test rewritten: `test_dollar_dollar_is_literal` asserted
+the defect and is now `test_dollar_dollar_escapes_one_dollar`.
+
 ## 0.5.30
 
 ### An include is any text the tree contains
