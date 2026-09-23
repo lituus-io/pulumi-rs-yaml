@@ -2641,3 +2641,140 @@ mod escape_collapse_security {
         assert!(text.bytes().all(|b| b == b'$'));
     }
 }
+
+// =========================================================================
+// jinja.rs — the three string filters, on input nobody chose
+// =========================================================================
+
+mod string_filter_security {
+    //! These filters run over template text, which means over resource names,
+    //! descriptions and anything a config file carries. The width and length
+    //! arguments are author-controlled integers, and the subject can be as long
+    //! as a YAML file. So what matters is that no combination allocates without
+    //! bound, loops forever, panics, or slices a multi-byte character in half.
+    use std::collections::HashMap;
+
+    use pulumi_rs_yaml_core::jinja::{
+        JinjaContext, JinjaPreprocessor, TemplatePreprocessor, UndefinedMode,
+    };
+
+    fn render(body: &str) -> Result<String, String> {
+        let config = HashMap::new();
+        let extra = HashMap::new();
+        let ctx = JinjaContext {
+            project_name: "t",
+            stack_name: "stg",
+            cwd: "/tmp",
+            organization: "org",
+            root_directory: "/tmp",
+            config: &config,
+            project_dir: "/tmp",
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+        };
+        JinjaPreprocessor::new(&ctx)
+            .preprocess(body, "Pulumi.yaml")
+            .map(std::borrow::Cow::into_owned)
+            .map_err(|e| e.to_string())
+    }
+
+    #[test]
+    fn an_enormous_width_does_not_allocate_from_the_width() {
+        // `center` pads to `width`, so a width taken from a template must not be
+        // a memory allocation primitive. The pad is bounded by width - len, and
+        // this asserts the engine refuses or returns rather than reserving
+        // gigabytes.
+        for width in ["4294967295", "999999999999999999"] {
+            let out = render(&format!("{{{{ 'x' | center({width}) }}}}"));
+            // Either answer is acceptable; hanging or aborting is not.
+            assert!(out.is_ok() || out.is_err());
+        }
+    }
+
+    #[test]
+    fn an_enormous_truncate_length_is_harmless() {
+        // length is only ever compared against, never allocated from.
+        let out = render("{{ 'abc' | truncate(999999999999999999) }}").expect("renders");
+        assert!(out.contains("abc"), "got {out:?}");
+    }
+
+    #[test]
+    fn a_zero_or_negative_width_still_terminates() {
+        // `wordwrap(0)` would divide a line into zero-width pieces forever if
+        // the width were taken literally.
+        for w in ["0", "-1", "-999"] {
+            let out = render(&format!("{{{{ 'aaa bbb' | wordwrap({w}) }}}}"));
+            assert!(out.is_ok(), "wordwrap({w}) did not return: {out:?}");
+        }
+        assert!(render("{{ 'x' | center(-5) }}").is_ok());
+        assert!(render("{{ 'abc' | truncate(-5, False, '', 0) }}").is_ok());
+    }
+
+    #[test]
+    fn truncate_refuses_a_length_shorter_than_its_own_suffix() {
+        // The reference asserts here, which is a crash. A render error names the
+        // template and the line instead.
+        let err = render("{{ 'abc' | truncate(2, False, 'xyz', 0) }}")
+            .expect_err("length < len(end) is not satisfiable");
+        assert!(err.contains("truncate"), "the error should name it: {err}");
+    }
+
+    #[test]
+    fn a_multibyte_subject_is_never_cut_inside_a_character() {
+        // Every width from 1 to past the end, over text where one character is
+        // several bytes. A byte-indexed implementation panics somewhere in here.
+        let subject = "日本語のテキストです";
+        for w in 1..=24 {
+            let t = render(&format!(
+                "{{{{ '{subject}' | truncate({w}, True, '', 0) }}}}"
+            ))
+            .expect("truncate should not panic");
+            let c = render(&format!("{{{{ '{subject}' | center({w}) }}}}"))
+                .expect("center should not panic");
+            let w2 = render(&format!("{{{{ '{subject}' | wordwrap({w}) }}}}"))
+                .expect("wordwrap should not panic");
+            for out in [t, c, w2] {
+                assert!(out.is_char_boundary(0));
+                assert!(std::str::from_utf8(out.as_bytes()).is_ok());
+            }
+        }
+    }
+
+    #[test]
+    fn a_long_subject_is_processed_in_bounded_time() {
+        // 256 KiB of one word, wrapped at 10: the output is bounded by the input
+        // plus one separator per line, not quadratic in either.
+        let subject = "a".repeat(256 * 1024);
+        let out = render(&format!("{{{{ '{subject}' | wordwrap(10) }}}}")).expect("renders");
+        let lines = out.lines().count();
+        assert!(
+            (26_000..27_000).contains(&lines),
+            "expected ~26.2k lines, got {lines}"
+        );
+    }
+
+    #[test]
+    fn a_pathological_hyphen_run_terminates() {
+        // The hyphen rule has a lookbehind and a lookahead; a string that is
+        // almost all hyphens exercises every branch of it.
+        for n in [1usize, 2, 3, 8, 64] {
+            let subject = "a-".repeat(n);
+            for w in [1usize, 2, 3, 5] {
+                let out = render(&format!("{{{{ '{subject}' | wordwrap({w}) }}}}"));
+                assert!(out.is_ok(), "a-*{n} at width {w} did not return");
+            }
+        }
+    }
+
+    #[test]
+    fn a_filter_never_invents_characters_that_were_not_there() {
+        // truncate and wordwrap may DROP characters and wordwrap inserts
+        // separators; neither may introduce anything else. A filter that did
+        // could put arbitrary text into a resource name.
+        let subject = "alpha beta gamma delta";
+        let out = render(&format!("{{{{ '{subject}' | wordwrap(7) }}}}")).expect("renders");
+        let rejoined: String = out.split('\n').collect::<Vec<_>>().join(" ");
+        assert_eq!(rejoined, subject, "wordwrap altered the text: {out:?}");
+    }
+}

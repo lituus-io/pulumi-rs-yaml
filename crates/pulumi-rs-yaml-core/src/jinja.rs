@@ -1430,6 +1430,20 @@ fn register_custom_filters(env: &mut minijinja::Environment<'_>) {
     // form keeps the builtin's exact semantics.
     env.add_filter("indent", indent_compat);
 
+    // Three Jinja2 string filters minijinja does not carry. A template that
+    // names one fails the render, and because a render fault is reported per
+    // file the stack then reads as unrenderable rather than as using a filter
+    // the engine lacks -- the same shape as the `tojson` gap closed in 0.5.20.
+    //
+    // Semantics are Jinja2's, pinned against it rather than against its prose:
+    // `truncate`'s leeway and word-boundary rule, `center`'s asymmetric pad,
+    // and `wordwrap`'s hyphen breaking are each odd enough to get wrong by
+    // reading the documentation. Every case in the tests carries the value the
+    // reference implementation produces.
+    env.add_filter("truncate", truncate_compat);
+    env.add_filter("center", center_compat);
+    env.add_filter("wordwrap", wordwrap_compat);
+
     // Jinja2 method calls on dicts/strings (`vars.items()`), which minijinja
     // exposes only as filters. A non-capturing `fn` keeps this monomorphised —
     // no boxed trait object, no captured state, trivially Send + Sync.
@@ -1525,6 +1539,427 @@ fn indent_compat(
         out.push_str(line);
     }
     Ok(out)
+}
+
+/// Byte offset of the `n`-th character, or the string's length when it is
+/// shorter than that.
+///
+/// Slicing a `&str` by a character count needs a boundary, and computing one
+/// with `chars().count()` first walks the string twice. Callers here walk it
+/// once and keep the offset they pass in.
+#[inline]
+fn char_boundary(s: &str, n: usize) -> usize {
+    s.char_indices().nth(n).map_or(s.len(), |(i, _)| i)
+}
+
+/// Jinja2's `truncate(length=255, killwords=False, end='...', leeway=5)`.
+///
+/// Returns the input BORROWED when it is short enough to keep, which is the
+/// overwhelmingly common case: a filter applied to every name in a program
+/// must not allocate for the values it leaves alone. The walk stops as soon as
+/// the string is known to be too long, so a 4 KB description costs
+/// `length + leeway + 1` characters of scanning rather than all of it.
+///
+/// `length` counts the returned string INCLUDING `end`, and `leeway` is slack
+/// on the decision to truncate at all -- a string only a few characters over
+/// is returned whole. Both are Jinja2's, and both are easy to misread: the
+/// tests carry the reference implementation's answers.
+fn truncate_compat(
+    value: minijinja::Value,
+    args: &[minijinja::Value],
+    kwargs: minijinja::value::Kwargs,
+) -> Result<minijinja::Value, minijinja::Error> {
+    let Some(subject) = value.as_str() else {
+        return Err(minijinja::Error::new(
+            minijinja::ErrorKind::InvalidOperation,
+            "truncate: expected a string",
+        ));
+    };
+    let length = match args.first() {
+        Some(v) => usize::try_from(v.as_i64().unwrap_or(255).max(0)).unwrap_or(255),
+        None => kwargs.get::<Option<usize>>("length")?.unwrap_or(255),
+    };
+    let killwords = match args.get(1) {
+        Some(v) => v.is_true(),
+        None => kwargs.get::<Option<bool>>("killwords")?.unwrap_or(false),
+    };
+    let end: Cow<'_, str> = match args.get(2) {
+        Some(v) => Cow::Owned(v.as_str().unwrap_or("...").to_owned()),
+        None => match kwargs.get::<Option<Cow<'_, str>>>("end")? {
+            Some(e) => Cow::Owned(e.into_owned()),
+            None => Cow::Borrowed("..."),
+        },
+    };
+    let leeway = match args.get(3) {
+        Some(v) => usize::try_from(v.as_i64().unwrap_or(5).max(0)).unwrap_or(5),
+        None => kwargs.get::<Option<usize>>("leeway")?.unwrap_or(5),
+    };
+    kwargs.assert_all_used()?;
+
+    let end_chars = end.chars().count();
+    if length < end_chars {
+        // Jinja2 asserts here. An assertion is a crash; a render error names
+        // the template and the line, which is the difference between "fix this
+        // filter call" and a stack trace out of the engine.
+        return Err(minijinja::Error::new(
+            minijinja::ErrorKind::InvalidOperation,
+            format!("truncate: expected length >= {end_chars}, got {length}"),
+        ));
+    }
+
+    // One walk. `cut` is at most `limit`, so its offset is always recorded
+    // before the early exit fires.
+    let cut = length - end_chars;
+    let limit = length.saturating_add(leeway);
+    let mut cut_at = None;
+    let mut seen = 0usize;
+    let mut too_long = false;
+    for (offset, _) in subject.char_indices() {
+        if seen == cut {
+            cut_at = Some(offset);
+        }
+        seen += 1;
+        if seen > limit {
+            too_long = true;
+            break;
+        }
+    }
+    if !too_long {
+        // The pass-through path: the value is MOVED out, so a name the filter
+        // leaves alone costs no allocation and no copy of its bytes.
+        return Ok(value);
+    }
+
+    let head = &subject[..cut_at.unwrap_or(subject.len())];
+    // Jinja2 drops the partial last word unless `killwords`. Its `rsplit(' ', 1)`
+    // yields the whole string when there is no space, which is what `None` means
+    // here -- an id with no spaces is truncated at the cut, not emptied.
+    let kept = if killwords {
+        head
+    } else {
+        head.rsplit_once(' ').map_or(head, |(before, _)| before)
+    };
+    let mut out = String::with_capacity(kept.len() + end.len());
+    out.push_str(kept);
+    out.push_str(&end);
+    Ok(minijinja::Value::from(out))
+}
+
+/// The most padding `center` will produce for one value.
+///
+/// `width` comes from the template, so this is the difference between a render
+/// error and an allocation the operating system refuses. 1 MiB is the bound the
+/// include loader already puts on one piece of template text, and a centred
+/// string a megabyte wide is not a thing anybody means.
+const MAX_CENTER_PAD: usize = 1024 * 1024;
+
+/// Jinja2's `center(width=80)`, which is Python's `str.center`.
+///
+/// The pad is NOT symmetric, and not in the obvious direction: CPython gives
+/// the extra space to the left when `marg & width & 1`, so `'ab'.center(5)` is
+/// `"  ab "` while `'x'.center(4)` is `" x  "`. Reproduced rather than
+/// approximated -- a centred string is usually going into a banner somebody
+/// diffs.
+///
+/// A string already at or past `width` is returned borrowed.
+fn center_compat(
+    value: minijinja::Value,
+    args: &[minijinja::Value],
+    kwargs: minijinja::value::Kwargs,
+) -> Result<minijinja::Value, minijinja::Error> {
+    let Some(subject) = value.as_str() else {
+        return Err(minijinja::Error::new(
+            minijinja::ErrorKind::InvalidOperation,
+            "center: expected a string",
+        ));
+    };
+    let width = match args.first() {
+        Some(v) => usize::try_from(v.as_i64().unwrap_or(80).max(0)).unwrap_or(80),
+        None => kwargs.get::<Option<usize>>("width")?.unwrap_or(80),
+    };
+    kwargs.assert_all_used()?;
+
+    // Stop counting once the string cannot need padding.
+    let mut chars = 0usize;
+    for _ in subject.chars() {
+        chars += 1;
+        if chars >= width {
+            return Ok(value); // already wide enough: moved through untouched
+        }
+    }
+    let marg = width - chars;
+    if marg > MAX_CENTER_PAD {
+        // `width` is author-controlled and this is the only one of the three
+        // filters that ALLOCATES from it. Unbounded, `center(10**18)` is an
+        // allocation of that many bytes, which aborts the process rather than
+        // failing a render -- found by the security suite before it shipped.
+        // A bound turns a crash into a message naming the template.
+        return Err(minijinja::Error::new(
+            minijinja::ErrorKind::InvalidOperation,
+            format!(
+                "center: a width of {width} would pad {marg} characters, over \
+                 the {MAX_CENTER_PAD} this engine will produce in one value"
+            ),
+        ));
+    }
+    let left = marg / 2 + (marg & width & 1);
+    let mut out = String::with_capacity(subject.len() + marg);
+    for _ in 0..left {
+        out.push(' ');
+    }
+    out.push_str(subject);
+    for _ in 0..(marg - left) {
+        out.push(' ');
+    }
+    Ok(minijinja::Value::from(out))
+}
+
+/// Jinja2's `wordwrap(width=79, break_long_words=True, wrapstring=None,
+/// break_on_hyphens=True)`.
+///
+/// Jinja2 delegates to Python's `textwrap`, which is a two-stage algorithm
+/// rather than a greedy scan: it first splits a line into CHUNKS -- a run of
+/// whitespace is a chunk of its own, and a hyphen ends a chunk only under a
+/// specific rule -- and then fills lines from those chunks. A greedy
+/// implementation gets realistic widths right and then disagrees on hyphenated
+/// words and narrow widths, which is worse than not having the filter at all: a
+/// template would render differently here than under every other Jinja
+/// toolchain, and silently. So both stages are reproduced, and the whole
+/// parameter space is held to the reference by the differential corpus in
+/// `tests/jinja_string_filter_tests.rs`.
+///
+/// Chunks borrow the input, so no word is copied. One allocation for the
+/// result, sized from the input, and one reused chunk buffer for the render.
+fn wordwrap_compat(
+    value: minijinja::Value,
+    args: &[minijinja::Value],
+    kwargs: minijinja::value::Kwargs,
+) -> Result<minijinja::Value, minijinja::Error> {
+    let Some(subject) = value.as_str() else {
+        return Err(minijinja::Error::new(
+            minijinja::ErrorKind::InvalidOperation,
+            "wordwrap: expected a string",
+        ));
+    };
+    let width = match args.first() {
+        Some(v) => usize::try_from(v.as_i64().unwrap_or(79).max(1)).unwrap_or(79),
+        None => kwargs.get::<Option<usize>>("width")?.unwrap_or(79),
+    }
+    .max(1);
+    let break_long_words = match args.get(1) {
+        Some(v) => v.is_true(),
+        None => kwargs
+            .get::<Option<bool>>("break_long_words")?
+            .unwrap_or(true),
+    };
+    let wrapstring: Cow<'_, str> = match args.get(2) {
+        Some(v) => match v.as_str() {
+            Some(s) => Cow::Owned(s.to_owned()),
+            None => Cow::Borrowed("\n"), // Jinja2's None => the environment newline
+        },
+        None => match kwargs.get::<Option<Cow<'_, str>>>("wrapstring")? {
+            Some(w) => Cow::Owned(w.into_owned()),
+            None => Cow::Borrowed("\n"),
+        },
+    };
+    let break_on_hyphens = match args.get(3) {
+        Some(v) => v.is_true(),
+        None => kwargs
+            .get::<Option<bool>>("break_on_hyphens")?
+            .unwrap_or(true),
+    };
+    kwargs.assert_all_used()?;
+
+    let mut out = String::with_capacity(subject.len() + subject.len() / width + 8);
+    let mut chunks: Vec<&str> = Vec::new();
+    let mut first = true;
+    for line in subject.split('\n') {
+        if !first {
+            out.push_str(&wrapstring);
+        }
+        first = false;
+        if line.is_empty() {
+            continue;
+        }
+        chunks.clear();
+        split_chunks(line, break_on_hyphens, &mut chunks);
+        fill_chunks(
+            &mut chunks,
+            width,
+            break_long_words,
+            break_on_hyphens,
+            &wrapstring,
+            &mut out,
+        );
+    }
+    Ok(minijinja::Value::from(out))
+}
+
+/// The characters `textwrap`'s word rule counts as letters: word characters
+/// that are not digits, i.e. letters and `_`.
+#[inline]
+fn is_wordish(c: char) -> bool {
+    (c.is_alphanumeric() && !c.is_numeric()) || c == '_'
+}
+
+/// One line into `textwrap`'s chunks, each borrowed from `line`.
+///
+/// A run of whitespace is its own chunk, because the fill stage counts it toward
+/// the width and may drop it at a line edge. A hyphen ends a chunk only when two
+/// letters precede it, or letter-hyphen-letter does, AND a letter follows with an
+/// optional hyphen between -- `textwrap`'s rule, and the reason `well-known`
+/// splits at width 6 while `a-b-c-d` splits only after `a-b-`.
+fn split_chunks<'a>(line: &'a str, break_on_hyphens: bool, out: &mut Vec<&'a str>) {
+    // A three-character rolling window stands in for the regex lookbehind, so
+    // the line is walked once and no Vec<char> is built.
+    let mut back: [Option<char>; 3] = [None; 3];
+    let mut start = 0usize;
+    let mut in_ws: Option<bool> = None;
+    for (offset, ch) in line.char_indices() {
+        let ws = ch.is_whitespace();
+        if in_ws.is_some_and(|prev| prev != ws) {
+            out.push(&line[start..offset]);
+            start = offset;
+        }
+        in_ws = Some(ws);
+
+        if break_on_hyphens && ch == '-' {
+            let behind_two = back[0].is_some_and(is_wordish) && back[1].is_some_and(is_wordish);
+            let behind_alt = back[0].is_some_and(is_wordish)
+                && back[1] == Some('-')
+                && back[2].is_some_and(is_wordish);
+            if behind_two || behind_alt {
+                let rest = &line[offset + ch.len_utf8()..];
+                let mut ahead = rest.chars();
+                let ahead_ok = match (ahead.next(), ahead.next(), ahead.next()) {
+                    (Some(a), Some(b), _) if is_wordish(a) && is_wordish(b) => true,
+                    (Some(a), Some('-'), Some(c)) if is_wordish(a) && is_wordish(c) => true,
+                    _ => false,
+                };
+                if ahead_ok {
+                    let cut = offset + ch.len_utf8();
+                    out.push(&line[start..cut]);
+                    start = cut;
+                    in_ws = None;
+                }
+            }
+        }
+        back[2] = back[1];
+        back[1] = back[0];
+        back[0] = Some(ch);
+    }
+    if start < line.len() {
+        out.push(&line[start..]);
+    }
+}
+
+/// `textwrap`'s fill stage: greedy over chunks, dropping whitespace at a line
+/// edge and splitting a chunk wider than the line when asked to.
+///
+/// The head chunk is re-sliced in place when a long word is split, which is how
+/// the reference makes progress without copying. Every iteration either emits a
+/// line or advances the cursor, so this terminates on any input -- and the fuzz
+/// target asserts it.
+fn fill_chunks(
+    chunks: &mut [&str],
+    width: usize,
+    break_long_words: bool,
+    break_on_hyphens: bool,
+    wrapstring: &str,
+    out: &mut String,
+) {
+    let mut i = 0usize;
+    let mut wrote_line = false;
+    while i < chunks.len() {
+        // Whitespace opening a continuation line is dropped.
+        if wrote_line && chunks[i].trim().is_empty() {
+            i += 1;
+            if i >= chunks.len() {
+                break;
+            }
+        }
+        let line_start = i;
+        let mut taken = 0usize;
+        let mut len = 0usize;
+        while i < chunks.len() {
+            let l = chunks[i].chars().count();
+            if len + l <= width {
+                len += l;
+                i += 1;
+                taken += 1;
+            } else {
+                break;
+            }
+        }
+        let mut long_head: Option<&str> = None;
+        if i < chunks.len() && chunks[i].chars().count() > width {
+            let space_left = width - len;
+            if break_long_words {
+                let chunk = chunks[i];
+                let mut end = space_left;
+                if break_on_hyphens && chunk.chars().count() > space_left {
+                    // Break after the last hyphen within the space left, but
+                    // only when something other than hyphens precedes it.
+                    if let Some(h) = last_hyphen_before(chunk, space_left) {
+                        if h > 0 && chunk.chars().take(h).any(|c| c != '-') {
+                            end = h + 1;
+                        }
+                    }
+                }
+                let cut = char_boundary(chunk, end);
+                let (head, tail) = chunk.split_at(cut);
+                long_head = Some(head);
+                chunks[i] = tail;
+            } else if taken == 0 {
+                // Nothing on the line yet, so the word takes it whole.
+                taken = 1;
+                i += 1;
+            }
+        }
+        // Trailing whitespace is dropped -- but a zero-width long-word fragment
+        // is dropped FIRST, which is what leaves a trailing space on some lines
+        // the reference produces.
+        let mut end_chunk = line_start + taken;
+        if long_head.is_some_and(str::is_empty) {
+            long_head = None;
+        } else if long_head.is_none()
+            && end_chunk > line_start
+            && chunks[end_chunk - 1].trim().is_empty()
+        {
+            end_chunk -= 1;
+        }
+        let emitted = end_chunk > line_start || long_head.is_some();
+        if emitted {
+            if wrote_line {
+                out.push_str(wrapstring);
+            }
+            for chunk in &chunks[line_start..end_chunk] {
+                out.push_str(chunk);
+            }
+            if let Some(head) = long_head {
+                out.push_str(head);
+            }
+            wrote_line = true;
+        }
+        if i == line_start && !emitted {
+            break; // unreachable, and never an infinite loop if it is not
+        }
+    }
+}
+
+/// Character index of the last `-` strictly before character `limit`.
+#[inline]
+fn last_hyphen_before(s: &str, limit: usize) -> Option<usize> {
+    let mut found = None;
+    for (n, c) in s.chars().enumerate() {
+        if n >= limit {
+            break;
+        }
+        if c == '-' {
+            found = Some(n);
+        }
+    }
+    found
 }
 
 /// Python-style methods Jinja2 templates call on values minijinja treats as
@@ -2995,5 +3430,92 @@ mod tests {
         let input = format!("version: {}\n", readfile_marker(0));
         let result = resolve_readfile_markers(&input, &cache).unwrap();
         assert_eq!(result, "version: 1.2.3\n");
+    }
+}
+
+#[cfg(test)]
+mod string_filter_units {
+    //! The pieces of `truncate` / `center` / `wordwrap` that a differential
+    //! corpus proves but does not EXPLAIN. Behaviour is pinned against the
+    //! reference in `tests/jinja_string_filter_tests.rs`; these name the rules
+    //! that behaviour rests on, so a future edit fails against an intention
+    //! rather than against 2,992 opaque strings.
+    use super::{char_boundary, is_wordish, last_hyphen_before, split_chunks};
+
+    #[test]
+    fn a_char_boundary_is_never_inside_a_character() {
+        assert_eq!(char_boundary("héllo", 0), 0);
+        assert_eq!(char_boundary("héllo", 1), 1);
+        assert_eq!(char_boundary("héllo", 2), 3); // é is two bytes
+        assert_eq!(char_boundary("héllo", 99), "héllo".len());
+        assert_eq!(char_boundary("", 3), 0);
+    }
+
+    #[test]
+    fn wordish_is_letters_and_underscore_but_not_digits() {
+        for c in ['a', 'Z', 'é', '_', 'ぁ'] {
+            assert!(is_wordish(c), "{c:?} should be word-ish");
+        }
+        for c in ['0', '9', '-', ' ', '.', '!'] {
+            assert!(!is_wordish(c), "{c:?} should not be word-ish");
+        }
+    }
+
+    #[test]
+    fn the_last_hyphen_is_found_only_before_the_limit() {
+        assert_eq!(last_hyphen_before("a-b-c", 5), Some(3));
+        assert_eq!(last_hyphen_before("a-b-c", 3), Some(1));
+        assert_eq!(last_hyphen_before("a-b-c", 1), None);
+        assert_eq!(last_hyphen_before("abc", 3), None);
+        // Counted in CHARACTERS, so a multi-byte prefix does not shift it.
+        assert_eq!(last_hyphen_before("é-b", 3), Some(1));
+    }
+
+    fn chunks(line: &str, hyphens: bool) -> Vec<&str> {
+        let mut out = Vec::new();
+        split_chunks(line, hyphens, &mut out);
+        out
+    }
+
+    #[test]
+    fn whitespace_is_a_chunk_of_its_own() {
+        // The fill stage counts it toward the width and may drop it at a line
+        // edge, so it cannot be folded into the words either side.
+        assert_eq!(chunks("aaa bbb", true), vec!["aaa", " ", "bbb"]);
+        assert_eq!(chunks("aaa  bbb", true), vec!["aaa", "  ", "bbb"]);
+        assert_eq!(chunks(" lead", true), vec![" ", "lead"]);
+        assert_eq!(chunks("trail ", true), vec!["trail", " "]);
+    }
+
+    #[test]
+    fn a_hyphen_splits_only_under_the_reference_rule() {
+        // Two letters before it, and a letter after.
+        assert_eq!(chunks("well-known", true), vec!["well-", "known"]);
+        // One letter before is not enough on its own ...
+        assert_eq!(chunks("a-b", true), vec!["a-b"]);
+        // ... but letter-hyphen-letter before it is, which is why `a-b-c-d`
+        // breaks after `a-b-` and nowhere else.
+        assert_eq!(chunks("a-b-c-d", true), vec!["a-b-", "c-d"]);
+        // Nothing follows, so nothing to break toward.
+        assert_eq!(chunks("trailing-", true), vec!["trailing-"]);
+        // A leading hyphen is not a break point (nothing word-ish precedes it),
+        // but the one inside the word still is -- confirmed against the
+        // reference, which was how this expectation got corrected.
+        assert_eq!(chunks("-leading-hyphen", true), vec!["-leading-", "hyphen"]);
+        // Digits are not letters for this rule.
+        assert_eq!(chunks("ab-12", true), vec!["ab-12"]);
+    }
+
+    #[test]
+    fn hyphens_are_inert_when_the_caller_says_so() {
+        assert_eq!(
+            chunks("well-known thing", false),
+            vec!["well-known", " ", "thing"]
+        );
+    }
+
+    #[test]
+    fn an_empty_line_yields_no_chunks() {
+        assert!(chunks("", true).is_empty());
     }
 }

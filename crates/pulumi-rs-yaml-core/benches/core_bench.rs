@@ -916,6 +916,66 @@ fn bench_needs_interpolation_pass(c: &mut Criterion) {
     });
 }
 
+fn bench_string_filters(c: &mut Criterion) {
+    // These run once per templated value in a program, so what matters is the
+    // cost per call -- not the cost of the template around it. The subject is
+    // passed through the CONTEXT rather than written into the template, so the
+    // source stays a constant ~40 bytes and the measurement isolates the filter
+    // instead of minijinja's lexer. Measured the other way first, where a
+    // 256 KiB literal made the parse dominate and the comparison said nothing.
+    let config = HashMap::new();
+    let small = "short-id".to_string();
+    let four_k = "a".repeat(4096);
+    let quarter_meg = "a".repeat(256 * 1024);
+    let prose = "the dataset holds per-cell performance counters aggregated over \
+                 fifteen-minute windows, partitioned by ingestion date"
+        .to_string();
+
+    let mut extra = HashMap::new();
+    extra.insert("small".to_string(), small);
+    extra.insert("four_k".to_string(), four_k);
+    extra.insert("quarter_meg".to_string(), quarter_meg);
+    extra.insert("prose".to_string(), prose);
+
+    let ctx = JinjaContext {
+        project_name: "bench",
+        stack_name: "dev",
+        cwd: "/tmp",
+        organization: "org",
+        root_directory: "/tmp",
+        config: &config,
+        project_dir: "/tmp",
+        undefined: UndefinedMode::Strict,
+        provider_templated_packages: &[],
+        extra: &extra,
+    };
+
+    let mut bench = |name: &str, source: &'static str| {
+        c.bench_function(name, |b| {
+            let pre = JinjaPreprocessor::new(&ctx);
+            b.iter(|| black_box(pre.preprocess(black_box(source), "Pulumi.yaml").unwrap()))
+        });
+    };
+
+    // The pass-through path: inside the cap, so nothing is allocated or copied.
+    bench(
+        "truncate_pass_through",
+        "{{ small | truncate(60, False, '', 0) }}",
+    );
+    // The same cap over 4 KiB and then 64x that. The walk is bounded by
+    // length + leeway, so these two should not separate by 64x.
+    bench(
+        "truncate_4k_subject_60_cap",
+        "{{ four_k | truncate(60, False, '', 0) }}",
+    );
+    bench(
+        "truncate_256k_subject_60_cap",
+        "{{ quarter_meg | truncate(60, False, '', 0) }}",
+    );
+    bench("center_72", "{{ small | center(72) }}");
+    bench("wordwrap_prose_40", "{{ prose | wordwrap(40) }}");
+}
+
 criterion_group!(
     benches,
     bench_parse_simple,
@@ -940,6 +1000,7 @@ criterion_group!(
     bench_resolve_literal,
     bench_checkpoint,
     bench_needs_interpolation_pass,
+    bench_string_filters,
     bench_parse_interpolation,
 );
 criterion_main!(benches);

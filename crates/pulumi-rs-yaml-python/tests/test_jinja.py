@@ -258,3 +258,68 @@ class TestPreprocessJinjaDiag:
     def test_a_bad_context_is_this_calls_error_not_a_diagnostic(self):
         with pytest.raises(TypeError):
             preprocess_jinja_diag("a: 1\n", "t.yaml", {"k": object()})
+
+
+class TestStringFilters:
+    """`truncate`, `center` and `wordwrap` through the Python binding.
+
+    The binding is a surface of its own: a filter registered in the Rust
+    environment but unreachable from here would pass every Rust test and still
+    fail the callers that render through this module. Expected values are the
+    reference implementation's, and the Rust side holds the full 2,992-case
+    differential corpus.
+    """
+
+    def _render(self, expr, jinja_context):
+        src = f"name: t\nruntime: yaml\ndescription: <{{{{ {expr} }}}}>\n"
+        out = preprocess_jinja(src, "Pulumi.yaml", jinja_context)
+        line = [ln for ln in out.splitlines() if ln.startswith("description:")][0]
+        # Strip exactly one marker at each end, so a value containing one is not
+        # eaten along with it.
+        body = line.split("description: ", 1)[1].strip()
+        assert body.startswith("<") and body.endswith(">")
+        return body[1:-1]
+
+    @pytest.mark.parametrize(("expr", "expected"), [
+        # The field expression's cap: no end string, no leeway, a hard 60.
+        ("'ran-agnostic-kpi-table' | truncate(60, False, '', 0)", "ran-agnostic-kpi-table"),
+        ("'abcdefghijklmnop' | truncate(6, False, '', 0)", "abcdef"),
+        # `end` counts inside `length`, and the partial word is dropped.
+        ("'hello world how are you' | truncate(11, False, '...', 0)", "hello..."),
+        ("'hello world how are you' | truncate(11, True, '...', 0)", "hello wo..."),
+        # leeway defaults to 5, so an 11-character string survives truncate(10).
+        ("'abcdefghijk' | truncate(10)", "abcdefghijk"),
+    ])
+    def test_truncate(self, expr, expected, jinja_context):
+        assert self._render(expr, jinja_context) == expected
+
+    @pytest.mark.parametrize(("expr", "expected"), [
+        # Asymmetric, and not in the direction one would guess.
+        ("'x' | center(4)", " x  "),
+        ("'ab' | center(5)", "  ab "),
+        ("'abc' | center(3)", "abc"),
+    ])
+    def test_center(self, expr, expected, jinja_context):
+        assert self._render(expr, jinja_context) == expected
+
+    @pytest.mark.parametrize(("expr", "expected"), [
+        ("'aaa bbb ccc' | wordwrap(7) | replace('\\n', '|')", "aaa bbb|ccc"),
+        # A hyphen between two letters is a break opportunity ...
+        ("'well-known thing' | wordwrap(6) | replace('\\n', '|')", "well-|known|thing"),
+        # ... unless the caller turns that off.
+        ("'well-known thing' | wordwrap(6, True, None, False) | replace('\\n', '|')",
+         "well-k|nown|thing"),
+    ])
+    def test_wordwrap(self, expr, expected, jinja_context):
+        assert self._render(expr, jinja_context) == expected
+
+    def test_a_width_whose_padding_is_absurd_is_refused_not_fatal(self, jinja_context):
+        """`center`'s width is author-controlled and it allocates from it."""
+        with pytest.raises(ValueError) as excinfo:
+            self._render("'x' | center(999999999999999999)", jinja_context)
+        message = str(excinfo.value)
+        # Asserted on the BOUND, not merely on the filter's name: an engine that
+        # does not carry `center` at all raises "unknown filter: center", which
+        # also contains it -- so a looser assertion passed on a version where the
+        # bound does not exist.
+        assert "would pad" in message and "1048576" in message, message

@@ -80,6 +80,7 @@ jobs:
         target:
           - fuzz_yaml_parser
           - fuzz_interpolation
+          - fuzz_string_filters
           - fuzz_jinja
           - fuzz_builtins
           - fuzz_converter

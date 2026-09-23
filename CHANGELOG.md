@@ -3,6 +3,68 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.32
+
+### Three string filters a template may already be written against
+
+`truncate`, `center` and `wordwrap` are Jinja2 filters. minijinja, which this
+engine renders with, carries most of Jinja2's set and not those three, so a
+template that names one fails its render — and because a render fault is
+reported per file, the stack reads as unrenderable rather than as naming a
+filter the engine lacks. A stack computing a resource id as
+`{{ ... | truncate(60, False, "", 0) }}` stopped every one of its deploys on
+`filter truncate is unknown`. Same shape as the `tojson` gap closed in 0.5.20:
+the template was correct and the engine was short.
+
+None of the three is what its documentation suggests. `truncate` counts its
+`end` string INSIDE `length`, and carries a `leeway` that suppresses truncation
+entirely for a string only a little over — so `truncate(10)` returns an
+eleven-character string unchanged. `center` pads asymmetrically, and not in the
+direction anyone would guess: `'x'.center(4)` is `" x  "` but `'ab'.center(5)`
+is `"  ab "`. And `wordwrap` is not a greedy scan at all; Jinja2 delegates to
+Python's `textwrap`, which splits a line into chunks first — whitespace runs are
+chunks of their own, and a hyphen ends a chunk only when two letters precede it
+or letter-hyphen-letter does, AND a letter follows — and then fills lines from
+those. That rule is why `well-known` breaks at width 6 while `a-b-c-d` breaks
+only after `a-b-`.
+
+So none of this was implemented from the prose. A greedy `wordwrap` was written
+first, agreed with the reference on realistic widths, and then disagreed on
+hyphenated words and narrow ones — which is worse than not having the filter,
+because a template would render differently here than under every other Jinja
+toolchain and do it silently. Both `textwrap` stages are reproduced instead.
+
+Performance is in the pass-through, because these run once per templated value
+in a program and nearly always leave it alone. A subject inside the cap is
+returned by MOVING the value through, so it costs no allocation and no copy of
+its bytes, and `truncate`'s walk stops as soon as the string is known to be too
+long: measured flat at 20.8–21.4µs across subjects from 8 characters to 256 KiB
+under the same 60-character cap, a 32,000x range. `wordwrap`'s chunks borrow the
+line, so no word is copied, and the chunk buffer is reused for the whole render
+rather than allocated per line. No regex, no dynamic dispatch, no `unsafe`.
+
+`center` is the one filter that allocates from a number the template chose, and
+it is now bounded: the security suite found that `center(10**18)` asked the
+allocator for that many bytes and aborted the process. A width whose padding
+would exceed 1 MiB is a render error naming the template instead.
+
+Held to the reference rather than to an opinion: 2,992 differential cases —
+every combination of 22 subjects (empty, whitespace-only, multi-line,
+hyphenated, non-ASCII, CJK) against the parameter space of all three filters —
+captured from the reference implementation and stored as a fixture, including
+the 88 it REFUSES, which the engine must refuse too rather than answer. Seven
+unit tests name the rules that behaviour rests on; six regression tests hold the
+field expression and its precedence; eight security tests cover enormous and
+negative widths, multi-byte subjects at every width, a 256 KiB subject, a
+pathological hyphen run, and that wrapping never invents a character; one
+integration test carries a computed id through to a registered resource input; a
+new fuzz target found a flaw in its own harness and then ran 459,078 cases
+clean; five benches, all measured with the subject passed through the context so
+the numbers are the filter rather than minijinja's lexer.
+
+Every suite was checked against an engine with the three filters unregistered,
+and each one fails there.
+
 ## 0.5.31
 
 ### An escaped dollar is not a literal pair of dollars
