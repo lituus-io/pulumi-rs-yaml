@@ -1714,6 +1714,20 @@ fn center_compat(
     Ok(minijinja::Value::from(out))
 }
 
+/// The most text `wordwrap` will produce for one value.
+///
+/// `wrapstring` is author-controlled and goes in ONCE PER LINE, and the line
+/// count is the subject divided by `width` -- so the output is the product of
+/// two things a template chooses, not a function of its own size. Measured
+/// before this bound existed: an 11 KiB template with `width=1` and a 1 KiB
+/// separator produced 5 MB, an amplification of 452x, and it scales linearly in
+/// both factors. Neither `truncate` nor `center` can amplify like this: one
+/// appends its `end` once, and the other's pad has its own bound.
+///
+/// Checked as the output grows rather than estimated up front, so it holds for
+/// any future path that writes here too.
+const MAX_WRAPPED_OUTPUT: usize = 8 * 1024 * 1024;
+
 /// Jinja2's `wordwrap(width=79, break_long_words=True, wrapstring=None,
 /// break_on_hyphens=True)`.
 ///
@@ -1783,14 +1797,24 @@ fn wordwrap_compat(
         }
         chunks.clear();
         split_chunks(line, break_on_hyphens, &mut chunks);
-        fill_chunks(
+        if let Err(reached) = fill_chunks(
             &mut chunks,
             width,
             break_long_words,
             break_on_hyphens,
             &wrapstring,
             &mut out,
-        );
+        ) {
+            return Err(minijinja::Error::new(
+                minijinja::ErrorKind::InvalidOperation,
+                format!(
+                    "wordwrap: a width of {width} with a {}-byte separator would \
+                     produce at least {reached} bytes for one value, over the \
+                     {MAX_WRAPPED_OUTPUT} this engine will emit",
+                    wrapstring.len()
+                ),
+            ));
+        }
     }
     Ok(minijinja::Value::from(out))
 }
@@ -1867,7 +1891,7 @@ fn fill_chunks(
     break_on_hyphens: bool,
     wrapstring: &str,
     out: &mut String,
-) {
+) -> Result<(), usize> {
     let mut i = 0usize;
     let mut wrote_line = false;
     while i < chunks.len() {
@@ -1931,6 +1955,9 @@ fn fill_chunks(
         let emitted = end_chunk > line_start || long_head.is_some();
         if emitted {
             if wrote_line {
+                if out.len() + wrapstring.len() > MAX_WRAPPED_OUTPUT {
+                    return Err(out.len() + wrapstring.len());
+                }
                 out.push_str(wrapstring);
             }
             for chunk in &chunks[line_start..end_chunk] {
@@ -1945,6 +1972,7 @@ fn fill_chunks(
             break; // unreachable, and never an infinite loop if it is not
         }
     }
+    Ok(())
 }
 
 /// Character index of the last `-` strictly before character `limit`.

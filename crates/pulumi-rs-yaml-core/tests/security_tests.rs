@@ -2768,6 +2768,71 @@ mod string_filter_security {
     }
 
     #[test]
+    fn wordwrap_cannot_amplify_a_small_template_without_bound() {
+        // `wrapstring` is author-controlled and goes in ONCE PER LINE, and the
+        // line count is the subject over `width` -- so the output is the product
+        // of two things a template chooses rather than a function of its own
+        // size. Measured before the bound existed: an 11 KiB template with
+        // width 1 and a 1 KiB separator produced 5 MB, 452x, scaling linearly in
+        // both factors. This is the case that found it.
+        let subject = "a ".repeat(5_000); // ~10 KiB, 5,000 one-character words
+        let separator = "z".repeat(2_000);
+        let err = render(&format!(
+            "{{{{ '{subject}' | wordwrap(1, True, '{separator}') }}}}"
+        ))
+        .expect_err("an 8 MiB+ value should be refused, not produced");
+        assert!(err.contains("wordwrap"), "should name the filter: {err}");
+        assert!(
+            err.contains("separator") && err.contains("width"),
+            "should name BOTH factors so the author knows which to change: {err}"
+        );
+    }
+
+    #[test]
+    fn wordwrap_still_produces_what_a_real_description_needs() {
+        // The bound must not be reachable by anything legitimate. 64 KiB of
+        // prose at width 79 with a newline separator is ~65 KiB out.
+        let subject = "word ".repeat(13_000); // ~65 KiB
+        let out = render(&format!("{{{{ '{subject}' | wordwrap(79) }}}}"))
+            .expect("a real description must still wrap");
+        assert!(
+            out.len() > 60_000,
+            "unexpectedly short: {} bytes",
+            out.len()
+        );
+    }
+
+    #[test]
+    fn every_growth_vector_in_the_three_filters_is_bounded() {
+        // The audit, as a test. For each filter, the inputs that could drive
+        // allocation, and the bound that stops them. A new argument that can
+        // grow the output belongs in this list with its own case above.
+        //
+        //   truncate  length   compared only; the cut is an index into the input
+        //             leeway   saturating_add, compared only
+        //             end      appended ONCE -> output <= input + end
+        //   center    width    pad bounded by MAX_CENTER_PAD
+        //   wordwrap  width    compared, and a divisor; floored at 1
+        //             wrapstring  once per line -> bounded by MAX_WRAPPED_OUTPUT
+        //
+        // Each line below is the bound firing or the input being the bound.
+        assert!(render("{{ 'abc' | truncate(999999999999999999) }}").is_ok());
+        assert!(render("{{ 'abc' | truncate(60, False, '', 999999999999999999) }}").is_ok());
+        assert!(render("{{ 'x' | center(999999999999999999) }}").is_err());
+        assert!(render("{{ 'aaa bbb' | wordwrap(0) }}").is_ok());
+        // The only amplifying pair, refused.
+        let big = "z".repeat(4096);
+        let subject = "a ".repeat(4_000);
+        assert!(
+            render(&format!(
+                "{{{{ '{subject}' | wordwrap(1, True, '{big}') }}}}"
+            ))
+            .is_err(),
+            "the amplifying pair must be refused"
+        );
+    }
+
+    #[test]
     fn a_filter_never_invents_characters_that_were_not_there() {
         // truncate and wordwrap may DROP characters and wordwrap inserts
         // separators; neither may introduce anything else. A filter that did

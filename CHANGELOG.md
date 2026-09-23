@@ -43,10 +43,27 @@ under the same 60-character cap, a 32,000x range. `wordwrap`'s chunks borrow the
 line, so no word is copied, and the chunk buffer is reused for the whole render
 rather than allocated per line. No regex, no dynamic dispatch, no `unsafe`.
 
-`center` is the one filter that allocates from a number the template chose, and
-it is now bounded: the security suite found that `center(10**18)` asked the
-allocator for that many bytes and aborted the process. A width whose padding
-would exceed 1 MiB is a render error naming the template instead.
+Two of the three could grow without bound from arguments a template chooses, and
+both were found by asking the question rather than by an incident.
+
+`center` allocates from its `width`. Unbounded, `center(10**18)` asked the
+allocator for that many bytes and ABORTED THE PROCESS -- found by the security
+suite before any of this shipped. A width whose padding would exceed 1 MiB is a
+render error naming the template instead.
+
+`wordwrap` is worse, because it amplifies: `wrapstring` is author-controlled and
+goes in once per line, and the line count is the subject over `width`, so the
+output is the product of two things a template picks rather than a function of
+its own size. Measured: an 11 KiB template with `width=1` and a 1 KiB separator
+produced 5 MB, an amplification of 452x, scaling linearly in both factors. The
+output is now bounded at 8 MiB, checked as it grows rather than estimated, with
+an error naming BOTH factors so an author knows which to change. 64 KiB of prose
+at width 79 still wraps, which is the case the bound must not reach.
+
+Neither `truncate` nor `end` can amplify: `end` is appended once, so the output
+is bounded by the input plus it, and `length` and `leeway` are only ever compared
+against. That audit is itself a test, so an argument added later has somewhere to
+declare its bound.
 
 Held to the reference rather than to an opinion: 2,992 differential cases —
 every combination of 22 subjects (empty, whitespace-only, multi-line,
