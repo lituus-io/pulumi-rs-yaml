@@ -2555,3 +2555,89 @@ mod render_diagnostic_security {
         rel
     }
 }
+
+// =========================================================================
+// interpolation.rs — the escape collapses once, and only once
+// =========================================================================
+
+mod escape_collapse_security {
+    use pulumi_rs_yaml_core::ast::interpolation::{needs_interpolation_pass, parse_interpolation};
+    use pulumi_rs_yaml_core::diag::Diagnostics;
+
+    fn parts_of(input: &str) -> Vec<(String, Option<String>)> {
+        let mut diags = Diagnostics::new();
+        let parts = parse_interpolation(input, None, &mut diags);
+        parts
+            .into_iter()
+            .map(|p| {
+                (
+                    p.text.into_owned(),
+                    p.value
+                        .map(|a| a.root_name().unwrap_or_default().to_string()),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_escape_is_collapsed_once_and_never_rescanned() {
+        // `$$$${x}` is two escapes and then literal text, never an
+        // interpolation: a second pass over the collapsed output would turn
+        // the author's literal into a reference to `x`.
+        let parts = parts_of("$$$${x}");
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0].0, "$${x}");
+        assert!(parts[0].1.is_none(), "collapsed text was re-interpreted");
+    }
+
+    #[test]
+    fn an_escape_before_a_reference_leaves_the_reference_intact() {
+        // `$$${x}` is one escape followed by a real reference. Collapsing the
+        // escape must not consume the `$` the reference needs.
+        let parts = parts_of("$$${x}");
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0].0, "$");
+        assert_eq!(parts[0].1.as_deref(), Some("x"));
+    }
+
+    #[test]
+    fn the_guard_admits_every_string_the_parser_rewrites() {
+        // The guard decides whether the parser runs. A string it turns away is
+        // emitted verbatim, so anything the parser would rewrite must be
+        // admitted — otherwise a value reaches a provider in a spelling the
+        // author did not write.
+        for input in [
+            "$$",
+            "$${x}",
+            "FROM $${data()}",
+            "a$$b",
+            "${x}",
+            "$$$${x}",
+            "\u{00e9}$$",
+        ] {
+            let mut diags = Diagnostics::new();
+            let parts = parse_interpolation(input, None, &mut diags);
+            let rewritten: String = parts.iter().map(|p| p.text.as_ref()).collect();
+            let resolves = parts.iter().any(|p| p.value.is_some());
+            if rewritten != input || resolves {
+                assert!(
+                    needs_interpolation_pass(input),
+                    "guard turned away a string the parser rewrites: {input:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_long_run_of_escapes_is_linear_and_bounded() {
+        // No quadratic rescan and no panic on a pathological run: 100k escapes
+        // collapse to exactly 100k dollars in one pass.
+        let input = "$".repeat(200_000);
+        assert!(needs_interpolation_pass(&input));
+        let mut diags = Diagnostics::new();
+        let parts = parse_interpolation(&input, None, &mut diags);
+        let text: String = parts.iter().map(|p| p.text.as_ref()).collect();
+        assert_eq!(text.len(), 100_000);
+        assert!(text.bytes().all(|b| b == b'$'));
+    }
+}

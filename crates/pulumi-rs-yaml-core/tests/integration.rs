@@ -5416,8 +5416,12 @@ outputs:
 // ============================================================
 
 #[test]
-fn test_dollar_dollar_is_literal() {
-    // $$ in YAML values is kept as-is (not an escape mechanism)
+fn test_dollar_dollar_escapes_one_dollar() {
+    // `$$` is the escape for a literal dollar, which is what
+    // `parse_interpolation` has always documented and what the reference
+    // implementation does. This test used to assert the opposite -- that the
+    // pair was "kept as-is" -- and so pinned the value a provider received
+    // rather than the value the author wrote.
     let source = r#"
 runtime: yaml
 outputs:
@@ -5431,8 +5435,8 @@ outputs:
         eval.get_output("literal")
             .and_then(|v| v.as_str().map(|s| s.to_string()))
             .as_deref(),
-        Some("$${something}"),
-        "$$ is kept literally"
+        Some("${something}"),
+        "the escape collapses, and what follows stays literal text"
     );
 }
 
@@ -6395,4 +6399,83 @@ resources:
         "an explicitly declared package must survive; got {:?}",
         names,
     );
+}
+
+#[test]
+fn an_escaped_dollar_reaches_the_provider_as_one_dollar() {
+    // The field failure, end to end: a data-quality rule whose SQL names the
+    // service's own `${data()}` placeholder. The author escapes the dollar so
+    // the engine does not read it as a reference, and the service is the one
+    // meant to substitute it. Both dollars used to arrive, and the service
+    // answered `Syntax error: Unexpected "$"`.
+    //
+    // The shape is what the fixture had: a block scalar, inside a sequence
+    // element, inside a nested map — every layer the parser walks.
+    let source = r#"
+name: test
+runtime: yaml
+resources:
+  scan:
+    type: gcp:dataplex:Datascan
+    properties:
+      dataScanId: probe
+      dataQualitySpec:
+        rules:
+          - name: freshness
+            sqlAssertion:
+              sqlStatement: |
+                SELECT insert_ts
+                FROM $${data()}
+                WHERE insert_ts > CURRENT_TIMESTAMP()
+      labels:
+        inline: "A$${data()}B"
+"#;
+
+    let mock = MockCallback::new();
+    let (eval, has_errors) = eval_with_mock(source, mock);
+    assert!(!has_errors, "errors: {}", eval.diags_display());
+
+    let regs = eval.callback().registrations();
+    assert_eq!(regs.len(), 1);
+
+    // `Value` is a tree of enum variants, so walk it by variant rather than
+    // through json-style accessors it does not have.
+    fn field<'a>(v: &'a Value<'a>, key: &str) -> Option<&'a Value<'a>> {
+        match v {
+            Value::Object(entries) => entries
+                .iter()
+                .find(|(k, _)| k.as_ref() == key)
+                .map(|(_, val)| val),
+            _ => None,
+        }
+    }
+    fn first<'a>(v: &'a Value<'a>) -> Option<&'a Value<'a>> {
+        match v {
+            Value::List(items) => items.first(),
+            _ => None,
+        }
+    }
+
+    let spec = regs[0]
+        .inputs
+        .get("dataQualitySpec")
+        .expect("dataQualitySpec reached the provider");
+    let statement = field(spec, "rules")
+        .and_then(first)
+        .and_then(|r| field(r, "sqlAssertion"))
+        .and_then(|a| field(a, "sqlStatement"))
+        .and_then(|v| v.as_str())
+        .expect("sqlStatement reached the provider");
+    assert_eq!(
+        statement,
+        "SELECT insert_ts\nFROM ${data()}\nWHERE insert_ts > CURRENT_TIMESTAMP()\n"
+    );
+
+    let label = regs[0]
+        .inputs
+        .get("labels")
+        .and_then(|v| field(v, "inline"))
+        .and_then(|v| v.as_str())
+        .expect("label reached the provider");
+    assert_eq!(label, "A${data()}B");
 }

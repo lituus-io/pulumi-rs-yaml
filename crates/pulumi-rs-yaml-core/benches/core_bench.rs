@@ -869,6 +869,53 @@ fn bench_checkpoint(c: &mut Criterion) {
     });
 }
 
+fn bench_parse_interpolation(c: &mut Criterion) {
+    use pulumi_rs_yaml_core::ast::interpolation::parse_interpolation;
+    use pulumi_rs_yaml_core::diag::Diagnostics;
+
+    // A statement the length of a real data-quality rule, carrying one escape.
+    // This is the case the parser newly sees, so it is the one that must not
+    // cost more than the copy it replaces.
+    let statement = "WITH\n  a AS (SELECT MAX(insert_ts) AS t FROM $${data()}),\n  \
+                     b AS (SELECT MIN(insert_ts) AS t FROM $${data()})\n\
+                     SELECT a.t, b.t FROM a, b WHERE a.t < b.t\n";
+    c.bench_function("parse_interpolation_statement_with_escapes", |b| {
+        b.iter(|| {
+            let mut diags = Diagnostics::new();
+            black_box(parse_interpolation(black_box(statement), None, &mut diags))
+        })
+    });
+
+    // A reference with text around it and no escape at all: every text part is
+    // borrowed, so this case should allocate nothing for its text.
+    let reference = "projects/my-project/datasets/${ds.datasetId}/tables/${t.tableId}";
+    c.bench_function("parse_interpolation_reference_no_escape", |b| {
+        b.iter(|| {
+            let mut diags = Diagnostics::new();
+            black_box(parse_interpolation(black_box(reference), None, &mut diags))
+        })
+    });
+}
+
+fn bench_needs_interpolation_pass(c: &mut Criterion) {
+    use pulumi_rs_yaml_core::ast::interpolation::needs_interpolation_pass;
+
+    // The guard runs once per string in a program, so the case that matters is
+    // the one that scans to the end: plain text with no marker at all.
+    let plain = "a".repeat(4096);
+    c.bench_function("needs_interpolation_pass_plain_4k", |b| {
+        b.iter(|| black_box(needs_interpolation_pass(black_box(&plain))))
+    });
+
+    // An escape at the very end is the worst admitted case — the whole string
+    // is scanned before the answer is known.
+    let mut trailing = "a".repeat(4094);
+    trailing.push_str("$$");
+    c.bench_function("needs_interpolation_pass_escape_at_end", |b| {
+        b.iter(|| black_box(needs_interpolation_pass(black_box(&trailing))))
+    });
+}
+
 criterion_group!(
     benches,
     bench_parse_simple,
@@ -892,5 +939,7 @@ criterion_group!(
     bench_native_str_regexp,
     bench_resolve_literal,
     bench_checkpoint,
+    bench_needs_interpolation_pass,
+    bench_parse_interpolation,
 );
 criterion_main!(benches);
