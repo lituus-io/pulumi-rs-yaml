@@ -11966,5 +11966,653 @@
 {
 "expr": "'trailing-' | wordwrap(79, False, None, False)",
 "expected": "trailing-"
+},
+{
+"expr": "'' | truncate(length=6)",
+"expected": ""
+},
+{
+"expr": "'' | truncate(length=6, end='')",
+"expected": ""
+},
+{
+"expr": "'' | truncate(length=11, killwords=True, end='...', leeway=0)",
+"expected": ""
+},
+{
+"expr": "'' | truncate(length=11, killwords=False, end='...', leeway=0)",
+"expected": ""
+},
+{
+"expr": "'' | truncate(6, end='', leeway=0)",
+"expected": ""
+},
+{
+"expr": "'' | truncate(6, True, end='X')",
+"expected": ""
+},
+{
+"expr": "'' | truncate(length=60, killwords=False, end='', leeway=0)",
+"expected": ""
+},
+{
+"expr": "'' | center(width=9)",
+"expected": "         "
+},
+{
+"expr": "'' | center(width=0)",
+"expected": ""
+},
+{
+"expr": "'' | wordwrap(width=6)",
+"expected": ""
+},
+{
+"expr": "'' | wordwrap(width=6, break_long_words=False)",
+"expected": ""
+},
+{
+"expr": "'' | wordwrap(width=6, break_on_hyphens=False)",
+"expected": ""
+},
+{
+"expr": "'' | wordwrap(width=6, wrapstring='|')",
+"expected": ""
+},
+{
+"expr": "'' | wordwrap(6, wrapstring='|', break_on_hyphens=False)",
+"expected": ""
+},
+{
+"expr": "'' | wordwrap(width=3, break_long_words=True, wrapstring='~', break_on_hyphens=True)",
+"expected": ""
+},
+{
+"expr": "'a' | truncate(length=6)",
+"expected": "a"
+},
+{
+"expr": "'a' | truncate(length=6, end='')",
+"expected": "a"
+},
+{
+"expr": "'a' | truncate(length=11, killwords=True, end='...', leeway=0)",
+"expected": "a"
+},
+{
+"expr": "'a' | truncate(length=11, killwords=False, end='...', leeway=0)",
+"expected": "a"
+},
+{
+"expr": "'a' | truncate(6, end='', leeway=0)",
+"expected": "a"
+},
+{
+"expr": "'a' | truncate(6, True, end='X')",
+"expected": "a"
+},
+{
+"expr": "'a' | truncate(length=60, killwords=False, end='', leeway=0)",
+"expected": "a"
+},
+{
+"expr": "'a' | center(width=9)",
+"expected": "    a    "
+},
+{
+"expr": "'a' | center(width=0)",
+"expected": "a"
+},
+{
+"expr": "'a' | wordwrap(width=6)",
+"expected": "a"
+},
+{
+"expr": "'a' | wordwrap(width=6, break_long_words=False)",
+"expected": "a"
+},
+{
+"expr": "'a' | wordwrap(width=6, break_on_hyphens=False)",
+"expected": "a"
+},
+{
+"expr": "'a' | wordwrap(width=6, wrapstring='|')",
+"expected": "a"
+},
+{
+"expr": "'a' | wordwrap(6, wrapstring='|', break_on_hyphens=False)",
+"expected": "a"
+},
+{
+"expr": "'a' | wordwrap(width=3, break_long_words=True, wrapstring='~', break_on_hyphens=True)",
+"expected": "a"
+},
+{
+"expr": "'hello world how are you' | truncate(length=6)",
+"expected": "hel..."
+},
+{
+"expr": "'hello world how are you' | truncate(length=6, end='')",
+"expected": "hello"
+},
+{
+"expr": "'hello world how are you' | truncate(length=11, killwords=True, end='...', leeway=0)",
+"expected": "hello wo..."
+},
+{
+"expr": "'hello world how are you' | truncate(length=11, killwords=False, end='...', leeway=0)",
+"expected": "hello..."
+},
+{
+"expr": "'hello world how are you' | truncate(6, end='', leeway=0)",
+"expected": "hello"
+},
+{
+"expr": "'hello world how are you' | truncate(6, True, end='X')",
+"expected": "helloX"
+},
+{
+"expr": "'hello world how are you' | truncate(length=60, killwords=False, end='', leeway=0)",
+"expected": "hello world how are you"
+},
+{
+"expr": "'hello world how are you' | center(width=9)",
+"expected": "hello world how are you"
+},
+{
+"expr": "'hello world how are you' | center(width=0)",
+"expected": "hello world how are you"
+},
+{
+"expr": "'hello world how are you' | wordwrap(width=6)",
+"expected": "hello\nworld\nhow\nare\nyou"
+},
+{
+"expr": "'hello world how are you' | wordwrap(width=6, break_long_words=False)",
+"expected": "hello\nworld\nhow\nare\nyou"
+},
+{
+"expr": "'hello world how are you' | wordwrap(width=6, break_on_hyphens=False)",
+"expected": "hello\nworld\nhow\nare\nyou"
+},
+{
+"expr": "'hello world how are you' | wordwrap(width=6, wrapstring='|')",
+"expected": "hello|world|how|are|you"
+},
+{
+"expr": "'hello world how are you' | wordwrap(6, wrapstring='|', break_on_hyphens=False)",
+"expected": "hello|world|how|are|you"
+},
+{
+"expr": "'hello world how are you' | wordwrap(width=3, break_long_words=True, wrapstring='~', break_on_hyphens=True)",
+"expected": "hel~lo ~wor~ld~how~are~you"
+},
+{
+"expr": "'aaa bbb ccc' | truncate(length=6)",
+"expected": "aaa bbb ccc"
+},
+{
+"expr": "'aaa bbb ccc' | truncate(length=6, end='')",
+"expected": "aaa bbb ccc"
+},
+{
+"expr": "'aaa bbb ccc' | truncate(length=11, killwords=True, end='...', leeway=0)",
+"expected": "aaa bbb ccc"
+},
+{
+"expr": "'aaa bbb ccc' | truncate(length=11, killwords=False, end='...', leeway=0)",
+"expected": "aaa bbb ccc"
+},
+{
+"expr": "'aaa bbb ccc' | truncate(6, end='', leeway=0)",
+"expected": "aaa"
+},
+{
+"expr": "'aaa bbb ccc' | truncate(6, True, end='X')",
+"expected": "aaa bbb ccc"
+},
+{
+"expr": "'aaa bbb ccc' | truncate(length=60, killwords=False, end='', leeway=0)",
+"expected": "aaa bbb ccc"
+},
+{
+"expr": "'aaa bbb ccc' | center(width=9)",
+"expected": "aaa bbb ccc"
+},
+{
+"expr": "'aaa bbb ccc' | center(width=0)",
+"expected": "aaa bbb ccc"
+},
+{
+"expr": "'aaa bbb ccc' | wordwrap(width=6)",
+"expected": "aaa\nbbb\nccc"
+},
+{
+"expr": "'aaa bbb ccc' | wordwrap(width=6, break_long_words=False)",
+"expected": "aaa\nbbb\nccc"
+},
+{
+"expr": "'aaa bbb ccc' | wordwrap(width=6, break_on_hyphens=False)",
+"expected": "aaa\nbbb\nccc"
+},
+{
+"expr": "'aaa bbb ccc' | wordwrap(width=6, wrapstring='|')",
+"expected": "aaa|bbb|ccc"
+},
+{
+"expr": "'aaa bbb ccc' | wordwrap(6, wrapstring='|', break_on_hyphens=False)",
+"expected": "aaa|bbb|ccc"
+},
+{
+"expr": "'aaa bbb ccc' | wordwrap(width=3, break_long_words=True, wrapstring='~', break_on_hyphens=True)",
+"expected": "aaa~bbb~ccc"
+},
+{
+"expr": "'well-known thing' | truncate(length=6)",
+"expected": "wel..."
+},
+{
+"expr": "'well-known thing' | truncate(length=6, end='')",
+"expected": "well-k"
+},
+{
+"expr": "'well-known thing' | truncate(length=11, killwords=True, end='...', leeway=0)",
+"expected": "well-kno..."
+},
+{
+"expr": "'well-known thing' | truncate(length=11, killwords=False, end='...', leeway=0)",
+"expected": "well-kno..."
+},
+{
+"expr": "'well-known thing' | truncate(6, end='', leeway=0)",
+"expected": "well-k"
+},
+{
+"expr": "'well-known thing' | truncate(6, True, end='X')",
+"expected": "well-X"
+},
+{
+"expr": "'well-known thing' | truncate(length=60, killwords=False, end='', leeway=0)",
+"expected": "well-known thing"
+},
+{
+"expr": "'well-known thing' | center(width=9)",
+"expected": "well-known thing"
+},
+{
+"expr": "'well-known thing' | center(width=0)",
+"expected": "well-known thing"
+},
+{
+"expr": "'well-known thing' | wordwrap(width=6)",
+"expected": "well-\nknown\nthing"
+},
+{
+"expr": "'well-known thing' | wordwrap(width=6, break_long_words=False)",
+"expected": "well-\nknown\nthing"
+},
+{
+"expr": "'well-known thing' | wordwrap(width=6, break_on_hyphens=False)",
+"expected": "well-k\nnown\nthing"
+},
+{
+"expr": "'well-known thing' | wordwrap(width=6, wrapstring='|')",
+"expected": "well-|known|thing"
+},
+{
+"expr": "'well-known thing' | wordwrap(6, wrapstring='|', break_on_hyphens=False)",
+"expected": "well-k|nown|thing"
+},
+{
+"expr": "'well-known thing' | wordwrap(width=3, break_long_words=True, wrapstring='~', break_on_hyphens=True)",
+"expected": "wel~l-k~now~n t~hin~g"
+},
+{
+"expr": "'héllo wörld' | truncate(length=6)",
+"expected": "héllo wörld"
+},
+{
+"expr": "'héllo wörld' | truncate(length=6, end='')",
+"expected": "héllo wörld"
+},
+{
+"expr": "'héllo wörld' | truncate(length=11, killwords=True, end='...', leeway=0)",
+"expected": "héllo wörld"
+},
+{
+"expr": "'héllo wörld' | truncate(length=11, killwords=False, end='...', leeway=0)",
+"expected": "héllo wörld"
+},
+{
+"expr": "'héllo wörld' | truncate(6, end='', leeway=0)",
+"expected": "héllo"
+},
+{
+"expr": "'héllo wörld' | truncate(6, True, end='X')",
+"expected": "héllo wörld"
+},
+{
+"expr": "'héllo wörld' | truncate(length=60, killwords=False, end='', leeway=0)",
+"expected": "héllo wörld"
+},
+{
+"expr": "'héllo wörld' | center(width=9)",
+"expected": "héllo wörld"
+},
+{
+"expr": "'héllo wörld' | center(width=0)",
+"expected": "héllo wörld"
+},
+{
+"expr": "'héllo wörld' | wordwrap(width=6)",
+"expected": "héllo\nwörld"
+},
+{
+"expr": "'héllo wörld' | wordwrap(width=6, break_long_words=False)",
+"expected": "héllo\nwörld"
+},
+{
+"expr": "'héllo wörld' | wordwrap(width=6, break_on_hyphens=False)",
+"expected": "héllo\nwörld"
+},
+{
+"expr": "'héllo wörld' | wordwrap(width=6, wrapstring='|')",
+"expected": "héllo|wörld"
+},
+{
+"expr": "'héllo wörld' | wordwrap(6, wrapstring='|', break_on_hyphens=False)",
+"expected": "héllo|wörld"
+},
+{
+"expr": "'héllo wörld' | wordwrap(width=3, break_long_words=True, wrapstring='~', break_on_hyphens=True)",
+"expected": "hél~lo ~wör~ld"
+},
+{
+"expr": "'abcdefghijklmnop' | truncate(length=6)",
+"expected": "abc..."
+},
+{
+"expr": "'abcdefghijklmnop' | truncate(length=6, end='')",
+"expected": "abcdef"
+},
+{
+"expr": "'abcdefghijklmnop' | truncate(length=11, killwords=True, end='...', leeway=0)",
+"expected": "abcdefgh..."
+},
+{
+"expr": "'abcdefghijklmnop' | truncate(length=11, killwords=False, end='...', leeway=0)",
+"expected": "abcdefgh..."
+},
+{
+"expr": "'abcdefghijklmnop' | truncate(6, end='', leeway=0)",
+"expected": "abcdef"
+},
+{
+"expr": "'abcdefghijklmnop' | truncate(6, True, end='X')",
+"expected": "abcdeX"
+},
+{
+"expr": "'abcdefghijklmnop' | truncate(length=60, killwords=False, end='', leeway=0)",
+"expected": "abcdefghijklmnop"
+},
+{
+"expr": "'abcdefghijklmnop' | center(width=9)",
+"expected": "abcdefghijklmnop"
+},
+{
+"expr": "'abcdefghijklmnop' | center(width=0)",
+"expected": "abcdefghijklmnop"
+},
+{
+"expr": "'abcdefghijklmnop' | wordwrap(width=6)",
+"expected": "abcdef\nghijkl\nmnop"
+},
+{
+"expr": "'abcdefghijklmnop' | wordwrap(width=6, break_long_words=False)",
+"expected": "abcdefghijklmnop"
+},
+{
+"expr": "'abcdefghijklmnop' | wordwrap(width=6, break_on_hyphens=False)",
+"expected": "abcdef\nghijkl\nmnop"
+},
+{
+"expr": "'abcdefghijklmnop' | wordwrap(width=6, wrapstring='|')",
+"expected": "abcdef|ghijkl|mnop"
+},
+{
+"expr": "'abcdefghijklmnop' | wordwrap(6, wrapstring='|', break_on_hyphens=False)",
+"expected": "abcdef|ghijkl|mnop"
+},
+{
+"expr": "'abcdefghijklmnop' | wordwrap(width=3, break_long_words=True, wrapstring='~', break_on_hyphens=True)",
+"expected": "abc~def~ghi~jkl~mno~p"
+},
+{
+"expr": "'one\\ntwo' | truncate(length=6)",
+"expected": "one\ntwo"
+},
+{
+"expr": "'one\\ntwo' | truncate(length=6, end='')",
+"expected": "one\ntwo"
+},
+{
+"expr": "'one\\ntwo' | truncate(length=11, killwords=True, end='...', leeway=0)",
+"expected": "one\ntwo"
+},
+{
+"expr": "'one\\ntwo' | truncate(length=11, killwords=False, end='...', leeway=0)",
+"expected": "one\ntwo"
+},
+{
+"expr": "'one\\ntwo' | truncate(6, end='', leeway=0)",
+"expected": "one\ntw"
+},
+{
+"expr": "'one\\ntwo' | truncate(6, True, end='X')",
+"expected": "one\ntwo"
+},
+{
+"expr": "'one\\ntwo' | truncate(length=60, killwords=False, end='', leeway=0)",
+"expected": "one\ntwo"
+},
+{
+"expr": "'one\\ntwo' | center(width=9)",
+"expected": " one\ntwo "
+},
+{
+"expr": "'one\\ntwo' | center(width=0)",
+"expected": "one\ntwo"
+},
+{
+"expr": "'one\\ntwo' | wordwrap(width=6)",
+"expected": "one\ntwo"
+},
+{
+"expr": "'one\\ntwo' | wordwrap(width=6, break_long_words=False)",
+"expected": "one\ntwo"
+},
+{
+"expr": "'one\\ntwo' | wordwrap(width=6, break_on_hyphens=False)",
+"expected": "one\ntwo"
+},
+{
+"expr": "'one\\ntwo' | wordwrap(width=6, wrapstring='|')",
+"expected": "one|two"
+},
+{
+"expr": "'one\\ntwo' | wordwrap(6, wrapstring='|', break_on_hyphens=False)",
+"expected": "one|two"
+},
+{
+"expr": "'one\\ntwo' | wordwrap(width=3, break_long_words=True, wrapstring='~', break_on_hyphens=True)",
+"expected": "one~two"
+},
+{
+"expr": "123 | center(0)",
+"expected": "123"
+},
+{
+"expr": "123 | center(2)",
+"expected": "123"
+},
+{
+"expr": "123 | center(5)",
+"expected": " 123 "
+},
+{
+"expr": "123 | center(9)",
+"expected": "   123   "
+},
+{
+"expr": "123 | truncate(6, False, '', 0)",
+"expected": null
+},
+{
+"expr": "123 | wordwrap(4)",
+"expected": null
+},
+{
+"expr": "0 | center(0)",
+"expected": "0"
+},
+{
+"expr": "0 | center(2)",
+"expected": "0 "
+},
+{
+"expr": "0 | center(5)",
+"expected": "  0  "
+},
+{
+"expr": "0 | center(9)",
+"expected": "    0    "
+},
+{
+"expr": "0 | truncate(6, False, '', 0)",
+"expected": null
+},
+{
+"expr": "0 | wordwrap(4)",
+"expected": null
+},
+{
+"expr": "-7 | center(0)",
+"expected": "-7"
+},
+{
+"expr": "-7 | center(2)",
+"expected": "-7"
+},
+{
+"expr": "-7 | center(5)",
+"expected": "  -7 "
+},
+{
+"expr": "-7 | center(9)",
+"expected": "    -7   "
+},
+{
+"expr": "-7 | truncate(6, False, '', 0)",
+"expected": null
+},
+{
+"expr": "-7 | wordwrap(4)",
+"expected": null
+},
+{
+"expr": "3.5 | center(0)",
+"expected": "3.5"
+},
+{
+"expr": "3.5 | center(2)",
+"expected": "3.5"
+},
+{
+"expr": "3.5 | center(5)",
+"expected": " 3.5 "
+},
+{
+"expr": "3.5 | center(9)",
+"expected": "   3.5   "
+},
+{
+"expr": "3.5 | truncate(6, False, '', 0)",
+"expected": null
+},
+{
+"expr": "3.5 | wordwrap(4)",
+"expected": null
+},
+{
+"expr": "true | center(0)",
+"expected": "True"
+},
+{
+"expr": "true | center(2)",
+"expected": "True"
+},
+{
+"expr": "true | center(5)",
+"expected": " True"
+},
+{
+"expr": "true | center(9)",
+"expected": "   True  "
+},
+{
+"expr": "true | truncate(6, False, '', 0)",
+"expected": null
+},
+{
+"expr": "true | wordwrap(4)",
+"expected": null
+},
+{
+"expr": "false | center(0)",
+"expected": "False"
+},
+{
+"expr": "false | center(2)",
+"expected": "False"
+},
+{
+"expr": "false | center(5)",
+"expected": "False"
+},
+{
+"expr": "false | center(9)",
+"expected": "  False  "
+},
+{
+"expr": "false | truncate(6, False, '', 0)",
+"expected": null
+},
+{
+"expr": "false | wordwrap(4)",
+"expected": null
+},
+{
+"expr": "none | center(0)",
+"expected": "None"
+},
+{
+"expr": "none | center(2)",
+"expected": "None"
+},
+{
+"expr": "none | center(5)",
+"expected": " None"
+},
+{
+"expr": "none | center(9)",
+"expected": "   None  "
+},
+{
+"expr": "none | truncate(6, False, '', 0)",
+"expected": null
+},
+{
+"expr": "none | wordwrap(4)",
+"expected": null
 }
 ]

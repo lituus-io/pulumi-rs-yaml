@@ -65,11 +65,33 @@ is bounded by the input plus it, and `length` and `leeway` are only ever compare
 against. That audit is itself a test, so an argument added later has somewhere to
 declare its bound.
 
-Held to the reference rather than to an opinion: 2,992 differential cases —
+Two gaps were found by auditing the implementation against the corpus rather
+than by a failure, and one of them was a divergence rather than a hole. The
+generated sweep is positional, so it reached none of the eleven KEYWORD-argument
+branches — and Jinja2 authors write `truncate(length=60)` and
+`wordwrap(width=40, break_long_words=False)`, which is the same reason `indent`
+needed a compatibility shim in 0.5.19. Those branches turned out correct, but
+untested. And `center` REFUSED a non-string while the reference coerces it:
+`center` is `soft_str(value).center(width)`, so `{{ count | center(8) }}` centres
+a number under every other Jinja toolchain and would have failed here — the exact
+failure mode this release exists to remove. `truncate` and `wordwrap` genuinely
+raise on a non-string in the reference, verified against it, so those keep their
+errors.
+
+One divergence is deliberate and recorded rather than chased. The reference
+answers `{'a':1} | truncate(6, False, '', 0)` with `{'a': 1}` — but only because
+`len()` of a one-key dict is 1, so its leeway check short-circuits before the
+string operation; a seven-key dict raises `KeyError`, because slicing a dict is a
+key lookup. That is Python's dynamic typing producing an answer, not the filter's
+semantics, and reproducing it would mean implementing `len()` per type in order
+to inherit a crash. A container is refused, with a test saying why.
+
+Held to the reference rather than to an opinion: 3,154 differential cases —
 every combination of 22 subjects (empty, whitespace-only, multi-line,
-hyphenated, non-ASCII, CJK) against the parameter space of all three filters —
-captured from the reference implementation and stored as a fixture, including
-the 88 it REFUSES, which the engine must refuse too rather than answer. Seven
+hyphenated, non-ASCII, CJK) against the parameter space of all three filters,
+plus 120 keyword-argument spellings and 42 non-string subjects — captured from
+the reference implementation and stored as a fixture, including the cases it
+REFUSES, which the engine must refuse too rather than answer. Seven
 unit tests name the rules that behaviour rests on; six regression tests hold the
 field expression and its precedence; eight security tests cover enormous and
 negative widths, multi-byte subjects at every width, a 256 KiB subject, a

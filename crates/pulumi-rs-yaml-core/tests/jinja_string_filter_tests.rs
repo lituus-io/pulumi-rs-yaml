@@ -10,10 +10,16 @@
 //!
 //! So none of the expected values here were written by hand. They were captured
 //! from the reference implementation across a systematic sweep of the parameter
-//! space -- 2,992 cases over 22 subjects including empty, whitespace-only,
+//! space -- 3,112 cases over 22 subjects including empty, whitespace-only,
 //! multi-line, hyphenated, and non-ASCII text -- and stored as a fixture. A
 //! case the reference REFUSES is recorded as `null`, and the engine has to
 //! refuse it too rather than inventing an answer.
+//!
+//! 120 of those cases spell their arguments as KEYWORDS, because Jinja2 authors
+//! do (`truncate(length=60)`, `wordwrap(width=40, break_long_words=False)`) and
+//! the generated positional sweep reached none of the eleven keyword branches
+//! in the implementation. That was a real gap, found by auditing the code
+//! against the corpus rather than by a failure.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -75,7 +81,7 @@ fn render(expr: &str) -> Result<String, String> {
 fn every_case_agrees_with_the_reference() {
     let cases = corpus();
     assert!(
-        cases.len() > 2_000,
+        cases.len() > 3_000,
         "the corpus shrank to {} cases -- was it regenerated with a narrower sweep?",
         cases.len()
     );
@@ -123,6 +129,10 @@ fn the_corpus_covers_all_three_filters_and_the_awkward_inputs() {
         assert!(n > 100, "only {n} cases exercise {filter}");
     }
     for (what, needle) in [
+        ("keyword arguments", "length="),
+        ("keyword width", "width="),
+        ("keyword wrapstring", "wrapstring="),
+        ("mixed positional and keyword", "truncate(6, end="),
         ("empty string", "'' |"),
         ("non-ASCII", "héllo"),
         ("multi-line", "\\n"),
@@ -134,4 +144,84 @@ fn the_corpus_covers_all_three_filters_and_the_awkward_inputs() {
             "the corpus no longer covers {what}"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// The arguments a corpus generated from positional calls cannot reach, and the
+// two places the reference is not worth following.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_non_string_subject_is_coerced_by_center_and_refused_by_the_other_two() {
+    // Not symmetry for its own sake -- this is what the reference does, checked
+    // against it. `center` is `soft_str(value).center(width)`, so a number
+    // centres; `truncate` and `wordwrap` reach `len()` and `.splitlines()` on
+    // the value itself and raise. A template writing `{{ count | center(8) }}`
+    // works everywhere else and must work here.
+    assert_eq!(render("123 | center(5)").as_deref(), Ok(" 123 "));
+    assert_eq!(render("none | center(5)").as_deref(), Ok(" None"));
+    assert_eq!(render("true | center(6)").as_deref(), Ok(" True "));
+
+    for expr in ["123 | truncate(6, False, '', 0)", "123 | wordwrap(4)"] {
+        let err = render(expr).expect_err("the reference raises on these");
+        assert!(
+            err.contains("expected a string"),
+            "should say what it wanted: {err}"
+        );
+    }
+}
+
+#[test]
+fn a_container_subject_is_refused_rather_than_imitated() {
+    // A documented divergence, not an oversight. The reference ANSWERS
+    // `{'a':1} | truncate(6, False, '', 0)` with `{'a': 1}` -- but only because
+    // `len()` of a one-key dict is 1, so the leeway check short-circuits before
+    // the string operation. Give it a seven-key dict and the same call raises
+    // KeyError, because slicing a dict is a key lookup. That is Python's dynamic
+    // typing producing an answer, not the filter's semantics, and reproducing it
+    // would mean implementing `len()` per type to inherit a crash.
+    for expr in ["[1,2] | truncate(6, False, '', 0)", "[1,2] | wordwrap(4)"] {
+        assert!(
+            render(expr).is_err(),
+            "a container should be refused by {expr}"
+        );
+    }
+    // `center` coerces containers too, via minijinja's rendering of the value --
+    // which spells a map `{"a": 1}` where CPython spells it `{'a': 1}`. That
+    // difference is the engine's everywhere (`{{ {'a':1} }}` renders the same
+    // way) and is deliberately not special-cased inside one filter.
+    let centred = render("[1,2] | center(8)").expect("center coerces");
+    assert!(
+        centred.contains('['),
+        "expected a rendered sequence: {centred}"
+    );
+}
+
+#[test]
+fn an_unknown_keyword_argument_is_named() {
+    // `assert_all_used` is called in all three, and nothing exercised it: a typo
+    // silently ignored would render a value the author did not ask for.
+    for filter in ["truncate", "center", "wordwrap"] {
+        let err = render(&format!("'abc' | {filter}(bogus=1)"))
+            .unwrap_or_else(|e| e)
+            .to_string();
+        assert!(
+            err.contains("bogus"),
+            "{filter} should name the unknown argument: {err}"
+        );
+    }
+}
+
+#[test]
+fn positional_and_keyword_arguments_can_be_mixed() {
+    // The form the corpus now covers, asserted once here in the open so the
+    // intent is visible rather than buried in 3,154 rows.
+    assert_eq!(
+        render("'hello world how are you' | truncate(11, end='...', leeway=0)").as_deref(),
+        Ok("hello...")
+    );
+    assert_eq!(
+        render("'well-known thing' | wordwrap(6, break_on_hyphens=False)").as_deref(),
+        Ok("well-k\nnown\nthing")
+    );
 }

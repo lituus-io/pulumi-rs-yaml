@@ -1667,12 +1667,22 @@ fn center_compat(
     args: &[minijinja::Value],
     kwargs: minijinja::value::Kwargs,
 ) -> Result<minijinja::Value, minijinja::Error> {
-    let Some(subject) = value.as_str() else {
-        return Err(minijinja::Error::new(
-            minijinja::ErrorKind::InvalidOperation,
-            "center: expected a string",
-        ));
+    // The reference COERCES here rather than refusing: `center` is
+    // `soft_str(value).center(width)`, so `{{ count | center(8) }}` centres the
+    // number. Refusing it would fail a template that works under every other
+    // Jinja toolchain, which is the whole failure mode this release removes.
+    // `truncate` and `wordwrap` genuinely RAISE on a non-string in the reference,
+    // so those two keep their errors -- verified against it, not assumed.
+    //
+    // The rendering is minijinja's, so a value reads the same through this
+    // filter as it does written bare in the template. Where minijinja and
+    // CPython spell a value differently -- `none` against `None` -- that
+    // difference is the engine's everywhere and is not papered over here.
+    let owned: Cow<'_, str> = match value.as_str() {
+        Some(s) => Cow::Borrowed(s),
+        None => Cow::Owned(value.to_string()),
     };
+    let subject: &str = &owned;
     let width = match args.first() {
         Some(v) => usize::try_from(v.as_i64().unwrap_or(80).max(0)).unwrap_or(80),
         None => kwargs.get::<Option<usize>>("width")?.unwrap_or(80),
@@ -1684,7 +1694,13 @@ fn center_compat(
     for _ in subject.chars() {
         chars += 1;
         if chars >= width {
-            return Ok(value); // already wide enough: moved through untouched
+            // Already wide enough. A string is moved through untouched; anything
+            // else is returned as the text it renders to, which is what the
+            // reference produces.
+            return Ok(match owned {
+                Cow::Borrowed(_) => value,
+                Cow::Owned(s) => minijinja::Value::from(s),
+            });
         }
     }
     let marg = width - chars;
