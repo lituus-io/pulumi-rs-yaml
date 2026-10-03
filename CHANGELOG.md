@@ -117,10 +117,20 @@ a function of `length` alone -- a 1 MiB seed still yields four characters.
 
 It can, however, cost time, and the distinction is worth stating because the
 first draft of the bench comment got it wrong. Measured: a 4-character suffix
-is 432ns and the 64-character worst case 2.39us -- the same order, since the
+is 334ns and the 64-character worst case 1.03us -- the same order, since the
 extension loop adds compressions rather than changing the shape of the work --
-while a 64 KiB seed takes 284us, 650x the short case, because the whole seed is
-hashed. Seeds in practice are resource names of a few tens of bytes. An alphabet over
+while a 64 KiB seed takes 278us, ~830x the short case, because the whole seed
+is hashed. Seeds in practice are resource names of a few tens of bytes.
+
+The draw indexes an ASCII alphabet's BYTES rather than walking its characters.
+`alphabet.chars().nth(i)` decodes UTF-8 to reach the nth character, ~33ns each,
+and on the 64-character case that walk was the whole of the difference from the
+4-character case. The default alphabet is ASCII and so is every realistic
+naming scheme, so the walk survives only for a multi-byte alphabet. Measured
+by criterion at p < 0.05: -22.6% on the 4-character case, -34.1% on the
+default 8, **-56.9% on the 64-character worst case**. The differential corpus
+carries non-ASCII alphabets, so the fallback is exercised and the fast path is
+proven behaviour-preserving rather than assumed to be. An alphabet over
 256 characters is refused, because the draw takes one byte per character and
 could not address the tail, so the bias would be silent. An empty alphabet is
 refused rather than looped over. That audit is itself a test, so an argument

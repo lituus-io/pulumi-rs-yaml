@@ -37,8 +37,14 @@ fn repo_root() -> PathBuf {
 /// Files whose text is checked. Binary and generated trees are skipped, as is
 /// this file, whose whole subject is the needles.
 fn is_checked(path: &Path) -> bool {
-    let s = path.to_string_lossy();
-    if s.contains("/target/") || s.contains("/.git/") || s.contains("/fuzz/corpus/") {
+    // Components, not a substring: a literal "/target/" never matches on
+    // Windows, where the same path reads "\\target\\", and CI runs this on
+    // four platforms. `walk` already declines to descend into these, so this is
+    // the belt to its braces rather than the only guard.
+    if path
+        .components()
+        .any(|c| matches!(c.as_os_str().to_str(), Some("target" | ".git" | "corpus")))
+    {
         return false;
     }
     // Generated protobuf code is written by `prost`, not by us, and carries no
@@ -118,7 +124,12 @@ fn no_downstream_or_agent_name_appears_in_the_tree() {
 /// True for a Rust file this project authored, as against one a code generator
 /// wrote into the tree.
 fn is_ours(path: &Path) -> bool {
-    !path.to_string_lossy().contains("/src/generated/")
+    // Separator-agnostic, for the same reason as `is_checked`: on Windows this
+    // path reads "src\\generated", so a "/src/generated/" substring would never
+    // match and every generated file would be demanded to carry our header.
+    !path
+        .components()
+        .any(|c| c.as_os_str().to_str() == Some("generated"))
 }
 
 /// Every Rust source file this project authored carries the copyright header.
