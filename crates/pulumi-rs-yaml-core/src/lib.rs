@@ -16,6 +16,7 @@ pub mod pcl_gen;
 pub mod provider_scope;
 pub mod resource_graph;
 pub mod schema;
+pub mod sha256;
 pub mod source;
 #[cfg(feature = "sql-lineage")]
 pub mod sql_lineage;
