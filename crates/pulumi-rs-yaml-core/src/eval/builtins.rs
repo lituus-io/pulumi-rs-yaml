@@ -612,6 +612,201 @@ pub fn eval_date_format<'src>(value: &Value<'src>, diags: &mut Diagnostics) -> O
 // UUID/Random builtins
 // =============================================================================
 
+/// The default alphabet: lowercase alphanumeric, which is what the
+/// `random:RandomString` calls this replaces ask for (`upper: false`,
+/// `special: false`) and what GCP resource names accept. It can therefore begin
+/// with a digit, which is fine for a suffix -- the only way it is used -- but a
+/// value used as a whole name where the provider demands a leading letter needs
+/// an explicit `alphabet` or a prefix.
+pub(crate) const DERIVE_ALPHABET: &str = "0123456789abcdefghijklmnopqrstuvwxyz";
+
+/// Default output length for the scalar shorthand.
+pub(crate) const DERIVE_DEFAULT_LEN: usize = 8;
+
+/// Longest derived value. Resource names are short; a cap keeps a program from
+/// asking the allocator for a value nobody can use, and makes the extension
+/// loop below provably finite.
+const MAX_DERIVE_LEN: usize = 64;
+
+/// Most characters an alphabet may offer. Rejection sampling draws one byte per
+/// character, so an alphabet larger than a byte could not be addressed without
+/// changing the draw -- and an alphabet that big is not a naming scheme.
+const MAX_DERIVE_ALPHABET: usize = 256;
+
+/// Hard ceiling on digest extensions, so the draw cannot spin.
+///
+/// Each extension yields 32 fresh bytes and the worst acceptance rate over all
+/// admissible alphabet sizes is just above one half, so 64 characters need four
+/// or five extensions in expectation. This bound is several hundred times that:
+/// it exists to make termination a fact rather than a probability.
+const MAX_DERIVE_EXTENSIONS: u32 = 1024;
+
+/// Derives the value, or says why it cannot.
+///
+/// The one implementation of the algorithm. `eval_derive_string` reaches it
+/// with values from the evaluator and [`crate::literal_resolve`] reaches it
+/// with values read statically off the AST; both must produce the same string
+/// for the same arguments, so neither may own a copy of this.
+///
+/// `Err` carries the message a diagnostic would print. A static caller that
+/// cannot act on it discards it and resolves to nothing rather than guessing.
+pub(crate) fn derive(from: &str, length: usize, alphabet: &str) -> Result<String, String> {
+    if length == 0 {
+        return Err("fn::deriveString 'length' must be at least 1".to_string());
+    }
+    if length > MAX_DERIVE_LEN {
+        return Err(format!(
+            "fn::deriveString 'length' {length} exceeds maximum {MAX_DERIVE_LEN}"
+        ));
+    }
+
+    // `n` is a character count, not a byte count, so a multi-byte alphabet
+    // selects whole characters and can never split one.
+    let n = alphabet.chars().count();
+    if n == 0 {
+        return Err("fn::deriveString 'alphabet' must not be empty".to_string());
+    }
+    if n > MAX_DERIVE_ALPHABET {
+        return Err(format!(
+            "fn::deriveString 'alphabet' has {n} characters, over the \
+             {MAX_DERIVE_ALPHABET} this draw can address"
+        ));
+    }
+
+    // Rejection sampling, not `byte % n`. For the default alphabet
+    // `256 % 36 == 4`, so a plain modulo would favour four of its thirty-six
+    // characters; discarding the short final block removes the bias. `limit` is
+    // the largest multiple of `n` that fits in a byte.
+    let limit = 256 - (256 % n);
+
+    let mut out = String::with_capacity(length);
+    let mut digest = crate::sha256::digest(from.as_bytes());
+    let mut cursor = 0usize;
+    let mut extension = 0u32;
+    let mut chars = 0usize;
+
+    while chars < length {
+        if cursor == digest.len() {
+            // The digest is spent; extend deterministically with a counter so
+            // the sequence stays a pure function of the seed.
+            extension += 1;
+            if extension > MAX_DERIVE_EXTENSIONS {
+                return Err(
+                    "fn::deriveString could not draw enough unbiased characters".to_string()
+                );
+            }
+            let mut seed = Vec::with_capacity(from.len() + 4);
+            seed.extend_from_slice(from.as_bytes());
+            seed.extend_from_slice(&extension.to_le_bytes());
+            digest = crate::sha256::digest(&seed);
+            cursor = 0;
+        }
+        let byte = usize::from(digest[cursor]);
+        cursor += 1;
+        if byte >= limit {
+            continue;
+        }
+        // `n` and `length` are both bounded small, so walking to the character
+        // costs less than the allocation a lookup table would need.
+        out.push(
+            alphabet
+                .chars()
+                .nth(byte % n)
+                .expect("index is below the character count"),
+        );
+        chars += 1;
+    }
+
+    Ok(out)
+}
+
+/// Reads `fn::deriveString`'s arguments off an already-evaluated value.
+///
+/// Shared with the static resolver through [`derive`]; this half is only the
+/// argument shape, which the two callers read from different places.
+pub(crate) fn derive_args<'a>(
+    value: &'a Value<'_>,
+    diags: &mut Diagnostics,
+) -> Option<(&'a str, usize, &'a str)> {
+    match value {
+        // Shorthand: the seed alone.
+        Value::String(s) => Some((s.as_ref(), DERIVE_DEFAULT_LEN, DERIVE_ALPHABET)),
+        Value::Object(entries) => {
+            let mut from: Option<&str> = None;
+            let mut length = DERIVE_DEFAULT_LEN;
+            let mut alphabet = DERIVE_ALPHABET;
+            for (key, val) in entries {
+                match key.as_ref() {
+                    "from" => from = Some(expect_string(val, "fn::deriveString 'from'", diags)?),
+                    "length" => {
+                        let n = expect_number(val, "fn::deriveString 'length'", diags)?;
+                        length = checked_f64_to_usize(n, diags, "fn::deriveString 'length'")?;
+                    }
+                    "alphabet" => {
+                        alphabet = expect_string(val, "fn::deriveString 'alphabet'", diags)?;
+                    }
+                    // Named rather than ignored: a silently defaulted typo is
+                    // how a stack gets a name nobody intended.
+                    other => {
+                        diags.error(
+                            None,
+                            format!("fn::deriveString has no argument named '{other}'"),
+                            "Valid arguments are 'from', 'length' and 'alphabet'.",
+                        );
+                        return None;
+                    }
+                }
+            }
+            match from {
+                Some(f) => Some((f, length, alphabet)),
+                None => {
+                    diags.error(
+                        None,
+                        "fn::deriveString requires a 'from' argument".to_string(),
+                        "Give it the seed to derive from, e.g. `from: my-service`.",
+                    );
+                    None
+                }
+            }
+        }
+        _ => {
+            diags.error(
+                None,
+                format!(
+                    "argument to fn::deriveString must be a string or an object, got {}",
+                    value.type_name()
+                ),
+                "",
+            );
+            None
+        }
+    }
+}
+
+/// Evaluates `fn::deriveString` - a stable value computed from a seed.
+///
+/// Unlike `fn::randomString` this is a pure function of its argument, so it is
+/// known at preview, identical on every evaluation, and resolvable statically
+/// (see [`crate::literal_resolve`]). That is the entire point: a name a policy
+/// check, an import and a graph export can all read before anything is
+/// deployed.
+pub fn eval_derive_string<'src>(
+    value: &Value<'src>,
+    diags: &mut Diagnostics,
+) -> Option<Value<'src>> {
+    if has_unknown(value) {
+        return Some(Value::Unknown);
+    }
+    let (from, length, alphabet) = derive_args(value, diags)?;
+    match derive(from, length, alphabet) {
+        Ok(s) => Some(Value::String(Cow::Owned(s))),
+        Err(msg) => {
+            diags.error(None, msg, "");
+            None
+        }
+    }
+}
+
 /// Evaluates `fn::uuid` - generates a random UUID v4.
 pub fn eval_uuid<'src>(_value: &Value<'src>, _diags: &mut Diagnostics) -> Option<Value<'src>> {
     let id = uuid::Uuid::new_v4().to_string();

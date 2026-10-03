@@ -37,6 +37,20 @@ use crate::eval::value::Value;
 use crate::packages::canonicalize_function_token;
 
 /// Statically resolves an expression to a scalar literal string.
+/// Resolves an expression to a literal with no surrounding variables.
+///
+/// The public door onto this module, for callers outside the crate that hold an
+/// expression and no program around it -- the converter is the one today. It
+/// deliberately offers no variable map: a conversion that needed one would be
+/// resolving a program, which is what [`resolve_literal`] already does inside
+/// the crate.
+pub fn standalone_literal<'src>(expr: &'src Expr<'src>) -> Option<Cow<'src, str>> {
+    let variables = HashMap::new();
+    let mut memo = HashMap::new();
+    let mut visiting = HashSet::new();
+    resolve_literal(expr, &variables, &mut memo, &mut visiting)
+}
+
 pub(crate) fn resolve_literal<'src>(
     expr: &'src Expr<'src>,
     variables: &HashMap<&'src str, &'src Expr<'src>>,
@@ -59,6 +73,13 @@ pub(crate) fn resolve_literal<'src>(
             }
             Some(Cow::Owned(out))
         }
+        // The one builtin this resolver answers, because it is the one whose
+        // value is a pure function of its argument. That is the whole reason
+        // `fn::deriveString` exists: an import, a graph export and a
+        // shift-left policy check all need the name before anything is
+        // deployed. The match below ends in `_ => None`, so losing this arm
+        // would be silent -- a test pins it for exactly that reason.
+        Expr::DeriveString(_, inner) => resolve_derive_literal(inner, variables, memo, visiting),
         Expr::Invoke(_, invoke) => {
             // A bare `str` invoke evaluates to an OBJECT (`{result: ...}`),
             // which is not a scalar literal; only `return:` names a scalar.
@@ -68,6 +89,66 @@ pub(crate) fn resolve_literal<'src>(
         }
         _ => None,
     }
+}
+
+/// Resolves `fn::deriveString` without evaluating the program.
+///
+/// Reads the same three arguments the evaluator reads and hands them to the one
+/// shared implementation, so a statically resolved name and a deployed name
+/// cannot differ. Any argument that is not itself a literal -- a seed built
+/// from a resource output, a length behind a config value -- resolves to
+/// `None`, never a guess, per this module's contract.
+fn resolve_derive_literal<'src>(
+    inner: &'src Expr<'src>,
+    variables: &HashMap<&'src str, &'src Expr<'src>>,
+    memo: &mut HashMap<&'src str, Option<Cow<'src, str>>>,
+    visiting: &mut HashSet<&'src str>,
+) -> Option<Cow<'src, str>> {
+    let (from, length, alphabet) = match inner {
+        Expr::Object(_, entries) => {
+            let mut from: Option<Cow<'src, str>> = None;
+            let mut length = crate::eval::builtins::DERIVE_DEFAULT_LEN;
+            let mut alphabet: Option<Cow<'src, str>> = None;
+            for entry in entries {
+                let Expr::String(_, key) = entry.key.as_ref() else {
+                    return None;
+                };
+                match key.as_ref() {
+                    "from" => {
+                        from = Some(resolve_literal(&entry.value, variables, memo, visiting)?)
+                    }
+                    "length" => {
+                        let Expr::Number(_, n) = entry.value.as_ref() else {
+                            return None;
+                        };
+                        if !n.is_finite() || *n < 0.0 || n.fract() != 0.0 {
+                            return None;
+                        }
+                        length = *n as usize;
+                    }
+                    "alphabet" => {
+                        alphabet = Some(resolve_literal(&entry.value, variables, memo, visiting)?)
+                    }
+                    // Unknown keys are refused by the evaluator, so resolving
+                    // one here would answer where the deploy will not.
+                    _ => return None,
+                }
+            }
+            (from?, length, alphabet)
+        }
+        // Shorthand: the seed alone.
+        other => (
+            resolve_literal(other, variables, memo, visiting)?,
+            crate::eval::builtins::DERIVE_DEFAULT_LEN,
+            None,
+        ),
+    };
+    let alphabet = alphabet
+        .as_deref()
+        .unwrap_or(crate::eval::builtins::DERIVE_ALPHABET);
+    crate::eval::builtins::derive(from.as_ref(), length, alphabet)
+        .ok()
+        .map(Cow::Owned)
 }
 
 /// Resolves one `${...}` access: a bare variable, or `${var.output}` for a

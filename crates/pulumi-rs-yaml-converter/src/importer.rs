@@ -527,6 +527,24 @@ impl Importer {
             }
             Expr::AssetArchive(_, entries) => self.asset_archive_to_pcl(entries, indent),
 
+            // A derived value is reproducible, so a converted program keeps the
+            // names the YAML produced. This is the one builtin here that is a
+            // pure function of its argument, which is why it converts at all
+            // where the rest below cannot.
+            Expr::DeriveString(_, _) => {
+                match pulumi_rs_yaml_core::literal_resolve::standalone_literal(expr) {
+                    Some(lit) => format!("\"{}\"", lit.replace('\\', "\\\\").replace('"', "\\\"")),
+                    None => {
+                        self.diags.warning(
+                            None,
+                            "unsupported builtin 'fn::deriveString' in PCL conversion".to_string(),
+                            "its seed is not a literal here, so the derived value cannot be \
+                             computed without evaluating the program; it will be emitted as null",
+                        );
+                        "null /* unsupported builtin */".to_string()
+                    }
+                }
+            }
             // Rust-only builtins — emit warning + null
             Expr::Abs(_, _)
             | Expr::Floor(_, _)
@@ -854,6 +872,7 @@ fn rust_only_builtin_name(expr: &Expr<'_>) -> &'static str {
         Expr::TimeUnix(_, _) => "timeUnix",
         Expr::Uuid(_, _) => "uuid",
         Expr::RandomString(_, _) => "randomString",
+        Expr::DeriveString(_, _) => "deriveString",
         Expr::DateFormat(_, _) => "dateFormat",
         _ => "unknown",
     }

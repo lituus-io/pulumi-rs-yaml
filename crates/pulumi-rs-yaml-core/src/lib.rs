@@ -9,7 +9,7 @@ pub mod diag;
 pub mod encoding;
 pub mod eval;
 pub mod jinja;
-pub(crate) mod literal_resolve;
+pub mod literal_resolve;
 pub mod multi_file;
 pub mod packages;
 pub mod pcl_gen;

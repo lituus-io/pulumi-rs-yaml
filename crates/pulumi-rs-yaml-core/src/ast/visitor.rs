@@ -94,6 +94,7 @@ pub fn walk_expr<'a, V: ExprVisitor>(expr: &'a Expr<'a>, visitor: &V, acc: &mut 
         | Expr::TimeUnix(_, inner)
         | Expr::Uuid(_, inner)
         | Expr::RandomString(_, inner)
+        | Expr::DeriveString(_, inner)
         | Expr::DateFormat(_, inner)
         | Expr::StringAsset(_, inner)
         | Expr::FileAsset(_, inner)
