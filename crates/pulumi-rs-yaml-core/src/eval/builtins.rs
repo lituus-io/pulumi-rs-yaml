@@ -1693,26 +1693,45 @@ mod derive_tests {
         assert_eq!(derive("abc", 5, "q"), Ok("qqqqq".to_string()));
     }
 
-    /// The draw is unbiased: over the default alphabet a long output must use
-    /// far more than the four characters a plain `byte % 36` would favour.
+    /// The draw is unbiased, measured rather than asserted.
     ///
-    /// A modulo draw is not detectably wrong on any single value, which is why
-    /// this is stated as a distribution over one long draw rather than as a
-    /// value.
+    /// `256 % 36 == 4`, so a plain `byte % 36` would map bytes 252..=255 onto
+    /// the alphabet's first four characters on top of their fair share, giving
+    /// them 8/256 of the draw instead of 7/256. Rejection sampling discards
+    /// that band instead.
+    ///
+    /// Coverage does not detect this -- a modulo draw still produces all
+    /// thirty-six characters, which an earlier version of this test proved by
+    /// passing against one -- so the test has to measure the share. Over 25,600
+    /// draws the two algorithms separate cleanly and far apart: rejection lands
+    /// at 0.1113 against an ideal 4/36 = 0.1111, while modulo lands at 0.1241.
+    /// The bound below sits between them.
     #[test]
-    fn the_draw_covers_the_alphabet() {
-        // 64 is the longest single value; concatenating distinct seeds gives a
-        // larger sample without raising the cap.
+    fn the_draw_is_unbiased_not_merely_covering() {
+        let first_four: Vec<char> = DERIVE_ALPHABET.chars().take(4).collect();
+        let mut total = 0usize;
+        let mut hits = 0usize;
         let mut seen = std::collections::HashSet::new();
-        for i in 0..40 {
+        for i in 0..400 {
             let s = derive(&format!("seed-{i}"), 64, DERIVE_ALPHABET).expect("derives");
+            total += s.chars().count();
+            hits += s.chars().filter(|c| first_four.contains(c)).count();
             seen.extend(s.chars());
         }
-        assert_eq!(
-            seen.len(),
-            36,
-            "only {} of 36 characters were ever drawn: {seen:?}",
-            seen.len()
+        // Coverage, which is necessary but not sufficient.
+        assert_eq!(seen.len(), 36, "only {} of 36 characters were drawn", seen.len());
+
+        let share = hits as f64 / total as f64;
+        let ideal = 4.0 / 36.0;
+        assert!(
+            share < 0.118,
+            "the first four characters took {share:.5} of {total} draws against an \
+             ideal {ideal:.5}; a plain modulo draw gives 0.1241, so this looks biased"
+        );
+        assert!(
+            share > 0.104,
+            "the first four characters took only {share:.5} of {total} draws against an \
+             ideal {ideal:.5}, which is not a fair draw either"
         );
     }
 
