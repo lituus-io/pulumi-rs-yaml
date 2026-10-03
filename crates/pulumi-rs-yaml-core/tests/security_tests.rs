@@ -2938,8 +2938,9 @@ mod derive_string_security {
     /// not even be a valid `String`.
     #[test]
     fn a_multibyte_alphabet_is_never_split() {
-        let out = derive("      from: seed\n      length: 16\n      alphabet: \"日本語のあいう\"\n")
-            .expect("derives");
+        let out =
+            derive("      from: seed\n      length: 16\n      alphabet: \"日本語のあいう\"\n")
+                .expect("derives");
         assert_eq!(out.chars().count(), 16);
         assert!(std::str::from_utf8(out.as_bytes()).is_ok());
     }
@@ -2975,7 +2976,9 @@ mod derive_string_security {
     /// could not reach its tail and the bias would be silent.
     #[test]
     fn an_alphabet_over_the_addressable_size_is_refused() {
-        let alphabet: String = (0..257).map(|i| char::from_u32(0x4e00 + i).unwrap()).collect();
+        let alphabet: String = (0..257)
+            .map(|i| char::from_u32(0x4e00 + i).unwrap())
+            .collect();
         let args = format!(
             "      from: abc\n      alphabet: {}\n",
             serde_json::to_string(&alphabet).expect("serialises")
@@ -2990,8 +2993,7 @@ mod derive_string_security {
     fn a_hostile_seed_cannot_reach_the_output() {
         let args = format!(
             "      from: {}\n      length: 12\n",
-            serde_json::to_string("\"; rm -rf /\n$${evil}\u{1b}[31m\t<&|>")
-                .expect("serialises")
+            serde_json::to_string("\"; rm -rf /\n$${evil}\u{1b}[31m\t<&|>").expect("serialises")
         );
         let out = derive(&args).expect("derives");
         assert_eq!(out.len(), 12);
@@ -3036,7 +3038,8 @@ mod derive_string_security {
         eval.evaluate_template(template, &HashMap::new(), &[]);
         assert!(!eval.has_errors(), "{}", eval.diags_display());
         assert_eq!(
-            eval.get_output("r").and_then(|v| v.as_str().map(str::to_string)),
+            eval.get_output("r")
+                .and_then(|v| v.as_str().map(str::to_string)),
             Some("eyls".to_string()),
             "the same value the literal seed produces"
         );

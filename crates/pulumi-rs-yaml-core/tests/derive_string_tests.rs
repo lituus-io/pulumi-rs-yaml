@@ -125,11 +125,7 @@ fn every_case_agrees_with_the_independent_implementation() {
 /// to deployed infrastructure, not a test update.
 #[test]
 fn the_frozen_values_have_not_moved() {
-    for (from, want) in [
-        ("", "bwgu8ska"),
-        ("a", "m7limr9m"),
-        ("abc", "6cmbz1ri"),
-    ] {
+    for (from, want) in [("", "bwgu8ska"), ("a", "m7limr9m"), ("abc", "6cmbz1ri")] {
         let case = Case {
             from: from.to_string(),
             length: None,
@@ -171,8 +167,12 @@ outputs:
     );
     eval.evaluate_template(template, &HashMap::new(), &[]);
     assert!(!eval.has_errors(), "{}", eval.diags_display());
-    let a = eval.get_output("a").and_then(|v| v.as_str().map(String::from));
-    let b = eval.get_output("b").and_then(|v| v.as_str().map(String::from));
+    let a = eval
+        .get_output("a")
+        .and_then(|v| v.as_str().map(String::from));
+    let b = eval
+        .get_output("b")
+        .and_then(|v| v.as_str().map(String::from));
     assert_eq!(a, b);
     assert_eq!(a.as_deref().map(str::len), Some(8));
 }

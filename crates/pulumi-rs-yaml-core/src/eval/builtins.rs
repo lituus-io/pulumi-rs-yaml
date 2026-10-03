@@ -1719,7 +1719,12 @@ mod derive_tests {
             seen.extend(s.chars());
         }
         // Coverage, which is necessary but not sufficient.
-        assert_eq!(seen.len(), 36, "only {} of 36 characters were drawn", seen.len());
+        assert_eq!(
+            seen.len(),
+            36,
+            "only {} of 36 characters were drawn",
+            seen.len()
+        );
 
         let share = hits as f64 / total as f64;
         let ideal = 4.0 / 36.0;

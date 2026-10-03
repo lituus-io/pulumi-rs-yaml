@@ -78,7 +78,11 @@ pub fn digest(bytes: &[u8]) -> [u8; 32] {
     let mut tail = [0u8; BLOCK * 2];
     tail[..rest.len()].copy_from_slice(rest);
     tail[rest.len()] = 0x80;
-    let tail_len = if rest.len() + 1 + 8 <= BLOCK { BLOCK } else { BLOCK * 2 };
+    let tail_len = if rest.len() + 1 + 8 <= BLOCK {
+        BLOCK
+    } else {
+        BLOCK * 2
+    };
     let bit_len = (bytes.len() as u64).wrapping_mul(8);
     tail[tail_len - 8..tail_len].copy_from_slice(&bit_len.to_be_bytes());
     for block in tail[..tail_len].chunks_exact(BLOCK) {
@@ -154,8 +158,14 @@ mod tests {
     #[test]
     fn the_published_vectors_are_reproduced() {
         for (input, want) in [
-            ("", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
-            ("abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
+            (
+                "",
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            ),
+            (
+                "abc",
+                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            ),
             (
                 "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq",
                 "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1",
@@ -178,11 +188,26 @@ mod tests {
     #[test]
     fn the_padding_boundary_is_crossed_correctly() {
         for (n, want) in [
-            (55usize, "9f4390f8d30c2dd92ec9f095b65e2b9ae9b0a925a5258e241c9f1e910f734318"),
-            (56, "b35439a4ac6f0948b6d6f9e3c6af0f5f590ce20f1bde7090ef7970686ec6738a"),
-            (63, "7d3e74a05d7db15bce4ad9ec0658ea98e3f06eeecf16b4c6fff2da457ddc2f34"),
-            (64, "ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb"),
-            (65, "635361c48bb9eab14198e76ea8ab7f1a41685d6ad62aa9146d301d4f17eb0ae0"),
+            (
+                55usize,
+                "9f4390f8d30c2dd92ec9f095b65e2b9ae9b0a925a5258e241c9f1e910f734318",
+            ),
+            (
+                56,
+                "b35439a4ac6f0948b6d6f9e3c6af0f5f590ce20f1bde7090ef7970686ec6738a",
+            ),
+            (
+                63,
+                "7d3e74a05d7db15bce4ad9ec0658ea98e3f06eeecf16b4c6fff2da457ddc2f34",
+            ),
+            (
+                64,
+                "ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb",
+            ),
+            (
+                65,
+                "635361c48bb9eab14198e76ea8ab7f1a41685d6ad62aa9146d301d4f17eb0ae0",
+            ),
         ] {
             let input = vec![b'a'; n];
             assert_eq!(hex(&digest(&input)), want, "{n} bytes");
@@ -209,7 +234,10 @@ mod tests {
         for n in 0..200usize {
             let d = digest(&vec![b'z'; n]);
             assert_eq!(d.len(), 32);
-            assert!(seen.insert(d), "two different lengths produced one digest at {n}");
+            assert!(
+                seen.insert(d),
+                "two different lengths produced one digest at {n}"
+            );
         }
     }
 
