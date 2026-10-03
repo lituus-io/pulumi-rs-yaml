@@ -1149,10 +1149,20 @@ fn resolve_readfile_markers(rendered: &str, cache: &ReadFileCache) -> Option<Str
         let trimmed = line.trim();
         if is_single_marker(trimmed) {
             let indent = leading_whitespace(line);
-            if let Some(id) = parse_marker_id(trimmed) {
-                if let Some(content) = cache.get(id) {
-                    result.push_str(&indent_content(content, indent));
-                }
+            // A marker this engine wrote always carries a numeric id that is in
+            // the cache. One that does not is not ours -- it is author text
+            // that happens to look like a marker -- so it is carried through
+            // unchanged rather than dropped.
+            //
+            // Dropping it is what this used to do, and `replace_inline_markers`
+            // already got the same case right: it pushes the marker back
+            // verbatim on a parse failure or a cache miss. The two paths
+            // disagreeing about one situation is the whole of the defect, found
+            // by the scheduled fuzz run on a subject containing
+            // `\x00RF:\x0b\x00`, which vanished from the output.
+            match parse_marker_id(trimmed).and_then(|id| cache.get(id)) {
+                Some(content) => result.push_str(&indent_content(content, indent)),
+                None => result.push_str(line),
             }
         } else {
             result.push_str(&replace_inline_markers(line, cache));
@@ -3342,6 +3352,76 @@ mod tests {
     }
 
     // ---- readFile marker helpers ----
+
+    /// The exact subject the scheduled fuzz run found on 2026-09-30.
+    ///
+    /// `\x00RF:<id>\x00` is this module's own in-band marker for a
+    /// `readFile()` result, resolved after the render. A subject that merely
+    /// LOOKS like one -- here with `\x0b` where the id belongs -- used to be
+    /// deleted: the whole-line branch matched the marker shape, failed to parse
+    /// the id, and pushed nothing. The target noticed because wrapping a
+    /// subject may only move characters between lines, never remove them.
+    #[test]
+    fn a_marker_shaped_line_that_is_not_ours_survives() {
+        let cache = ReadFileCache::new();
+        let subject = "\n\n\x00RF:\x0b\x00\n";
+        assert_eq!(
+            resolve_readfile_markers(subject, &cache).as_deref(),
+            Some(subject),
+            "author text shaped like a marker must not be deleted"
+        );
+    }
+
+    /// A numeric id simply not in the cache is the same situation: not a marker
+    /// this engine wrote, so not the engine's to consume.
+    #[test]
+    fn a_marker_with_an_uncached_id_survives() {
+        let cache = ReadFileCache::new();
+        for subject in [
+            "\x00RF:0\x00\n",
+            "  \x00RF:7\x00\n",
+            "a\n\x00RF:999\x00\nb\n",
+        ] {
+            assert_eq!(
+                resolve_readfile_markers(subject, &cache).as_deref(),
+                Some(subject),
+                "{subject:?} names no cached file and must be left alone"
+            );
+        }
+    }
+
+    /// The whole-line path and the inline path must agree. They did not, and
+    /// the inline one was right -- it already pushed the marker back verbatim
+    /// on a parse failure or a cache miss.
+    #[test]
+    fn the_whole_line_and_inline_paths_agree_on_a_foreign_marker() {
+        let cache = ReadFileCache::new();
+        let inline = "x \x00RF:\x0b\x00 y\n";
+        let whole = "\x00RF:\x0b\x00\n";
+        assert_eq!(
+            resolve_readfile_markers(inline, &cache).as_deref(),
+            Some(inline)
+        );
+        assert_eq!(
+            resolve_readfile_markers(whole, &cache).as_deref(),
+            Some(whole)
+        );
+    }
+
+    /// The fix must not stop a REAL marker resolving, which is the point of the
+    /// mechanism.
+    #[test]
+    fn a_real_marker_still_resolves() {
+        let mut cache = ReadFileCache::new();
+        let id = cache.add("hello\n".to_string());
+        let subject = format!("before\n{}\nafter\n", readfile_marker(id));
+        let out = resolve_readfile_markers(&subject, &cache).expect("has a NUL");
+        assert!(out.contains("hello"), "{out:?}");
+        assert!(
+            !out.contains('\x00'),
+            "the marker must be consumed: {out:?}"
+        );
+    }
 
     #[test]
     fn test_readfile_marker_format() {
