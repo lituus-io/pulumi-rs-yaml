@@ -373,3 +373,16 @@ components:
     assert!(pcl.contains("__logicalName = \"myApp\""), "got:\n{}", pcl);
     assert!(pcl.contains("env = \"prod\""), "got:\n{}", pcl);
 }
+
+/// `fn::deriveString` converts, where the engine's other non-PCL builtins
+/// cannot.
+///
+/// It is a pure function of its argument, so a literal seed lowers to the value
+/// it computes and the converted program keeps the names the YAML produced. A
+/// seed that is not a literal still falls back to `null` with a warning, since
+/// computing it would mean evaluating the program; both branches are in the
+/// fixture.
+#[test]
+fn test_derive_string() {
+    golden_test("derive-string");
+}

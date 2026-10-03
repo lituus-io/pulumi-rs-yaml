@@ -192,3 +192,98 @@ fn the_same_program_derives_the_same_value_twice() {
     let second = evaluate(&case).expect("derives");
     assert_eq!(first, second);
 }
+
+/// The encoding half, checked by an implementation written in another language
+/// and run inside this engine.
+///
+/// The fixture above checks the whole algorithm against Python. This checks the
+/// half that is ours rather than the standard's — turning a digest into
+/// characters, including the rejection band — against a Starlark function in
+/// the same program. Starlark is deterministic by construction and has no
+/// access to the Rust code, so agreement here is agreement between two
+/// independent readings of the same rule.
+///
+/// The digest is supplied as a literal because Starlark has no hash primitive;
+/// its value is the published SHA-256 of the seed, which the `sha256` module's
+/// own vectors already pin against the specification. So the two halves are
+/// each checked by something that is not this code.
+#[test]
+fn the_encoding_agrees_with_a_starlark_implementation() {
+    let source = r#"
+name: test
+runtime: yaml
+
+starlark:
+  functions:
+    encode:
+      script: |
+        def encode(input):
+            # Rejection sampling over the digest bytes, written from the rule
+            # and not from the Rust: take a byte, discard it when it falls in
+            # the short final block that a plain modulo would fold back onto
+            # the alphabet's first characters, otherwise emit
+            # alphabet[byte % n].
+            #
+            # A bounded `for` rather than a `while`, because Starlark has no
+            # `while` -- it is deliberately non-Turing-complete, which is also
+            # why it is safe to run an author's script during a render. One
+            # digest is enough for a short draw; the engine extends with a
+            # counter when it is not, which this oracle does not model.
+            hex_digest = input["digest"]
+            alphabet = input["alphabet"]
+            length = input["length"]
+            n = len(alphabet)
+            limit = 256 - (256 % n)
+            digits = "0123456789abcdef"
+            out = ""
+            for i in range(0, len(hex_digest), 2):
+                if len(out) >= length:
+                    break
+                hi = digits.find(hex_digest[i])
+                lo = digits.find(hex_digest[i + 1])
+                byte = hi * 16 + lo
+                if byte < limit:
+                    out = out + alphabet[byte % n]
+            return out
+
+variables:
+  by_starlark:
+    fn::starlark:
+      invoke: encode
+      input:
+        digest: 7ad63964673e469839ff975580ca5b3a05dda7cbba520389e472086fdab9a164
+        alphabet: "0123456789abcdefghijklmnopqrstuvwxyz"
+        length: 4
+  by_builtin:
+    fn::deriveString:
+      from: tap_collector
+      length: 4
+outputs:
+  starlark: ${by_starlark}
+  builtin: ${by_builtin}
+"#;
+    let (template, d) = parse_template(source, None);
+    assert!(!d.has_errors(), "{d}");
+    let template: &'static _ = Box::leak(Box::new(template));
+    let eval = Evaluator::with_callback(
+        "test".to_string(),
+        "dev".to_string(),
+        "/tmp".to_string(),
+        false,
+        MockCallback::new(),
+    );
+    eval.evaluate_template(template, &HashMap::new(), &[]);
+    assert!(!eval.has_errors(), "{}", eval.diags_display());
+
+    let from_starlark = eval
+        .get_output("starlark")
+        .and_then(|v| v.as_str().map(str::to_string));
+    let from_builtin = eval
+        .get_output("builtin")
+        .and_then(|v| v.as_str().map(str::to_string));
+    assert_eq!(
+        from_starlark, from_builtin,
+        "the two implementations of the encoding disagree"
+    );
+    assert_eq!(from_builtin.as_deref(), Some("eyls"));
+}
