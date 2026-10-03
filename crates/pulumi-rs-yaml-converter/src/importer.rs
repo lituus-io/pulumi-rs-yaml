@@ -532,7 +532,7 @@ impl Importer {
             // pure function of its argument, which is why it converts at all
             // where the rest below cannot.
             Expr::DeriveString(_, _) => {
-                match pulumi_rs_yaml_core::literal_resolve::standalone_literal(expr) {
+                match pulumi_rs_yaml_core::literal_resolve::derive_string_literal(expr) {
                     Some(lit) => format!("\"{}\"", lit.replace('\\', "\\\\").replace('"', "\\\"")),
                     None => {
                         self.diags.warning(

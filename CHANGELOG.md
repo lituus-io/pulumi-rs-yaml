@@ -71,6 +71,26 @@ bound sits between them. Two independent implementations of the biased variant
 agreed on 0.1241 to five decimal places, which is how the threshold was chosen
 rather than guessed.
 
+### The converter's entry point is narrow, and that is worth a megabyte
+
+The first version of the conversion support called the general
+`literal_resolve` entry. That function reaches `resolve_str_invoke`, which
+reaches `native_str`, which links `regex` -- and the converter had never
+depended on regex. Measured against the release binaries: the converter grew
+**+1,075,648 bytes, 62% on a 1.7 MB binary**, for the convenience of keeping a
+derived name in a converted program. The language host, which already carries
+regex, grew 16 KB.
+
+So the public entry is now one function that resolves `fn::deriveString` with
+inline literal arguments and nothing else. The converter grows **16 bytes**.
+Nothing is lost by the narrowing: the general entry it replaced passed an empty
+variable map, so a reference never resolved through it either, and anything
+other than inline literals still emits what it emitted before.
+
+Worth stating as a rule, not an anecdote: a `pub` on a module in this crate is
+a link-time decision as much as an API one, because the evaluator's paths pull
+in the parsing and matching machinery behind them.
+
 ### SHA-256, in-crate, because the value is a compatibility contract
 
 A derived name goes into cloud state. Move the algorithm and every resource
