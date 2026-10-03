@@ -71,6 +71,33 @@ bound sits between them. Two independent implementations of the biased variant
 agreed on 0.1241 to five decimal places, which is how the threshold was chosen
 rather than guessed.
 
+### Author text shaped like a readFile marker is not the engine's
+
+The scheduled fuzz run of 2026-09-30 failed `fuzz_string_filters` on the
+subject `"\n\n\x00RF:\x0b\x00\n"`, which came back `"\n\n\n"`. The target
+noticed because wrapping a subject may only move characters between lines,
+never remove them -- and a line had been deleted.
+
+Not a filter defect, and older than the filters. `\x00RF:<id>\x00` is the
+Jinja module's own in-band marker for a `readFile()` result, substituted after
+the render. The whole-line branch of `resolve_readfile_markers` matched the
+marker SHAPE, failed to parse `\x0b` as an id, and then pushed nothing at all
+-- there was no `else`. So any author text of that shape was silently deleted
+from the rendered program, as was a marker whose id was numeric but absent from
+the cache.
+
+`replace_inline_markers` already got the same case right: on a parse failure or
+a cache miss it pushes the marker back verbatim. The two paths disagreeing
+about one situation is the whole of the defect, and the inline one is correct --
+a marker this engine wrote always carries a numeric id that is in the cache, so
+anything else is author text and is carried through unchanged.
+
+Four cases pin it: the fuzz subject itself, a numeric id that is not cached at
+three indents, the agreement between the two paths, and that a real marker
+still resolves and still consumes its NULs, which the fix must not break. The
+crashing input is committed as a corpus seed, so every future run takes the
+same path to it rather than relying on rediscovery.
+
 ### The converter's entry point is narrow, and that is worth a megabyte
 
 The first version of the conversion support called the general
