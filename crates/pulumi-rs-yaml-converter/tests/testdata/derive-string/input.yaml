@@ -1,0 +1,25 @@
+name: derive
+runtime: yaml
+variables:
+  suffix:
+    fn::deriveString:
+      from: tap_collector
+      length: 4
+  short:
+    fn::deriveString: tap_collector
+resources:
+  bucket:
+    type: gcp:storage:Bucket
+  svc:
+    type: gcp:cloudrunv2:Service
+    properties:
+      name: collector-${suffix}
+      # A seed that is not a literal cannot be computed without evaluating the
+      # program, so this one falls back to null with a warning.
+      description:
+        fn::deriveString:
+          from: ${bucket.id}
+          length: 4
+outputs:
+  svcName: ${svc.name}
+  shortSuffix: ${short}

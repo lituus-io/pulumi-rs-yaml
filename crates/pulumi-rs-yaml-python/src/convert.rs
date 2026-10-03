@@ -246,6 +246,7 @@ pub fn expr_to_py(py: Python<'_>, expr: &Expr<'_>) -> PyResult<Py<PyAny>> {
         Expr::TimeUnix(_, a) => single_arg_to_py(py, "timeUnix", a),
         Expr::Uuid(_, a) => single_arg_to_py(py, "uuid", a),
         Expr::RandomString(_, a) => single_arg_to_py(py, "randomString", a),
+        Expr::DeriveString(_, a) => single_arg_to_py(py, "deriveString", a),
         Expr::DateFormat(_, a) => single_arg_to_py(py, "dateFormat", a),
         // Assets/Archives
         Expr::StringAsset(_, a) => single_arg_to_py(py, "stringAsset", a),

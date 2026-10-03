@@ -123,3 +123,8 @@ doc = false
 name = "fuzz_string_filters"
 path = "fuzz_targets/fuzz_string_filters.rs"
 doc = false
+
+[[bin]]
+name = "fuzz_derive_string"
+path = "fuzz_targets/fuzz_derive_string.rs"
+doc = false

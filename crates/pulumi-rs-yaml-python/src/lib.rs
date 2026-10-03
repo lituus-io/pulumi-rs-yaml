@@ -336,6 +336,7 @@ fn evaluate_builtin(py: Python<'_>, name: &str, args: Py<PyAny>) -> PyResult<Py<
         // UUID/Random
         "uuid" => builtins::eval_uuid(&arg_val, &mut diags),
         "randomString" => builtins::eval_random_string(&arg_val, &mut diags),
+        "deriveString" => builtins::eval_derive_string(&arg_val, &mut diags),
         // Date
         "dateFormat" => builtins::eval_date_format(&arg_val, &mut diags),
         _ => {

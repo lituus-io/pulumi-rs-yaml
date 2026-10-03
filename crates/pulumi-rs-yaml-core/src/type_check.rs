@@ -257,6 +257,7 @@ impl TypeChecker<'_> {
             | Expr::TimeUnix(_, inner)
             | Expr::Uuid(_, inner)
             | Expr::RandomString(_, inner)
+            | Expr::DeriveString(_, inner)
             | Expr::DateFormat(_, inner)
             | Expr::StringAsset(_, inner)
             | Expr::FileAsset(_, inner)
@@ -430,7 +431,9 @@ impl TypeChecker<'_> {
             Expr::Substring(_, _, _, _) => InferredType::String,
             Expr::TimeUtc(_, _) | Expr::DateFormat(_, _) => InferredType::String,
             Expr::TimeUnix(_, _) => InferredType::Number,
-            Expr::Uuid(_, _) | Expr::RandomString(_, _) => InferredType::String,
+            Expr::Uuid(_, _) | Expr::RandomString(_, _) | Expr::DeriveString(_, _) => {
+                InferredType::String
+            }
             Expr::StringAsset(_, _) | Expr::FileAsset(_, _) | Expr::RemoteAsset(_, _) => {
                 InferredType::Asset
             }

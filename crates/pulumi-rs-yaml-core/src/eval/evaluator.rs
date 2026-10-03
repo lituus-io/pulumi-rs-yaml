@@ -1388,6 +1388,10 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
                 let v = self.eval_expr(inner)?;
                 builtins::eval_random_string(&v, &mut self.state.diags.lock().unwrap())
             }
+            Expr::DeriveString(_, inner) => {
+                let v = self.eval_expr(inner)?;
+                builtins::eval_derive_string(&v, &mut self.state.diags.lock().unwrap())
+            }
 
             // Date builtins
             Expr::DateFormat(_, inner) => {

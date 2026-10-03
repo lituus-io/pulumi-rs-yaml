@@ -976,6 +976,59 @@ fn bench_string_filters(c: &mut Criterion) {
     bench("wordwrap_prose_40", "{{ prose | wordwrap(40) }}");
 }
 
+/// `fn::deriveString`, through the evaluator so the number is the builtin and
+/// not the YAML parser.
+///
+/// Three points matter, and the third is not what it first looks like.
+///
+/// The common case is a short suffix: one digest, 334ns. The 64-character worst
+/// case pays only the extra compressions the extension loop needs, 1.03us --
+/// the same order, not a different one.
+///
+/// Those two were 432ns and 2.39us before the draw indexed an ASCII alphabet's
+/// bytes instead of walking its characters; the walk was the whole of the
+/// difference between them, and removing it took 57% off the long case.
+///
+/// The seed is a TIME cost, linear in its length, and a large one: 64 KiB of
+/// seed takes 278us against 334ns for a short one, ~830x apart. What the
+/// hashing bounds is the OUTPUT, which is a function of `length` alone, so a
+/// seed cannot amplify what this allocates -- but it absolutely can cost. Seeds
+/// in practice are resource names, tens of bytes; this point exists to keep the
+/// distinction between the two claims honest.
+fn bench_derive_string(c: &mut Criterion) {
+    use pulumi_rs_yaml_core::diag::Diagnostics;
+    let mut group = c.benchmark_group("derive_string");
+    let big_seed = "x".repeat(64 * 1024);
+    for (name, from, length) in [
+        ("suffix_4", "tap_collector", 4usize),
+        ("default_8", "tap_collector", 8),
+        ("worst_64", "tap_collector", 64),
+        ("seed_64k_len_4", big_seed.as_str(), 4),
+    ] {
+        group.bench_function(name, |b| {
+            b.iter(|| {
+                black_box(
+                    pulumi_rs_yaml_core::eval::builtins::eval_derive_string(
+                        black_box(&Value::Object(vec![
+                            (
+                                std::borrow::Cow::Borrowed("from"),
+                                Value::String(std::borrow::Cow::Borrowed(from)),
+                            ),
+                            (
+                                std::borrow::Cow::Borrowed("length"),
+                                Value::Number(length as f64),
+                            ),
+                        ])),
+                        &mut Diagnostics::new(),
+                    )
+                    .expect("derives"),
+                )
+            })
+        });
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_parse_simple,
@@ -1002,5 +1055,6 @@ criterion_group!(
     bench_needs_interpolation_pass,
     bench_string_filters,
     bench_parse_interpolation,
+    bench_derive_string,
 );
 criterion_main!(benches);

@@ -1,0 +1,4306 @@
+{
+ "cases": [
+  {
+   "from": "",
+   "expected": "bwgu8ska"
+  },
+  {
+   "from": "a",
+   "expected": "m7limr9m"
+  },
+  {
+   "from": "abc",
+   "expected": "6cmbz1ri"
+  },
+  {
+   "from": "voice-usage-egress",
+   "expected": "b0aw0er2"
+  },
+  {
+   "from": "voice-usage-egres",
+   "expected": "dbvz185i"
+  },
+  {
+   "from": "tap_collector",
+   "expected": "eylsvqy8"
+  },
+  {
+   "from": "tap-collector",
+   "expected": "1x5vd16m"
+  },
+  {
+   "from": "collector",
+   "expected": "7ijgjrhm"
+  },
+  {
+   "from": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "expected": "qweqe1ns"
+  },
+  {
+   "from": "ünïcødé-seed",
+   "expected": "8yg6xs78"
+  },
+  {
+   "from": "日本語のシード",
+   "expected": "m7iyxyr1"
+  },
+  {
+   "from": "a b\tc\nd",
+   "expected": "i5blnx8p"
+  },
+  {
+   "from": "0",
+   "expected": "nkjuk3k1"
+  },
+  {
+   "from": "-",
+   "expected": "l78yhewx"
+  },
+  {
+   "from": "projects/p/locations/l/services/s",
+   "expected": "a74d512s"
+  },
+  {
+   "from": "",
+   "length": 1,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "b"
+  },
+  {
+   "from": "",
+   "length": 1,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "t"
+  },
+  {
+   "from": "",
+   "length": 1,
+   "alphabet": "01",
+   "expected": "1"
+  },
+  {
+   "from": "",
+   "length": 1,
+   "alphabet": "0",
+   "expected": "0"
+  },
+  {
+   "from": "",
+   "length": 1,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6"
+  },
+  {
+   "from": "",
+   "length": 1,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "p"
+  },
+  {
+   "from": "",
+   "length": 1,
+   "alphabet": "αβγδε",
+   "expected": "γ"
+  },
+  {
+   "from": "",
+   "length": 1,
+   "alphabet": "日本語",
+   "expected": "語"
+  },
+  {
+   "from": "",
+   "length": 1,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "t"
+  },
+  {
+   "from": "",
+   "length": 2,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "bw"
+  },
+  {
+   "from": "",
+   "length": 2,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tu"
+  },
+  {
+   "from": "",
+   "length": 2,
+   "alphabet": "01",
+   "expected": "10"
+  },
+  {
+   "from": "",
+   "length": 2,
+   "alphabet": "0",
+   "expected": "00"
+  },
+  {
+   "from": "",
+   "length": 2,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6m"
+  },
+  {
+   "from": "",
+   "length": 2,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "p0"
+  },
+  {
+   "from": "",
+   "length": 2,
+   "alphabet": "αβγδε",
+   "expected": "γβ"
+  },
+  {
+   "from": "",
+   "length": 2,
+   "alphabet": "日本語",
+   "expected": "語語"
+  },
+  {
+   "from": "",
+   "length": 2,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tu"
+  },
+  {
+   "from": "",
+   "length": 3,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "bwg"
+  },
+  {
+   "from": "",
+   "length": 3,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tuo"
+  },
+  {
+   "from": "",
+   "length": 3,
+   "alphabet": "01",
+   "expected": "100"
+  },
+  {
+   "from": "",
+   "length": 3,
+   "alphabet": "0",
+   "expected": "000"
+  },
+  {
+   "from": "",
+   "length": 3,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6m8"
+  },
+  {
+   "from": "",
+   "length": 3,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "p0K"
+  },
+  {
+   "from": "",
+   "length": 3,
+   "alphabet": "αβγδε",
+   "expected": "γββ"
+  },
+  {
+   "from": "",
+   "length": 3,
+   "alphabet": "日本語",
+   "expected": "語語本"
+  },
+  {
+   "from": "",
+   "length": 3,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tuo"
+  },
+  {
+   "from": "",
+   "length": 4,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "bwgu"
+  },
+  {
+   "from": "",
+   "length": 4,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tuoo"
+  },
+  {
+   "from": "",
+   "length": 4,
+   "alphabet": "01",
+   "expected": "1000"
+  },
+  {
+   "from": "",
+   "length": 4,
+   "alphabet": "0",
+   "expected": "0000"
+  },
+  {
+   "from": "",
+   "length": 4,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6m8a"
+  },
+  {
+   "from": "",
+   "length": 4,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "p0KE"
+  },
+  {
+   "from": "",
+   "length": 4,
+   "alphabet": "αβγδε",
+   "expected": "γβββ"
+  },
+  {
+   "from": "",
+   "length": 4,
+   "alphabet": "日本語",
+   "expected": "語語本日"
+  },
+  {
+   "from": "",
+   "length": 4,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tuoo"
+  },
+  {
+   "from": "",
+   "length": 5,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "bwgu8"
+  },
+  {
+   "from": "",
+   "length": 5,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tuoow"
+  },
+  {
+   "from": "",
+   "length": 5,
+   "alphabet": "01",
+   "expected": "10000"
+  },
+  {
+   "from": "",
+   "length": 5,
+   "alphabet": "0",
+   "expected": "00000"
+  },
+  {
+   "from": "",
+   "length": 5,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6m8av"
+  },
+  {
+   "from": "",
+   "length": 5,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "p0KEc"
+  },
+  {
+   "from": "",
+   "length": 5,
+   "alphabet": "αβγδε",
+   "expected": "γβββγ"
+  },
+  {
+   "from": "",
+   "length": 5,
+   "alphabet": "日本語",
+   "expected": "語語本日語"
+  },
+  {
+   "from": "",
+   "length": 5,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tuoow"
+  },
+  {
+   "from": "",
+   "length": 8,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "bwgu8ska"
+  },
+  {
+   "from": "",
+   "length": 8,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tuoowcuy"
+  },
+  {
+   "from": "",
+   "length": 8,
+   "alphabet": "01",
+   "expected": "10000000"
+  },
+  {
+   "from": "",
+   "length": 8,
+   "alphabet": "0",
+   "expected": "00000000"
+  },
+  {
+   "from": "",
+   "length": 8,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6m8av5vx"
+  },
+  {
+   "from": "",
+   "length": 8,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "p0KEccUe"
+  },
+  {
+   "from": "",
+   "length": 8,
+   "alphabet": "αβγδε",
+   "expected": "γβββγγδα"
+  },
+  {
+   "from": "",
+   "length": 8,
+   "alphabet": "日本語",
+   "expected": "語語本日語日本語"
+  },
+  {
+   "from": "",
+   "length": 8,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tuoowscu"
+  },
+  {
+   "from": "",
+   "length": 12,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "bwgu8skazsk9"
+  },
+  {
+   "from": "",
+   "length": 12,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tuoowcuysxhd"
+  },
+  {
+   "from": "",
+   "length": 12,
+   "alphabet": "01",
+   "expected": "100000000100"
+  },
+  {
+   "from": "",
+   "length": 12,
+   "alphabet": "0",
+   "expected": "000000000000"
+  },
+  {
+   "from": "",
+   "length": 12,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6m8av5vxcwnv"
+  },
+  {
+   "from": "",
+   "length": 12,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "p0KEccUe6Odx"
+  },
+  {
+   "from": "",
+   "length": 12,
+   "alphabet": "αβγδε",
+   "expected": "γβββγγδαεβεα"
+  },
+  {
+   "from": "",
+   "length": 12,
+   "alphabet": "日本語",
+   "expected": "語語本日語日本語本語本語"
+  },
+  {
+   "from": "",
+   "length": 12,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tuoowscuyrks"
+  },
+  {
+   "from": "",
+   "length": 16,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "bwgu8skazsk93503"
+  },
+  {
+   "from": "",
+   "length": 16,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tuoowcuysxhdknsn"
+  },
+  {
+   "from": "",
+   "length": 16,
+   "alphabet": "01",
+   "expected": "1000000001001110"
+  },
+  {
+   "from": "",
+   "length": 16,
+   "alphabet": "0",
+   "expected": "0000000000000000"
+  },
+  {
+   "from": "",
+   "length": 16,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6m8av5vxcwnvdgj9"
+  },
+  {
+   "from": "",
+   "length": 16,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "p0KEccUe6Odx9kny"
+  },
+  {
+   "from": "",
+   "length": 16,
+   "alphabet": "αβγδε",
+   "expected": "γβββγγδαεβεαδβαβ"
+  },
+  {
+   "from": "",
+   "length": 16,
+   "alphabet": "日本語",
+   "expected": "語語本日語日本語本語本語日日語日"
+  },
+  {
+   "from": "",
+   "length": 16,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tuoowscuyrksxhdk"
+  },
+  {
+   "from": "",
+   "length": 31,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "bwgu8skazsk93503utcsb34k59rca4d"
+  },
+  {
+   "from": "",
+   "length": 31,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tuoowcuysxhdknsnuwzryitxbqechzp"
+  },
+  {
+   "from": "",
+   "length": 31,
+   "alphabet": "01",
+   "expected": "1000000001001110101001100111000"
+  },
+  {
+   "from": "",
+   "length": 31,
+   "alphabet": "0",
+   "expected": "0000000000000000000000000000000"
+  },
+  {
+   "from": "",
+   "length": 31,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6m8av5vxcwnvdgj97byqk9sw4wruueg"
+  },
+  {
+   "from": "",
+   "length": 31,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "p0KEccUe6Odx9knyDqmfXOoZdb6U8Xp"
+  },
+  {
+   "from": "",
+   "length": 31,
+   "alphabet": "αβγδε",
+   "expected": "γβββγγδαεβεαδβαβεεαδααγβεεδγαγε"
+  },
+  {
+   "from": "",
+   "length": 31,
+   "alphabet": "日本語",
+   "expected": "語語本日語日本語本語本語日日語日日日語日本語日本語語日日日本本"
+  },
+  {
+   "from": "",
+   "length": 31,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tuoowscuyrksxhdknsnuwzryitxbqec"
+  },
+  {
+   "from": "",
+   "length": 32,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "bwgu8skazsk93503utcsb34k59rca4dv"
+  },
+  {
+   "from": "",
+   "length": 32,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tuoowcuysxhdknsnuwzryitxbqechzpn"
+  },
+  {
+   "from": "",
+   "length": 32,
+   "alphabet": "01",
+   "expected": "10000000010011101010011001110001"
+  },
+  {
+   "from": "",
+   "length": 32,
+   "alphabet": "0",
+   "expected": "00000000000000000000000000000000"
+  },
+  {
+   "from": "",
+   "length": 32,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6m8av5vxcwnvdgj97byqk9sw4wruuegy"
+  },
+  {
+   "from": "",
+   "length": 32,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "p0KEccUe6Odx9knyDqmfXOoZdb6U8Xpv"
+  },
+  {
+   "from": "",
+   "length": 32,
+   "alphabet": "αβγδε",
+   "expected": "γβββγγδαεβεαδβαβεεαδααγβεεδγαγεα"
+  },
+  {
+   "from": "",
+   "length": 32,
+   "alphabet": "日本語",
+   "expected": "語語本日語日本語本語本語日日語日日日語日本語日本語語日日日本本本"
+  },
+  {
+   "from": "",
+   "length": 32,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tuoowscuyrksxhdknsnuwzryitxbqech"
+  },
+  {
+   "from": "",
+   "length": 33,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "bwgu8skazsk93503utcsb34k59rca4dvr"
+  },
+  {
+   "from": "",
+   "length": 33,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tuoowcuysxhdknsnuwzryitxbqechzpnk"
+  },
+  {
+   "from": "",
+   "length": 33,
+   "alphabet": "01",
+   "expected": "100000000100111010100110011100011"
+  },
+  {
+   "from": "",
+   "length": 33,
+   "alphabet": "0",
+   "expected": "000000000000000000000000000000000"
+  },
+  {
+   "from": "",
+   "length": 33,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6m8av5vxcwnvdgj97byqk9sw4wruuegyq"
+  },
+  {
+   "from": "",
+   "length": 33,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "p0KEccUe6Odx9knyDqmfXOoZdb6U8Xpvj"
+  },
+  {
+   "from": "",
+   "length": 33,
+   "alphabet": "αβγδε",
+   "expected": "γβββγγδαεβεαδβαβεεαδααγβεεδγαγεαδ"
+  },
+  {
+   "from": "",
+   "length": 33,
+   "alphabet": "日本語",
+   "expected": "語語本日語日本語本語本語日日語日日日語日本語日本語語日日日本本本本"
+  },
+  {
+   "from": "",
+   "length": 33,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tuoowscuyrksxhdknsnuwzryitxbqechz"
+  },
+  {
+   "from": "",
+   "length": 63,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "bwgu8skazsk93503utcsb34k59rca4dvr56g0o6br4bdnh6w9bc9we0xwplqk82"
+  },
+  {
+   "from": "",
+   "length": 63,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tuoowcuysxhdknsnuwzryitxbqechzpnkqkallyvlhpeetlqdeiilgjvoicmwpr"
+  },
+  {
+   "from": "",
+   "length": 63,
+   "alphabet": "01",
+   "expected": "100000000100111010100110011100011110000101101111001101000101100"
+  },
+  {
+   "from": "",
+   "length": 63,
+   "alphabet": "0",
+   "expected": "000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "from": "",
+   "length": 63,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6m8av5vxcwnvdgj97byqk9sw4wruuegyqrdnm7kp539wpnmwqpvtj95wf9pfo4d"
+  },
+  {
+   "from": "",
+   "length": 63,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "p0KEccUe6Odx9knyDqmfXOoZdb6U8Xpvj0Qk2QLBOvH7LAatL6TaYeRg9VuoSm2"
+  },
+  {
+   "from": "",
+   "length": 63,
+   "alphabet": "αβγδε",
+   "expected": "γβββγγδαεβεαδβαβεεαδααγβεεδγαγεαδββεββαδβδβγδεγβγαβαβγβββγββαεα"
+  },
+  {
+   "from": "",
+   "length": 63,
+   "alphabet": "日本語",
+   "expected": "語語本日語日本語本語本語日日語日日日語日本語日本語語日日日本本本本日語日本日日日語日本語本語語日語日語日日語語日日語本日語語語"
+  },
+  {
+   "from": "",
+   "length": 63,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tuoowscuyrksxhdknsnuwzryitxbqechzpnkqkgvallyvlhpeetlqdeiilgjvoi"
+  },
+  {
+   "from": "",
+   "length": 64,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "bwgu8skazsk93503utcsb34k59rca4dvr56g0o6br4bdnh6w9bc9we0xwplqk82y"
+  },
+  {
+   "from": "",
+   "length": 64,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tuoowcuysxhdknsnuwzryitxbqechzpnkqkallyvlhpeetlqdeiilgjvoicmwprn"
+  },
+  {
+   "from": "",
+   "length": 64,
+   "alphabet": "01",
+   "expected": "1000000001001110101001100111000111100001011011110011010001011000"
+  },
+  {
+   "from": "",
+   "length": 64,
+   "alphabet": "0",
+   "expected": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "from": "",
+   "length": 64,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6m8av5vxcwnvdgj97byqk9sw4wruuegyqrdnm7kp539wpnmwqpvtj95wf9pfo4dt"
+  },
+  {
+   "from": "",
+   "length": 64,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "p0KEccUe6Odx9knyDqmfXOoZdb6U8Xpvj0Qk2QLBOvH7LAatL6TaYeRg9VuoSm2f"
+  },
+  {
+   "from": "",
+   "length": 64,
+   "alphabet": "αβγδε",
+   "expected": "γβββγγδαεβεαδβαβεεαδααγβεεδγαγεαδββεββαδβδβγδεγβγαβαβγβββγββαεαδ"
+  },
+  {
+   "from": "",
+   "length": 64,
+   "alphabet": "日本語",
+   "expected": "語語本日語日本語本語本語日日語日日日語日本語日本語語日日日本本本本日語日本日日日語日本語本語語日語日語日日語語日日語本日語語語語"
+  },
+  {
+   "from": "",
+   "length": 64,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tuoowscuyrksxhdknsnuwzryitxbqechzpnkqkgvallyvlhpeetlqdeiilgjvoic"
+  },
+  {
+   "from": "a",
+   "length": 1,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "m"
+  },
+  {
+   "from": "a",
+   "length": 1,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "u"
+  },
+  {
+   "from": "a",
+   "length": 1,
+   "alphabet": "01",
+   "expected": "0"
+  },
+  {
+   "from": "a",
+   "length": 1,
+   "alphabet": "0",
+   "expected": "0"
+  },
+  {
+   "from": "a",
+   "length": 1,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "e"
+  },
+  {
+   "from": "a",
+   "length": 1,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "Q"
+  },
+  {
+   "from": "a",
+   "length": 1,
+   "alphabet": "αβγδε",
+   "expected": "γ"
+  },
+  {
+   "from": "a",
+   "length": 1,
+   "alphabet": "日本語",
+   "expected": "本"
+  },
+  {
+   "from": "a",
+   "length": 1,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "u"
+  },
+  {
+   "from": "a",
+   "length": 2,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "m7"
+  },
+  {
+   "from": "a",
+   "length": 2,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "uv"
+  },
+  {
+   "from": "a",
+   "length": 2,
+   "alphabet": "01",
+   "expected": "01"
+  },
+  {
+   "from": "a",
+   "length": 2,
+   "alphabet": "0",
+   "expected": "00"
+  },
+  {
+   "from": "a",
+   "length": 2,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "eu"
+  },
+  {
+   "from": "a",
+   "length": 2,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "Qb"
+  },
+  {
+   "from": "a",
+   "length": 2,
+   "alphabet": "αβγδε",
+   "expected": "γβ"
+  },
+  {
+   "from": "a",
+   "length": 2,
+   "alphabet": "日本語",
+   "expected": "本本"
+  },
+  {
+   "from": "a",
+   "length": 2,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "uv"
+  },
+  {
+   "from": "a",
+   "length": 3,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "m7l"
+  },
+  {
+   "from": "a",
+   "length": 3,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "uvz"
+  },
+  {
+   "from": "a",
+   "length": 3,
+   "alphabet": "01",
+   "expected": "011"
+  },
+  {
+   "from": "a",
+   "length": 3,
+   "alphabet": "0",
+   "expected": "000"
+  },
+  {
+   "from": "a",
+   "length": 3,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "eu7"
+  },
+  {
+   "from": "a",
+   "length": 3,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "QbF"
+  },
+  {
+   "from": "a",
+   "length": 3,
+   "alphabet": "αβγδε",
+   "expected": "γβε"
+  },
+  {
+   "from": "a",
+   "length": 3,
+   "alphabet": "日本語",
+   "expected": "本本日"
+  },
+  {
+   "from": "a",
+   "length": 3,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "uvz"
+  },
+  {
+   "from": "a",
+   "length": 4,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "m7li"
+  },
+  {
+   "from": "a",
+   "length": 4,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "uvzs"
+  },
+  {
+   "from": "a",
+   "length": 4,
+   "alphabet": "01",
+   "expected": "0110"
+  },
+  {
+   "from": "a",
+   "length": 4,
+   "alphabet": "0",
+   "expected": "0000"
+  },
+  {
+   "from": "a",
+   "length": 4,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "eu7t"
+  },
+  {
+   "from": "a",
+   "length": 4,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "QbFS"
+  },
+  {
+   "from": "a",
+   "length": 4,
+   "alphabet": "αβγδε",
+   "expected": "γβεδ"
+  },
+  {
+   "from": "a",
+   "length": 4,
+   "alphabet": "日本語",
+   "expected": "本本日日"
+  },
+  {
+   "from": "a",
+   "length": 4,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "uvzs"
+  },
+  {
+   "from": "a",
+   "length": 5,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "m7lim"
+  },
+  {
+   "from": "a",
+   "length": 5,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "uvzsu"
+  },
+  {
+   "from": "a",
+   "length": 5,
+   "alphabet": "01",
+   "expected": "01100"
+  },
+  {
+   "from": "a",
+   "length": 5,
+   "alphabet": "0",
+   "expected": "00000"
+  },
+  {
+   "from": "a",
+   "length": 5,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "eu7te"
+  },
+  {
+   "from": "a",
+   "length": 5,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "QbFSQ"
+  },
+  {
+   "from": "a",
+   "length": 5,
+   "alphabet": "αβγδε",
+   "expected": "γβεδγ"
+  },
+  {
+   "from": "a",
+   "length": 5,
+   "alphabet": "日本語",
+   "expected": "本本日日本"
+  },
+  {
+   "from": "a",
+   "length": 5,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "uvzsu"
+  },
+  {
+   "from": "a",
+   "length": 8,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "m7limr9m"
+  },
+  {
+   "from": "a",
+   "length": 8,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "uvzsubhu"
+  },
+  {
+   "from": "a",
+   "length": 8,
+   "alphabet": "01",
+   "expected": "01100110"
+  },
+  {
+   "from": "a",
+   "length": 8,
+   "alphabet": "0",
+   "expected": "00000000"
+  },
+  {
+   "from": "a",
+   "length": 8,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "eu7te4ze"
+  },
+  {
+   "from": "a",
+   "length": 8,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "QbFSQbDQ"
+  },
+  {
+   "from": "a",
+   "length": 8,
+   "alphabet": "αβγδε",
+   "expected": "γβεδγγεγ"
+  },
+  {
+   "from": "a",
+   "length": 8,
+   "alphabet": "日本語",
+   "expected": "本本日日本日日本"
+  },
+  {
+   "from": "a",
+   "length": 8,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "uvzsubhu"
+  },
+  {
+   "from": "a",
+   "length": 12,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "m7limr9myedz"
+  },
+  {
+   "from": "a",
+   "length": 12,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "uvzsubhumxxy"
+  },
+  {
+   "from": "a",
+   "length": 12,
+   "alphabet": "01",
+   "expected": "011001100011"
+  },
+  {
+   "from": "a",
+   "length": 12,
+   "alphabet": "0",
+   "expected": "000000000000"
+  },
+  {
+   "from": "a",
+   "length": 12,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "eu7te4ze6rpx"
+  },
+  {
+   "from": "a",
+   "length": 12,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "QbFSQbDQIx3e"
+  },
+  {
+   "from": "a",
+   "length": 12,
+   "alphabet": "αβγδε",
+   "expected": "γβεδγγεγαεεε"
+  },
+  {
+   "from": "a",
+   "length": 12,
+   "alphabet": "日本語",
+   "expected": "本本日日本日日本本語本語"
+  },
+  {
+   "from": "a",
+   "length": 12,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "uvzsubhuqmxx"
+  },
+  {
+   "from": "a",
+   "length": 16,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "m7limr9myedzaz45"
+  },
+  {
+   "from": "a",
+   "length": 16,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "uvzsubhumxxyjmzl"
+  },
+  {
+   "from": "a",
+   "length": 16,
+   "alphabet": "01",
+   "expected": "0110011000110101"
+  },
+  {
+   "from": "a",
+   "length": 16,
+   "alphabet": "0",
+   "expected": "0000000000000000"
+  },
+  {
+   "from": "a",
+   "length": 16,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "eu7te4ze6rpxcxmc"
+  },
+  {
+   "from": "a",
+   "length": 16,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "QbFSQbDQIx3ejiPr"
+  },
+  {
+   "from": "a",
+   "length": 16,
+   "alphabet": "αβγδε",
+   "expected": "γβεδγγεγαεεεεααγ"
+  },
+  {
+   "from": "a",
+   "length": 16,
+   "alphabet": "日本語",
+   "expected": "本本日日本日日本本語本語本語本語"
+  },
+  {
+   "from": "a",
+   "length": 16,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "uvzsubhuqmxxyjmz"
+  },
+  {
+   "from": "a",
+   "length": 31,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "m7limr9myedzaz45nqnwkg665kbpvm0"
+  },
+  {
+   "from": "a",
+   "length": 31,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "uvzsubhumxxyjmzleuuakdypdtufdwp"
+  },
+  {
+   "from": "a",
+   "length": 31,
+   "alphabet": "01",
+   "expected": "0110011000110101101000001011100"
+  },
+  {
+   "from": "a",
+   "length": 31,
+   "alphabet": "0",
+   "expected": "0000000000000000000000000000000"
+  },
+  {
+   "from": "a",
+   "length": 31,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "eu7te4ze6rpxcxmccv2nqv6vbkgxq4o"
+  },
+  {
+   "from": "a",
+   "length": 31,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "QbFSQbDQIx3ejiPrK1UAQ09E5Jz0KBT"
+  },
+  {
+   "from": "a",
+   "length": 31,
+   "alphabet": "αβγδε",
+   "expected": "γβεδγγεγαεεεεααγγεεδαεδεαδεδαδγ"
+  },
+  {
+   "from": "a",
+   "length": 31,
+   "alphabet": "日本語",
+   "expected": "本本日日本日日本本語本語本語本語語語語語語本日日語語語本本本日"
+  },
+  {
+   "from": "a",
+   "length": 31,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "uvzsubhuqmxxyjmzlefouuakdypdteu"
+  },
+  {
+   "from": "a",
+   "length": 32,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "m7limr9myedzaz45nqnwkg665kbpvm07"
+  },
+  {
+   "from": "a",
+   "length": 32,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "uvzsubhumxxyjmzleuuakdypdtufdwpn"
+  },
+  {
+   "from": "a",
+   "length": 32,
+   "alphabet": "01",
+   "expected": "01100110001101011010000010111001"
+  },
+  {
+   "from": "a",
+   "length": 32,
+   "alphabet": "0",
+   "expected": "00000000000000000000000000000000"
+  },
+  {
+   "from": "a",
+   "length": 32,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "eu7te4ze6rpxcxmccv2nqv6vbkgxq4ot"
+  },
+  {
+   "from": "a",
+   "length": 32,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "QbFSQbDQIx3ejiPrK1UAQ09E5Jz0KBT1"
+  },
+  {
+   "from": "a",
+   "length": 32,
+   "alphabet": "αβγδε",
+   "expected": "γβεδγγεγαεεεεααγγεεδαεδεαδεδαδγγ"
+  },
+  {
+   "from": "a",
+   "length": 32,
+   "alphabet": "日本語",
+   "expected": "本本日日本日日本本語本語本語本語語語語語語本日日語語語本本本日本"
+  },
+  {
+   "from": "a",
+   "length": 32,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "uvzsubhuqmxxyjmzlefouuakdypdteuf"
+  },
+  {
+   "from": "a",
+   "length": 33,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "m7limr9myedzaz45nqnwkg665kbpvm079"
+  },
+  {
+   "from": "a",
+   "length": 33,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "uvzsubhumxxyjmzleuuakdypdtufdwpns"
+  },
+  {
+   "from": "a",
+   "length": 33,
+   "alphabet": "01",
+   "expected": "011001100011010110100000101110011"
+  },
+  {
+   "from": "a",
+   "length": 33,
+   "alphabet": "0",
+   "expected": "000000000000000000000000000000000"
+  },
+  {
+   "from": "a",
+   "length": 33,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "eu7te4ze6rpxcxmccv2nqv6vbkgxq4otc"
+  },
+  {
+   "from": "a",
+   "length": 33,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "QbFSQbDQIx3ejiPrK1UAQ09E5Jz0KBT1C"
+  },
+  {
+   "from": "a",
+   "length": 33,
+   "alphabet": "αβγδε",
+   "expected": "γβεδγγεγαεεεεααγγεεδαεδεαδεδαδγγβ"
+  },
+  {
+   "from": "a",
+   "length": 33,
+   "alphabet": "日本語",
+   "expected": "本本日日本日日本本語本語本語本語語語語語語本日日語語語本本本日本日"
+  },
+  {
+   "from": "a",
+   "length": 33,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "uvzsubhuqmxxyjmzlefouuakdypdteufd"
+  },
+  {
+   "from": "a",
+   "length": 63,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "m7limr9myedzaz45nqnwkg665kbpvm079ni19kkzkhxko3k11wj0dbbtopwrrcn"
+  },
+  {
+   "from": "a",
+   "length": 63,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "uvzsubhumxxyjmzleuuakdypdtufdwpnsyxizvoclsvjerehlpbynqvfmxyjwat"
+  },
+  {
+   "from": "a",
+   "length": 63,
+   "alphabet": "01",
+   "expected": "011001100011010110100000101110011101100101100101101011111010110"
+  },
+  {
+   "from": "a",
+   "length": 63,
+   "alphabet": "0",
+   "expected": "000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "from": "a",
+   "length": 63,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "eu7te4ze6rpxcxmccv2nqv6vbkgxq4otc6p9n3awchupbjumvmzecadnyi3bnke"
+  },
+  {
+   "from": "a",
+   "length": 63,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "QbFSQbDQIx3ejiPrK1UAQ09E5Jz0KBT1CV3OE3ov1eIhOLfaNuXL5XYtGlLMXUF"
+  },
+  {
+   "from": "a",
+   "length": 63,
+   "alphabet": "αβγδε",
+   "expected": "γβεδγγεγαεεεεααγγεεδαεδεαδεδαδγγβεβαγαδεεδγγγεαδγγεδαβεεεεδεαγδ"
+  },
+  {
+   "from": "a",
+   "length": 63,
+   "alphabet": "日本語",
+   "expected": "本本日日本日日本本語本語本語本語語語語語語本日日語語語本本本日本日語日本日語語語語語日語日日語本本語本日本語語語日本語日日日語"
+  },
+  {
+   "from": "a",
+   "length": 63,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "uvzsubhuqmxxyjmzlefouuakdypdteufdfwpnsyxizvoclsvjerehlvpbynqvfm"
+  },
+  {
+   "from": "a",
+   "length": 64,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "m7limr9myedzaz45nqnwkg665kbpvm079ni19kkzkhxko3k11wj0dbbtopwrrcnq"
+  },
+  {
+   "from": "a",
+   "length": 64,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "uvzsubhumxxyjmzleuuakdypdtufdwpnsyxizvoclsvjerehlpbynqvfmxyjwate"
+  },
+  {
+   "from": "a",
+   "length": 64,
+   "alphabet": "01",
+   "expected": "0110011000110101101000001011100111011001011001011010111110101101"
+  },
+  {
+   "from": "a",
+   "length": 64,
+   "alphabet": "0",
+   "expected": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "from": "a",
+   "length": 64,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "eu7te4ze6rpxcxmccv2nqv6vbkgxq4otc6p9n3awchupbjumvmzecadnyi3bnkep"
+  },
+  {
+   "from": "a",
+   "length": 64,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "QbFSQbDQIx3ejiPrK1UAQ09E5Jz0KBT1CV3OE3ov1eIhOLfaNuXL5XYtGlLMXUFm"
+  },
+  {
+   "from": "a",
+   "length": 64,
+   "alphabet": "αβγδε",
+   "expected": "γβεδγγεγαεεεεααγγεεδαεδεαδεδαδγγβεβαγαδεεδγγγεαδγγεδαβεεεεδεαγδβ"
+  },
+  {
+   "from": "a",
+   "length": 64,
+   "alphabet": "日本語",
+   "expected": "本本日日本日日本本語本語本語本語語語語語語本日日語語語本本本日本日語日本日語語語語語日語日日語本本語本日本語語語日本語日日日語語"
+  },
+  {
+   "from": "a",
+   "length": 64,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "uvzsubhuqmxxyjmzlefouuakdypdteufdfwpnsyxizvoclsvjerehlvpbynqvfmx"
+  },
+  {
+   "from": "abc",
+   "length": 1,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "6"
+  },
+  {
+   "from": "abc",
+   "length": 1,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "e"
+  },
+  {
+   "from": "abc",
+   "length": 1,
+   "alphabet": "01",
+   "expected": "0"
+  },
+  {
+   "from": "abc",
+   "length": 1,
+   "alphabet": "0",
+   "expected": "0"
+  },
+  {
+   "from": "abc",
+   "length": 1,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "w"
+  },
+  {
+   "from": "abc",
+   "length": 1,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "A"
+  },
+  {
+   "from": "abc",
+   "length": 1,
+   "alphabet": "αβγδε",
+   "expected": "β"
+  },
+  {
+   "from": "abc",
+   "length": 1,
+   "alphabet": "日本語",
+   "expected": "日"
+  },
+  {
+   "from": "abc",
+   "length": 1,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "e"
+  },
+  {
+   "from": "abc",
+   "length": 2,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "6c"
+  },
+  {
+   "from": "abc",
+   "length": 2,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "eq"
+  },
+  {
+   "from": "abc",
+   "length": 2,
+   "alphabet": "01",
+   "expected": "00"
+  },
+  {
+   "from": "abc",
+   "length": 2,
+   "alphabet": "0",
+   "expected": "00"
+  },
+  {
+   "from": "abc",
+   "length": 2,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "ww"
+  },
+  {
+   "from": "abc",
+   "length": 2,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "A6"
+  },
+  {
+   "from": "abc",
+   "length": 2,
+   "alphabet": "αβγδε",
+   "expected": "βα"
+  },
+  {
+   "from": "abc",
+   "length": 2,
+   "alphabet": "日本語",
+   "expected": "日日"
+  },
+  {
+   "from": "abc",
+   "length": 2,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "eq"
+  },
+  {
+   "from": "abc",
+   "length": 3,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "6cm"
+  },
+  {
+   "from": "abc",
+   "length": 3,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "eqw"
+  },
+  {
+   "from": "abc",
+   "length": 3,
+   "alphabet": "01",
+   "expected": "000"
+  },
+  {
+   "from": "abc",
+   "length": 3,
+   "alphabet": "0",
+   "expected": "000"
+  },
+  {
+   "from": "abc",
+   "length": 3,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "wwx"
+  },
+  {
+   "from": "abc",
+   "length": 3,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "A6W"
+  },
+  {
+   "from": "abc",
+   "length": 3,
+   "alphabet": "αβγδε",
+   "expected": "βαγ"
+  },
+  {
+   "from": "abc",
+   "length": 3,
+   "alphabet": "日本語",
+   "expected": "日日本"
+  },
+  {
+   "from": "abc",
+   "length": 3,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "eqw"
+  },
+  {
+   "from": "abc",
+   "length": 4,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "6cmb"
+  },
+  {
+   "from": "abc",
+   "length": 4,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "eqwj"
+  },
+  {
+   "from": "abc",
+   "length": 4,
+   "alphabet": "01",
+   "expected": "0001"
+  },
+  {
+   "from": "abc",
+   "length": 4,
+   "alphabet": "0",
+   "expected": "0000"
+  },
+  {
+   "from": "abc",
+   "length": 4,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "wwx3"
+  },
+  {
+   "from": "abc",
+   "length": 4,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "A6WF"
+  },
+  {
+   "from": "abc",
+   "length": 4,
+   "alphabet": "αβγδε",
+   "expected": "βαγβ"
+  },
+  {
+   "from": "abc",
+   "length": 4,
+   "alphabet": "日本語",
+   "expected": "日日本語"
+  },
+  {
+   "from": "abc",
+   "length": 4,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "eqwj"
+  },
+  {
+   "from": "abc",
+   "length": 5,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "6cmbz"
+  },
+  {
+   "from": "abc",
+   "length": 5,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "eqwjn"
+  },
+  {
+   "from": "abc",
+   "length": 5,
+   "alphabet": "01",
+   "expected": "00011"
+  },
+  {
+   "from": "abc",
+   "length": 5,
+   "alphabet": "0",
+   "expected": "00000"
+  },
+  {
+   "from": "abc",
+   "length": 5,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "wwx3m"
+  },
+  {
+   "from": "abc",
+   "length": 5,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "A6WFT"
+  },
+  {
+   "from": "abc",
+   "length": 5,
+   "alphabet": "αβγδε",
+   "expected": "βαγβδ"
+  },
+  {
+   "from": "abc",
+   "length": 5,
+   "alphabet": "日本語",
+   "expected": "日日本語語"
+  },
+  {
+   "from": "abc",
+   "length": 5,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "eqwjn"
+  },
+  {
+   "from": "abc",
+   "length": 8,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "6cmbz1ri"
+  },
+  {
+   "from": "abc",
+   "length": 8,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "eqwjnbzn"
+  },
+  {
+   "from": "abc",
+   "length": 8,
+   "alphabet": "01",
+   "expected": "00011110"
+  },
+  {
+   "from": "abc",
+   "length": 8,
+   "alphabet": "0",
+   "expected": "00000000"
+  },
+  {
+   "from": "abc",
+   "length": 8,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "wwx3mbj9"
+  },
+  {
+   "from": "abc",
+   "length": 8,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "A6WFTBVw"
+  },
+  {
+   "from": "abc",
+   "length": 8,
+   "alphabet": "αβγδε",
+   "expected": "βαγβδβγε"
+  },
+  {
+   "from": "abc",
+   "length": 8,
+   "alphabet": "日本語",
+   "expected": "日日本語語本日日"
+  },
+  {
+   "from": "abc",
+   "length": 8,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "eqwjnbza"
+  },
+  {
+   "from": "abc",
+   "length": 12,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "6cmbz1ritts6"
+  },
+  {
+   "from": "abc",
+   "length": 12,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "eqwjnbznnmop"
+  },
+  {
+   "from": "abc",
+   "length": 12,
+   "alphabet": "01",
+   "expected": "000111101100"
+  },
+  {
+   "from": "abc",
+   "length": 12,
+   "alphabet": "0",
+   "expected": "000000000000"
+  },
+  {
+   "from": "abc",
+   "length": 12,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "wwx3mbj998z4"
+  },
+  {
+   "from": "abc",
+   "length": 12,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "A6WFTBVwDDCk"
+  },
+  {
+   "from": "abc",
+   "length": 12,
+   "alphabet": "αβγδε",
+   "expected": "βαγβδβγεααεγ"
+  },
+  {
+   "from": "abc",
+   "length": 12,
+   "alphabet": "日本語",
+   "expected": "日日本語語本日日語語本日"
+  },
+  {
+   "from": "abc",
+   "length": 12,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "eqwjnbzannmo"
+  },
+  {
+   "from": "abc",
+   "length": 16,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "6cmbz1ritts6luyz"
+  },
+  {
+   "from": "abc",
+   "length": 16,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "eqwjnbznnmopsiju"
+  },
+  {
+   "from": "abc",
+   "length": 16,
+   "alphabet": "01",
+   "expected": "0001111011001001"
+  },
+  {
+   "from": "abc",
+   "length": 16,
+   "alphabet": "0",
+   "expected": "0000000000000000"
+  },
+  {
+   "from": "abc",
+   "length": 16,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "wwx3mbj998z4jbcm"
+  },
+  {
+   "from": "abc",
+   "length": 16,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "A6WFTBVwDDCkfyij"
+  },
+  {
+   "from": "abc",
+   "length": 16,
+   "alphabet": "αβγδε",
+   "expected": "βαγβδβγεααεγδεεα"
+  },
+  {
+   "from": "abc",
+   "length": 16,
+   "alphabet": "日本語",
+   "expected": "日日本語語本日日語語本日日日本語"
+  },
+  {
+   "from": "abc",
+   "length": 16,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "eqwjnbzannmopsij"
+  },
+  {
+   "from": "abc",
+   "length": 31,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "6cmbz1ritts6luyzw3pj6nec0gpq0lt"
+  },
+  {
+   "from": "abc",
+   "length": 31,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "eqwjnbznnmopsijudthuxsayqtavrfs"
+  },
+  {
+   "from": "abc",
+   "length": 31,
+   "alphabet": "01",
+   "expected": "0001111011001001011101000011001"
+  },
+  {
+   "from": "abc",
+   "length": 31,
+   "alphabet": "0",
+   "expected": "0000000000000000000000000000000"
+  },
+  {
+   "from": "abc",
+   "length": 31,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "wwx3mbj998z4jbcmd88tyyzqr8awixj"
+  },
+  {
+   "from": "abc",
+   "length": 31,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "A6WFTBVwDDCkfyij0DjnaX8g4Qj4AVx"
+  },
+  {
+   "from": "abc",
+   "length": 31,
+   "alphabet": "αβγδε",
+   "expected": "βαγβδβγεααεγδεεαβδγδαδγβαβγγαβδ"
+  },
+  {
+   "from": "abc",
+   "length": 31,
+   "alphabet": "日本語",
+   "expected": "日日本語語本日日語語本日日日本語語日本本日語語日日本本語日日語"
+  },
+  {
+   "from": "abc",
+   "length": 31,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "eqwjnbzannmopsijudthuxsayqvtiav"
+  },
+  {
+   "from": "abc",
+   "length": 32,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "6cmbz1ritts6luyzw3pj6nec0gpq0lt7"
+  },
+  {
+   "from": "abc",
+   "length": 32,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "eqwjnbznnmopsijudthuxsayqtavrfsq"
+  },
+  {
+   "from": "abc",
+   "length": 32,
+   "alphabet": "01",
+   "expected": "00011110110010010111010000110011"
+  },
+  {
+   "from": "abc",
+   "length": 32,
+   "alphabet": "0",
+   "expected": "00000000000000000000000000000000"
+  },
+  {
+   "from": "abc",
+   "length": 32,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "wwx3mbj998z4jbcmd88tyyzqr8awixjj"
+  },
+  {
+   "from": "abc",
+   "length": 32,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "A6WFTBVwDDCkfyij0DjnaX8g4Qj4AVxB"
+  },
+  {
+   "from": "abc",
+   "length": 32,
+   "alphabet": "αβγδε",
+   "expected": "βαγβδβγεααεγδεεαβδγδαδγβαβγγαβδγ"
+  },
+  {
+   "from": "abc",
+   "length": 32,
+   "alphabet": "日本語",
+   "expected": "日日本語語本日日語語本日日日本語語日本本日語語日日本本語日日語本"
+  },
+  {
+   "from": "abc",
+   "length": 32,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "eqwjnbzannmopsijudthuxsayqvtiavr"
+  },
+  {
+   "from": "abc",
+   "length": 33,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "6cmbz1ritts6luyzw3pj6nec0gpq0lt7u"
+  },
+  {
+   "from": "abc",
+   "length": 33,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "eqwjnbznnmopsijudthuxsayqtavrfsqa"
+  },
+  {
+   "from": "abc",
+   "length": 33,
+   "alphabet": "01",
+   "expected": "000111101100100101110100001100111"
+  },
+  {
+   "from": "abc",
+   "length": 33,
+   "alphabet": "0",
+   "expected": "000000000000000000000000000000000"
+  },
+  {
+   "from": "abc",
+   "length": 33,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "wwx3mbj998z4jbcmd88tyyzqr8awixjjn"
+  },
+  {
+   "from": "abc",
+   "length": 33,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "A6WFTBVwDDCkfyij0DjnaX8g4Qj4AVxBy"
+  },
+  {
+   "from": "abc",
+   "length": 33,
+   "alphabet": "αβγδε",
+   "expected": "βαγβδβγεααεγδεεαβδγδαδγβαβγγαβδγε"
+  },
+  {
+   "from": "abc",
+   "length": 33,
+   "alphabet": "日本語",
+   "expected": "日日本語語本日日語語本日日日本語語日本本日語語日日本本語日日語本日"
+  },
+  {
+   "from": "abc",
+   "length": 33,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "eqwjnbzannmopsijudthuxsayqvtiavrf"
+  },
+  {
+   "from": "abc",
+   "length": 63,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "6cmbz1ritts6luyzw3pj6nec0gpq0lt7u66p82uzg1lzhd3tgi8wre884fladg8"
+  },
+  {
+   "from": "abc",
+   "length": 63,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "eqwjnbznnmopsijudthuxsayqtavrfsqazgwsxuvfnpnxneswqlyigynfybycit"
+  },
+  {
+   "from": "abc",
+   "length": 63,
+   "alphabet": "01",
+   "expected": "000111101100100101110100001100111000100010111111100001000011010"
+  },
+  {
+   "from": "abc",
+   "length": 63,
+   "alphabet": "0",
+   "expected": "000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "from": "abc",
+   "length": 63,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "wwx3mbj998z4jbcmd88tyyzqr8awixjjn2yijp2hzm9oj95tvc7siyk7zx2p98a"
+  },
+  {
+   "from": "abc",
+   "length": 63,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "A6WFTBVwDDCkfyij0DjnaX8g4Qj4AVxByqQZCMy3AL5TLNNDkScGByICOJ5ehuS"
+  },
+  {
+   "from": "abc",
+   "length": 63,
+   "alphabet": "αβγδε",
+   "expected": "βαγβδβγεααεγδεεαβδγδαδγβαβγγαβδγεγδαδεεεεδγδγδαααδγδδαδδβαγεγγα"
+  },
+  {
+   "from": "abc",
+   "length": 63,
+   "alphabet": "日本語",
+   "expected": "日日本語語本日日語語本日日日本語語日本本日語語日日本本語日日語本日日日本語語日語本本日語語本日語本日語語日語語語本日日本本本語"
+  },
+  {
+   "from": "abc",
+   "length": 63,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "eqwjnbzannmopsijudthuxsayqvtiavrfsqazgwsxuvfnpnxneswqlyigynfyby"
+  },
+  {
+   "from": "abc",
+   "length": 64,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "6cmbz1ritts6luyzw3pj6nec0gpq0lt7u66p82uzg1lzhd3tgi8wre884fladg8r"
+  },
+  {
+   "from": "abc",
+   "length": 64,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "eqwjnbznnmopsijudthuxsayqtavrfsqazgwsxuvfnpnxneswqlyigynfybycitj"
+  },
+  {
+   "from": "abc",
+   "length": 64,
+   "alphabet": "01",
+   "expected": "0001111011001001011101000011001110001000101111111000010000110100"
+  },
+  {
+   "from": "abc",
+   "length": 64,
+   "alphabet": "0",
+   "expected": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "from": "abc",
+   "length": 64,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "wwx3mbj998z4jbcmd88tyyzqr8awixjjn2yijp2hzm9oj95tvc7siyk7zx2p98a9"
+  },
+  {
+   "from": "abc",
+   "length": 64,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "A6WFTBVwDDCkfyij0DjnaX8g4Qj4AVxByqQZCMy3AL5TLNNDkScGByICOJ5ehuS5"
+  },
+  {
+   "from": "abc",
+   "length": 64,
+   "alphabet": "αβγδε",
+   "expected": "βαγβδβγεααεγδεεαβδγδαδγβαβγγαβδγεγδαδεεεεδγδγδαααδγδδαδδβαγεγγαδ"
+  },
+  {
+   "from": "abc",
+   "length": 64,
+   "alphabet": "日本語",
+   "expected": "日日本語語本日日語語本日日日本語語日本本日語語日日本本語日日語本日日日本語語日語本本日語語本日語本日語語日語語語本日日本本本語日"
+  },
+  {
+   "from": "abc",
+   "length": 64,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "eqwjnbzannmopsijudthuxsayqvtiavrfsqazgwsxuvfnpnxneswqlyigynfybyc"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 1,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "b"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 1,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "t"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 1,
+   "alphabet": "01",
+   "expected": "1"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 1,
+   "alphabet": "0",
+   "expected": "0"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 1,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 1,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "p"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 1,
+   "alphabet": "αβγδε",
+   "expected": "γ"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 1,
+   "alphabet": "日本語",
+   "expected": "語"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 1,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "t"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 2,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "b0"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 2,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tu"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 2,
+   "alphabet": "01",
+   "expected": "10"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 2,
+   "alphabet": "0",
+   "expected": "00"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 2,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6g"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 2,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "pK"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 2,
+   "alphabet": "αβγδε",
+   "expected": "γγ"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 2,
+   "alphabet": "日本語",
+   "expected": "語日"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 2,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tu"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 3,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "b0a"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 3,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tuo"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 3,
+   "alphabet": "01",
+   "expected": "100"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 3,
+   "alphabet": "0",
+   "expected": "000"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 3,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6gu"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 3,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "pK4"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 3,
+   "alphabet": "αβγδε",
+   "expected": "γγδ"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 3,
+   "alphabet": "日本語",
+   "expected": "語日本"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 3,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tuo"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 4,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "b0aw"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 4,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tuoq"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 4,
+   "alphabet": "01",
+   "expected": "1000"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 4,
+   "alphabet": "0",
+   "expected": "0000"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 4,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6guc"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 4,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "pK4G"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 4,
+   "alphabet": "αβγδε",
+   "expected": "γγδδ"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 4,
+   "alphabet": "日本語",
+   "expected": "語日本語"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 4,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tuoq"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 5,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "b0aw0"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 5,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tuoqk"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 5,
+   "alphabet": "01",
+   "expected": "10000"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 5,
+   "alphabet": "0",
+   "expected": "00000"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 5,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6gucd"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 5,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "pK4Gk"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 5,
+   "alphabet": "αβγδε",
+   "expected": "γγδδβ"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 5,
+   "alphabet": "日本語",
+   "expected": "語日本語日"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 5,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tuoqk"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 8,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "b0aw0er2"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 8,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tuoqkwvm"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 8,
+   "alphabet": "01",
+   "expected": "10000010"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 8,
+   "alphabet": "0",
+   "expected": "00000000"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 8,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6gucd9af"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 8,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "pK4Gkslm"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 8,
+   "alphabet": "αβγδε",
+   "expected": "γγδδβαεδ"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 8,
+   "alphabet": "日本語",
+   "expected": "語日本語日語日語"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 8,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tuoqkwvm"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 12,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "b0aw0er2mpi6"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 12,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tuoqkwvmujsg"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 12,
+   "alphabet": "01",
+   "expected": "100000100100"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 12,
+   "alphabet": "0",
+   "expected": "000000000000"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 12,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6gucd9afe5tg"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 12,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "pK4GkslmQ9SG"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 12,
+   "alphabet": "αβγδε",
+   "expected": "γγδδβαεδγβδβ"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 12,
+   "alphabet": "日本語",
+   "expected": "語日本語日語日語本本日日"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 12,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tuoqkwvmujsg"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 16,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "b0aw0er2mpi6vpa5"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 16,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tuoqkwvmujsgpojp"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 16,
+   "alphabet": "01",
+   "expected": "1000001001001101"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 16,
+   "alphabet": "0",
+   "expected": "0000000000000000"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 16,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6gucd9afe5tgbupg"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 16,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "pK4GkslmQ9SGF34z"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 16,
+   "alphabet": "αβγδε",
+   "expected": "γγδδβαεδγβδβγβδδ"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 16,
+   "alphabet": "日本語",
+   "expected": "語日本語日語日語本本日日本本本語"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 16,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tuoqkwvmujsgphoj"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 31,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "b0aw0er2mpi6vpa5r6kd1r8r1yuz9tp"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 31,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tuoqkwvmujsgpojpguljcbliennbsnc"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 31,
+   "alphabet": "01",
+   "expected": "1000001001001101100111011001111"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 31,
+   "alphabet": "0",
+   "expected": "0000000000000000000000000000000"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 31,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6gucd9afe5tgbupggv5up4eb7mtmeep"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 31,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "pK4GkslmQ9SGF34zvGUHf5SblieT3X3"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 31,
+   "alphabet": "αβγδε",
+   "expected": "γγδδβαεδγβδβγβδδββαδγδαγγεαδγεβ"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 31,
+   "alphabet": "日本語",
+   "expected": "語日本語日語日語本本日日本本本語日日語本本日語日本本日語日語本"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 31,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tuoqkwvmujsgphojpguljjcbliennbh"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 32,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "b0aw0er2mpi6vpa5r6kd1r8r1yuz9tpy"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 32,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tuoqkwvmujsgpojpguljcbliennbsncn"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 32,
+   "alphabet": "01",
+   "expected": "10000010010011011001110110011110"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 32,
+   "alphabet": "0",
+   "expected": "00000000000000000000000000000000"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 32,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6gucd9afe5tgbupggv5up4eb7mtmeep7"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 32,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "pK4GkslmQ9SGF34zvGUHf5SblieT3X3I"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 32,
+   "alphabet": "αβγδε",
+   "expected": "γγδδβαεδγβδβγβδδββαδγδαγγεαδγεβα"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 32,
+   "alphabet": "日本語",
+   "expected": "語日本語日語日語本本日日本本本語日日語本本日語日本本日語日語本本"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 32,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tuoqkwvmujsgphojpguljjcbliennbhs"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 33,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "b0aw0er2mpi6vpa5r6kd1r8r1yuz9tpyp"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 33,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tuoqkwvmujsgpojpguljcbliennbsncnk"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 33,
+   "alphabet": "01",
+   "expected": "100000100100110110011101100111101"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 33,
+   "alphabet": "0",
+   "expected": "000000000000000000000000000000000"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 33,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6gucd9afe5tgbupggv5up4eb7mtmeep7i"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 33,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "pK4GkslmQ9SGF34zvGUHf5SblieT3X3It"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 33,
+   "alphabet": "αβγδε",
+   "expected": "γγδδβαεδγβδβγβδδββαδγδαγγεαδγεβαε"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 33,
+   "alphabet": "日本語",
+   "expected": "語日本語日語日語本本日日本本本語日日語本本日語日本本日語日語本本本"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 33,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tuoqkwvmujsgphojpguljjcbliennbhsn"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 63,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "b0aw0er2mpi6vpa5r6kd1r8r1yuz9tpyp8xfwye7uv59u4cedmmmdbt4qydd9xk"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 63,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tuoqkwvmujsgpojpguljcbliennbsncnkwwleznxsigybkgxpbiyhxhryssuguw"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 63,
+   "alphabet": "01",
+   "expected": "100000100100110110011101100111101011000101110000100011100011110"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 63,
+   "alphabet": "0",
+   "expected": "000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 63,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6gucd9afe5tgbupggv5up4eb7mtmeep7io9r7eywjots2b2rvmoiurzd6et9m7x"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 63,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "pK4GkslmQ9SGF34zvGUHf5SblieT3X3ItSJQ2s1epjdyyWyhq06x5XyUXxDHEIS"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 63,
+   "alphabet": "αβγδε",
+   "expected": "γγδδβαεδγβδβγβδδββαδγδαγγεαδγεβαεαεααδαααδβδεγεαγβδδεεεγβααεεεδ"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 63,
+   "alphabet": "日本語",
+   "expected": "語日本語日語日語本本日日本本本語日日語本本日語日本本日語日語本本本語日日語本語本日本語日日本日語本本本本本語語本語本本本日日語"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 63,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tuoqkwvmujsgphojpguljjcbliennbhsncpnkwwleznxsigybkegxpbiyqhxhry"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 64,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "b0aw0er2mpi6vpa5r6kd1r8r1yuz9tpyp8xfwye7uv59u4cedmmmdbt4qydd9xky"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 64,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "tuoqkwvmujsgpojpguljcbliennbsncnkwwleznxsigybkgxpbiyhxhryssuguwn"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 64,
+   "alphabet": "01",
+   "expected": "1000001001001101100111011001111010110001011100001000111000111100"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 64,
+   "alphabet": "0",
+   "expected": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 64,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "6gucd9afe5tgbupggv5up4eb7mtmeep7io9r7eywjots2b2rvmoiurzd6et9m7xt"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 64,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "pK4GkslmQ9SGF34zvGUHf5SblieT3X3ItSJQ2s1epjdyyWyhq06x5XyUXxDHEISk"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 64,
+   "alphabet": "αβγδε",
+   "expected": "γγδδβαεδγβδβγβδδββαδγδαγγεαδγεβαεαεααδαααδβδεγεαγβδδεεεγβααεεεδα"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 64,
+   "alphabet": "日本語",
+   "expected": "語日本語日語日語本本日日本本本語日日語本本日語日本本日語日語本本本語日日語本語本日本語日日本日語本本本本本語語本語本本本日日語本"
+  },
+  {
+   "from": "voice-usage-egress",
+   "length": 64,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "tuoqkwvmujsgphojpguljjcbliennbhsncpnkwwleznxsigybkegxpbiyqhxhrys"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 1,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "d"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 1,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "h"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 1,
+   "alphabet": "01",
+   "expected": "1"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 1,
+   "alphabet": "0",
+   "expected": "0"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 1,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "u"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 1,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "X"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 1,
+   "alphabet": "αβγδε",
+   "expected": "α"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 1,
+   "alphabet": "日本語",
+   "expected": "本"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 1,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "h"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 2,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "db"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 2,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "hv"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 2,
+   "alphabet": "01",
+   "expected": "11"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 2,
+   "alphabet": "0",
+   "expected": "00"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 2,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "up"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 2,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "Xv"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 2,
+   "alphabet": "αβγδε",
+   "expected": "αγ"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 2,
+   "alphabet": "日本語",
+   "expected": "本語"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 2,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "hv"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 3,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "dbv"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 3,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "hvj"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 3,
+   "alphabet": "01",
+   "expected": "111"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 3,
+   "alphabet": "0",
+   "expected": "000"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 3,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "uph"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 3,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "XvP"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 3,
+   "alphabet": "αβγδε",
+   "expected": "αγε"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 3,
+   "alphabet": "日本語",
+   "expected": "本語本"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 3,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "hvj"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 4,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "dbvz"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 4,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "hvjn"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 4,
+   "alphabet": "01",
+   "expected": "1111"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 4,
+   "alphabet": "0",
+   "expected": "0000"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 4,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "uphm"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 4,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "XvPT"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 4,
+   "alphabet": "αβγδε",
+   "expected": "αγεδ"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 4,
+   "alphabet": "日本語",
+   "expected": "本語本語"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 4,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "hvjn"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 5,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "dbvz1"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 5,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "hvjnf"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 5,
+   "alphabet": "01",
+   "expected": "11111"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 5,
+   "alphabet": "0",
+   "expected": "00000"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 5,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "uphmk"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 5,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "XvPTv"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 5,
+   "alphabet": "αβγδε",
+   "expected": "αγεδε"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 5,
+   "alphabet": "日本語",
+   "expected": "本語本語本"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 5,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "hvjnf"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 8,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "dbvz185i"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 8,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "hvjnfstw"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 8,
+   "alphabet": "01",
+   "expected": "11111010"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 8,
+   "alphabet": "0",
+   "expected": "00000000"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 8,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "uphmkms4"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 8,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "XvPTvsZC"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 8,
+   "alphabet": "αβγδε",
+   "expected": "αγεδεεεβ"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 8,
+   "alphabet": "日本語",
+   "expected": "本語本語本語語日"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 8,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "hvjnfstw"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 12,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "dbvz185i4ow6"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 12,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "hvjnfstwmuqt"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 12,
+   "alphabet": "01",
+   "expected": "111110100000"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 12,
+   "alphabet": "0",
+   "expected": "000000000000"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 12,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "uphmkms4xmjs"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 12,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "XvPTvsZCi20q"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 12,
+   "alphabet": "αβγδε",
+   "expected": "αγεδεεεβααβγ"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 12,
+   "alphabet": "日本語",
+   "expected": "本語本語本語語日本日語日"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 12,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "hvjnfstwmguq"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 16,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "dbvz185i4ow65jls"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 16,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "hvjnfstwmuqttzwg"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 16,
+   "alphabet": "01",
+   "expected": "1111101000001110"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 16,
+   "alphabet": "0",
+   "expected": "0000000000000000"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 16,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "uphmkms4xmjsu7br"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 16,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "XvPTvsZCi20qZTFm"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 16,
+   "alphabet": "αβγδε",
+   "expected": "αγεδεεεβααβγεεεα"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 16,
+   "alphabet": "日本語",
+   "expected": "本語本語本語語日本日語日語本日本"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 16,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "hvjnfstwmguqttzw"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 31,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "dbvz185i4ow65jlsyyndezrzouh757q"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 31,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "hvjnfstwmuqttzwgrhihbjyovftfeni"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 31,
+   "alphabet": "01",
+   "expected": "1111101000001110001101110011110"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 31,
+   "alphabet": "0",
+   "expected": "0000000000000000000000000000000"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 31,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "uphmkms4xmjsu7br6uvs4cza3xsxc9i"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 31,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "XvPTvsZCi20qZTFmchXYdbjYEBBZBKD"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 31,
+   "alphabet": "αβγδε",
+   "expected": "αγεδεεεβααβγεεεαεαααβαγαεβαγεγε"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 31,
+   "alphabet": "日本語",
+   "expected": "本語本語本語語日本日語日語本日本本本語本語語日語日日語本語本語"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 31,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "hvjnfstwmguqttzwgqrhihbjyovftfe"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 32,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "dbvz185i4ow65jlsyyndezrzouh757qt"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 32,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "hvjnfstwmuqttzwgrhihbjyovftfenik"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 32,
+   "alphabet": "01",
+   "expected": "11111010000011100011011100111101"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 32,
+   "alphabet": "0",
+   "expected": "00000000000000000000000000000000"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 32,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "uphmkms4xmjsu7br6uvs4cza3xsxc9i4"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 32,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "XvPTvsZCi20qZTFmchXYdbjYEBBZBKDI"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 32,
+   "alphabet": "αβγδε",
+   "expected": "αγεδεεεβααβγεεεαεαααβαγαεβαγεγεα"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 32,
+   "alphabet": "日本語",
+   "expected": "本語本語本語語日本日語日語本日本本本語本語語日語日日語本語本語語"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 32,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "hvjnfstwmguqttzwgqrhihbjyovftfen"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 33,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "dbvz185i4ow65jlsyyndezrzouh757qt8"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 33,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "hvjnfstwmuqttzwgrhihbjyovftfenikx"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 33,
+   "alphabet": "01",
+   "expected": "111110100000111000110111001111010"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 33,
+   "alphabet": "0",
+   "expected": "000000000000000000000000000000000"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 33,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "uphmkms4xmjsu7br6uvs4cza3xsxc9i4j"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 33,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "XvPTvsZCi20qZTFmchXYdbjYEBBZBKDIG"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 33,
+   "alphabet": "αβγδε",
+   "expected": "αγεδεεεβααβγεεεαεαααβαγαεβαγεγεαδ"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 33,
+   "alphabet": "日本語",
+   "expected": "本語本語本語語日本日語日語本日本本本語本語語日語日日語本語本語語語"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 33,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "hvjnfstwmguqttzwgqrhihbjyovftfeni"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 63,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "dbvz185i4ow65jlsyyndezrzouh757qt8c3krp9nkk2eomw4ssqjshwx90m8168"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 63,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "hvjnfstwmuqttzwgrhihbjyovftfenikxelzdvisaoswesaadgbdeaqlkcusmei"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 63,
+   "alphabet": "01",
+   "expected": "111110100000111000110111001111010010111100000000000101011000110"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 63,
+   "alphabet": "0",
+   "expected": "000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 63,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "uphmkms4xmjsu7br6uvs4cza3xsxc9i4jy72qf9csp7xprk3xevqj83eqp2msyb"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 63,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "XvPTvsZCi20qZTFmchXYdbjYEBBZBKDIGN4BZTRoO6OiWaY6Wa3M1TuGml0SAs2"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 63,
+   "alphabet": "αβγδε",
+   "expected": "αγεδεεεβααβγεεεαεαααβαγαεβαγεγεαδγαβδαβδεαγεβγγδεδβαβδδεβδαεγεα"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 63,
+   "alphabet": "日本語",
+   "expected": "本語本語本語語日本日語日語本日本本本語本語語日語日日語本語本語語語日日語日本日語語語語語日本語本本本語本本語語日日日本語本日語"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 63,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "hvjnfstwmguqttzwgqrhihbjyovftfenikxelzdvisaosweskaadgbopdeaqvlk"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 64,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "dbvz185i4ow65jlsyyndezrzouh757qt8c3krp9nkk2eomw4ssqjshwx90m8168g"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 64,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "hvjnfstwmuqttzwgrhihbjyovftfenikxelzdvisaoswesaadgbdeaqlkcusmeib"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 64,
+   "alphabet": "01",
+   "expected": "1111101000001110001101110011110100101111000000000001010110001100"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 64,
+   "alphabet": "0",
+   "expected": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 64,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "uphmkms4xmjsu7br6uvs4cza3xsxc9i4jy72qf9csp7xprk3xevqj83eqp2msybb"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 64,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "XvPTvsZCi20qZTFmchXYdbjYEBBZBKDIGN4BZTRoO6OiWaY6Wa3M1TuGml0SAs24"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 64,
+   "alphabet": "αβγδε",
+   "expected": "αγεδεεεβααβγεεεαεαααβαγαεβαγεγεαδγαβδαβδεαγεβγγδεδβαβδδεβδαεγεαε"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 64,
+   "alphabet": "日本語",
+   "expected": "本語本語本語語日本日語日語本日本本本語本語語日語日日語本語本語語語日日語日本日語語語語語日本語本本本語本本語語日日日本語本日語本"
+  },
+  {
+   "from": "voice-usage-egres",
+   "length": 64,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "hvjnfstwmguqttzwgqrhihbjyovftfenikxelzdvisaosweskaadgbopdeaqvlkc"
+  },
+  {
+   "from": "tap_collector",
+   "length": 1,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "e"
+  },
+  {
+   "from": "tap_collector",
+   "length": 1,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "s"
+  },
+  {
+   "from": "tap_collector",
+   "length": 1,
+   "alphabet": "01",
+   "expected": "0"
+  },
+  {
+   "from": "tap_collector",
+   "length": 1,
+   "alphabet": "0",
+   "expected": "0"
+  },
+  {
+   "from": "tap_collector",
+   "length": 1,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "y"
+  },
+  {
+   "from": "tap_collector",
+   "length": 1,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "8"
+  },
+  {
+   "from": "tap_collector",
+   "length": 1,
+   "alphabet": "αβγδε",
+   "expected": "γ"
+  },
+  {
+   "from": "tap_collector",
+   "length": 1,
+   "alphabet": "日本語",
+   "expected": "語"
+  },
+  {
+   "from": "tap_collector",
+   "length": 1,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "s"
+  },
+  {
+   "from": "tap_collector",
+   "length": 2,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "ey"
+  },
+  {
+   "from": "tap_collector",
+   "length": 2,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "sg"
+  },
+  {
+   "from": "tap_collector",
+   "length": 2,
+   "alphabet": "01",
+   "expected": "00"
+  },
+  {
+   "from": "tap_collector",
+   "length": 2,
+   "alphabet": "0",
+   "expected": "00"
+  },
+  {
+   "from": "tap_collector",
+   "length": 2,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "yr"
+  },
+  {
+   "from": "tap_collector",
+   "length": 2,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "8c"
+  },
+  {
+   "from": "tap_collector",
+   "length": 2,
+   "alphabet": "αβγδε",
+   "expected": "γε"
+  },
+  {
+   "from": "tap_collector",
+   "length": 2,
+   "alphabet": "日本語",
+   "expected": "語本"
+  },
+  {
+   "from": "tap_collector",
+   "length": 2,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "sg"
+  },
+  {
+   "from": "tap_collector",
+   "length": 3,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "eyl"
+  },
+  {
+   "from": "tap_collector",
+   "length": 3,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "sgf"
+  },
+  {
+   "from": "tap_collector",
+   "length": 3,
+   "alphabet": "01",
+   "expected": "001"
+  },
+  {
+   "from": "tap_collector",
+   "length": 3,
+   "alphabet": "0",
+   "expected": "000"
+  },
+  {
+   "from": "tap_collector",
+   "length": 3,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "yrz"
+  },
+  {
+   "from": "tap_collector",
+   "length": 3,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "8c5"
+  },
+  {
+   "from": "tap_collector",
+   "length": 3,
+   "alphabet": "αβγδε",
+   "expected": "γεγ"
+  },
+  {
+   "from": "tap_collector",
+   "length": 3,
+   "alphabet": "日本語",
+   "expected": "語本日"
+  },
+  {
+   "from": "tap_collector",
+   "length": 3,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "sgf"
+  },
+  {
+   "from": "tap_collector",
+   "length": 4,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "eyls"
+  },
+  {
+   "from": "tap_collector",
+   "length": 4,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "sgfw"
+  },
+  {
+   "from": "tap_collector",
+   "length": 4,
+   "alphabet": "01",
+   "expected": "0010"
+  },
+  {
+   "from": "tap_collector",
+   "length": 4,
+   "alphabet": "0",
+   "expected": "0000"
+  },
+  {
+   "from": "tap_collector",
+   "length": 4,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "yrzb"
+  },
+  {
+   "from": "tap_collector",
+   "length": 4,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "8c5m"
+  },
+  {
+   "from": "tap_collector",
+   "length": 4,
+   "alphabet": "αβγδε",
+   "expected": "γεγα"
+  },
+  {
+   "from": "tap_collector",
+   "length": 4,
+   "alphabet": "日本語",
+   "expected": "語本日本"
+  },
+  {
+   "from": "tap_collector",
+   "length": 4,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "sgfw"
+  },
+  {
+   "from": "tap_collector",
+   "length": 5,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "eylsv"
+  },
+  {
+   "from": "tap_collector",
+   "length": 5,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "sgfwz"
+  },
+  {
+   "from": "tap_collector",
+   "length": 5,
+   "alphabet": "01",
+   "expected": "00101"
+  },
+  {
+   "from": "tap_collector",
+   "length": 5,
+   "alphabet": "0",
+   "expected": "00000"
+  },
+  {
+   "from": "tap_collector",
+   "length": 5,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "yrzbe"
+  },
+  {
+   "from": "tap_collector",
+   "length": 5,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "8c5mp"
+  },
+  {
+   "from": "tap_collector",
+   "length": 5,
+   "alphabet": "αβγδε",
+   "expected": "γεγαδ"
+  },
+  {
+   "from": "tap_collector",
+   "length": 5,
+   "alphabet": "日本語",
+   "expected": "語本日本本"
+  },
+  {
+   "from": "tap_collector",
+   "length": 5,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "sgfwz"
+  },
+  {
+   "from": "tap_collector",
+   "length": 8,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "eylsvqy8"
+  },
+  {
+   "from": "tap_collector",
+   "length": 8,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "sgfwzksw"
+  },
+  {
+   "from": "tap_collector",
+   "length": 8,
+   "alphabet": "01",
+   "expected": "00101000"
+  },
+  {
+   "from": "tap_collector",
+   "length": 8,
+   "alphabet": "0",
+   "expected": "00000000"
+  },
+  {
+   "from": "tap_collector",
+   "length": 8,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "yrzbe6ev"
+  },
+  {
+   "from": "tap_collector",
+   "length": 8,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "8c5mpAIc"
+  },
+  {
+   "from": "tap_collector",
+   "length": 8,
+   "alphabet": "αβγδε",
+   "expected": "γεγαδγαγ"
+  },
+  {
+   "from": "tap_collector",
+   "length": 8,
+   "alphabet": "日本語",
+   "expected": "語本日本本語本語"
+  },
+  {
+   "from": "tap_collector",
+   "length": 8,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "sgfwzksw"
+  },
+  {
+   "from": "tap_collector",
+   "length": 12,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "eylsvqy8l7dk"
+  },
+  {
+   "from": "tap_collector",
+   "length": 12,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "sgfwzkswfvhy"
+  },
+  {
+   "from": "tap_collector",
+   "length": 12,
+   "alphabet": "01",
+   "expected": "001010001111"
+  },
+  {
+   "from": "tap_collector",
+   "length": 12,
+   "alphabet": "0",
+   "expected": "000000000000"
+  },
+  {
+   "from": "tap_collector",
+   "length": 12,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "yrzbe6evzuu6"
+  },
+  {
+   "from": "tap_collector",
+   "length": 12,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "8c5mpAIc5bXE"
+  },
+  {
+   "from": "tap_collector",
+   "length": 12,
+   "alphabet": "αβγδε",
+   "expected": "γεγαδγαγγβαδ"
+  },
+  {
+   "from": "tap_collector",
+   "length": 12,
+   "alphabet": "日本語",
+   "expected": "語本日本本語本語日本本語"
+  },
+  {
+   "from": "tap_collector",
+   "length": 12,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "sgfwzkswfvvh"
+  },
+  {
+   "from": "tap_collector",
+   "length": 16,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "eylsvqy8l7dkmjm5"
+  },
+  {
+   "from": "tap_collector",
+   "length": 16,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "sgfwzkswfvhyungf"
+  },
+  {
+   "from": "tap_collector",
+   "length": 16,
+   "alphabet": "01",
+   "expected": "0010100011110010"
+  },
+  {
+   "from": "tap_collector",
+   "length": 16,
+   "alphabet": "0",
+   "expected": "0000000000000000"
+  },
+  {
+   "from": "tap_collector",
+   "length": 16,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "yrzbe6evzuu6e22f"
+  },
+  {
+   "from": "tap_collector",
+   "length": 16,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "8c5mpAIc5bXEQd6F"
+  },
+  {
+   "from": "tap_collector",
+   "length": 16,
+   "alphabet": "αβγδε",
+   "expected": "γεγαδγαγγβαδγβδα"
+  },
+  {
+   "from": "tap_collector",
+   "length": 16,
+   "alphabet": "日本語",
+   "expected": "語本日本本語本語日本本語本本本語"
+  },
+  {
+   "from": "tap_collector",
+   "length": 16,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "sgfwzkswfvvhyung"
+  },
+  {
+   "from": "tap_collector",
+   "length": 31,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "eylsvqy8l7dkmjm55nn6a3tc68325hs"
+  },
+  {
+   "from": "tap_collector",
+   "length": 31,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "sgfwzkswfvhyungfnlveedhukihkdfw"
+  },
+  {
+   "from": "tap_collector",
+   "length": 31,
+   "alphabet": "01",
+   "expected": "0010100011110010111100110001011"
+  },
+  {
+   "from": "tap_collector",
+   "length": 31,
+   "alphabet": "0",
+   "expected": "0000000000000000000000000000000"
+  },
+  {
+   "from": "tap_collector",
+   "length": 31,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "yrzbe6evzuu6e22fycfwrdf7qinvv6b"
+  },
+  {
+   "from": "tap_collector",
+   "length": 31,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "8c5mpAIc5bXEQd6FjrRAUDNq0Ixg9lm"
+  },
+  {
+   "from": "tap_collector",
+   "length": 31,
+   "alphabet": "αβγδε",
+   "expected": "γεγαδγαγγβαδγβδαβγδβγδγδεδβδαβα"
+  },
+  {
+   "from": "tap_collector",
+   "length": 31,
+   "alphabet": "日本語",
+   "expected": "語本日本本語本語日本本語本本本語語語語日本日語日日語日語語語本"
+  },
+  {
+   "from": "tap_collector",
+   "length": 31,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "sgfwzkswfvvhyungfnlveedhukihkdf"
+  },
+  {
+   "from": "tap_collector",
+   "length": 32,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "eylsvqy8l7dkmjm55nn6a3tc68325hs9"
+  },
+  {
+   "from": "tap_collector",
+   "length": 32,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "sgfwzkswfvhyungfnlveedhukihkdfwn"
+  },
+  {
+   "from": "tap_collector",
+   "length": 32,
+   "alphabet": "01",
+   "expected": "00101000111100101111001100010110"
+  },
+  {
+   "from": "tap_collector",
+   "length": 32,
+   "alphabet": "0",
+   "expected": "00000000000000000000000000000000"
+  },
+  {
+   "from": "tap_collector",
+   "length": 32,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "yrzbe6evzuu6e22fycfwrdf7qinvv6bt"
+  },
+  {
+   "from": "tap_collector",
+   "length": 32,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "8c5mpAIc5bXEQd6FjrRAUDNq0Ixg9lm3"
+  },
+  {
+   "from": "tap_collector",
+   "length": 32,
+   "alphabet": "αβγδε",
+   "expected": "γεγαδγαγγβαδγβδαβγδβγδγδεδβδαβαγ"
+  },
+  {
+   "from": "tap_collector",
+   "length": 32,
+   "alphabet": "日本語",
+   "expected": "語本日本本語本語日本本語本本本語語語語日本日語日日語日語語語本日"
+  },
+  {
+   "from": "tap_collector",
+   "length": 32,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "sgfwzkswfvvhyungfnlveedhukihkdfw"
+  },
+  {
+   "from": "tap_collector",
+   "length": 33,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "eylsvqy8l7dkmjm55nn6a3tc68325hs95"
+  },
+  {
+   "from": "tap_collector",
+   "length": 33,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "sgfwzkswfvhyungfnlveedhukihkdfwnf"
+  },
+  {
+   "from": "tap_collector",
+   "length": 33,
+   "alphabet": "01",
+   "expected": "001010001111001011110011000101101"
+  },
+  {
+   "from": "tap_collector",
+   "length": 33,
+   "alphabet": "0",
+   "expected": "000000000000000000000000000000000"
+  },
+  {
+   "from": "tap_collector",
+   "length": 33,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "yrzbe6evzuu6e22fycfwrdf7qinvv6btf"
+  },
+  {
+   "from": "tap_collector",
+   "length": 33,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "8c5mpAIc5bXEQd6FjrRAUDNq0Ixg9lm3F"
+  },
+  {
+   "from": "tap_collector",
+   "length": 33,
+   "alphabet": "αβγδε",
+   "expected": "γεγαδγαγγβαδγβδαβγδβγδγδεδβδαβαγα"
+  },
+  {
+   "from": "tap_collector",
+   "length": 33,
+   "alphabet": "日本語",
+   "expected": "語本日本本語本語日本本語本本本語語語語日本日語日日語日語語語本日語"
+  },
+  {
+   "from": "tap_collector",
+   "length": 33,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "sgfwzkswfvvhyungfnlveedhukihkdfwn"
+  },
+  {
+   "from": "tap_collector",
+   "length": 63,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "eylsvqy8l7dkmjm55nn6a3tc68325hs95er2nbc8e9wkild6giw1qi31owwcvpm"
+  },
+  {
+   "from": "tap_collector",
+   "length": 63,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "sgfwzkswfvhyungfnlveedhukihkdfwnfclgrlammxigvvaumlkgxlmugggzxfm"
+  },
+  {
+   "from": "tap_collector",
+   "length": 63,
+   "alphabet": "01",
+   "expected": "001010001111001011110011000101101101011000100011000010011000011"
+  },
+  {
+   "from": "tap_collector",
+   "length": 63,
+   "alphabet": "0",
+   "expected": "000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "from": "tap_collector",
+   "length": 63,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "yrzbe6evzuu6e22fycfwrdf7qinvv6btf37m6mzs6w97w8n2ze67jedm9t2jzn5"
+  },
+  {
+   "from": "tap_collector",
+   "length": 63,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "8c5mpAIc5bXEQd6FjrRAUDNq0Ixg9lm3FiBwhLg2IdomVrQAclAmNls0gW936vN"
+  },
+  {
+   "from": "tap_collector",
+   "length": 63,
+   "alphabet": "αβγδε",
+   "expected": "γεγαδγαγγβαδγβδαβγδβγδγδεδβδαβαγαδδααβββεδδεγβεδεαδγγγαγδβγεγβδ"
+  },
+  {
+   "from": "tap_collector",
+   "length": 63,
+   "alphabet": "日本語",
+   "expected": "語本日本本語本語日本本語本本本語語語語日本日語日日語日語語語本日語語日語語語日語語日語語日日本日本日語本語日日本日語語日本本本"
+  },
+  {
+   "from": "tap_collector",
+   "length": 63,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "sgfwzkswfvvhyungfnlveedhukihkdfwnfclgrlammxoigvvaumolkgxlmuggnh"
+  },
+  {
+   "from": "tap_collector",
+   "length": 64,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": "eylsvqy8l7dkmjm55nn6a3tc68325hs95er2nbc8e9wkild6giw1qi31owwcvpmh"
+  },
+  {
+   "from": "tap_collector",
+   "length": 64,
+   "alphabet": "abcdefghijklmnopqrstuvwxyz",
+   "expected": "sgfwzkswfvhyungfnlveedhukihkdfwnfclgrlammxigvvaumlkgxlmugggzxfme"
+  },
+  {
+   "from": "tap_collector",
+   "length": 64,
+   "alphabet": "01",
+   "expected": "0010100011110010111100110001011011010110001000110000100110000110"
+  },
+  {
+   "from": "tap_collector",
+   "length": 64,
+   "alphabet": "0",
+   "expected": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "from": "tap_collector",
+   "length": 64,
+   "alphabet": "abcdefghijkmnopqrstuvwxyz23456789",
+   "expected": "yrzbe6evzuu6e22fycfwrdf7qinvv6btf37m6mzs6w97w8n2ze67jedm9t2jzn5g"
+  },
+  {
+   "from": "tap_collector",
+   "length": 64,
+   "alphabet": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+   "expected": "8c5mpAIc5bXEQd6FjrRAUDNq0Ixg9lm3FiBwhLg2IdomVrQAclAmNls0gW936vN9"
+  },
+  {
+   "from": "tap_collector",
+   "length": 64,
+   "alphabet": "αβγδε",
+   "expected": "γεγαδγαγγβαδγβδαβγδβγδγδεδβδαβαγαδδααβββεδδεγβεδεαδγγγαγδβγεγβδδ"
+  },
+  {
+   "from": "tap_collector",
+   "length": 64,
+   "alphabet": "日本語",
+   "expected": "語本日本本語本語日本本語本本本語語語語日本日語日日語日語語語本日語語日語語語日語語日語語日日本日本日語本語日日本日語語日本本本語"
+  },
+  {
+   "from": "tap_collector",
+   "length": 64,
+   "alphabet": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
+   "expected": "sgfwzkswfvvhyungfnlveedhukihkdfwnfclgrlammxoigvvaumolkgxlmuggnhg"
+  },
+  {
+   "from": "abc",
+   "length": 0,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": null
+  },
+  {
+   "from": "abc",
+   "length": 65,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": null
+  },
+  {
+   "from": "abc",
+   "length": 100,
+   "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
+   "expected": null
+  },
+  {
+   "from": "abc",
+   "length": 8,
+   "alphabet": "",
+   "expected": null
+  },
+  {
+   "from": "abc",
+   "length": 8,
+   "alphabet": "ĀāĂăĄąĆćĈĉĊċČčĎďĐđĒēĔĕĖėĘęĚěĜĝĞğĠġĢģĤĥĦħĨĩĪīĬĭĮįİıĲĳĴĵĶķĸĹĺĻļĽľĿŀŁłŃńŅņŇňŉŊŋŌōŎŏŐőŒœŔŕŖŗŘřŚśŜŝŞşŠšŢţŤťŦŧŨũŪūŬŭŮůŰűŲųŴŵŶŷŸŹźŻżŽžſƀƁƂƃƄƅƆƇƈƉƊƋƌƍƎƏƐƑƒƓƔƕƖƗƘƙƚƛƜƝƞƟƠơƢƣƤƥƦƧƨƩƪƫƬƭƮƯưƱƲƳƴƵƶƷƸƹƺƻƼƽƾƿǀǁǂǃǄǅǆǇǈǉǊǋǌǍǎǏǐǑǒǓǔǕǖǗǘǙǚǛǜǝǞǟǠǡǢǣǤǥǦǧǨǩǪǫǬǭǮǯǰǱǲǳǴǵǶǷǸǹǺǻǼǽǾǿȀ",
+   "expected": null
+  }
+ ]
+}

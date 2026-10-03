@@ -318,3 +318,188 @@ fn str_invoke_names_serialize_and_are_deterministic() {
         .expect("bucket");
     assert_eq!(bucket["literal_properties"]["name"], "geo_fence-v2");
 }
+
+/// A derived name reaches the export as a literal.
+///
+/// This is the reason `fn::deriveString` is a builtin rather than a Starlark
+/// snippet an author pastes in: the static resolver can answer it, so an
+/// import, a graph export and a shift-left policy check all see the name
+/// before anything is deployed. `fn::randomString` and `fn::starlark` both
+/// resolve to nothing here, by design.
+#[test]
+fn a_derived_name_reaches_literal_properties() {
+    let dir = make_temp_project(&[(
+        "Pulumi.yaml",
+        concat!(
+            "name: proj\n",
+            "runtime: yaml\n",
+            "variables:\n",
+            "  suffix:\n",
+            "    fn::deriveString:\n",
+            "      from: tap_collector\n",
+            "      length: 4\n",
+            "resources:\n",
+            "  svc:\n",
+            "    type: gcp:cloudrunv2:Service\n",
+            "    properties:\n",
+            "      name: collector-${suffix}\n",
+            "      location: US\n",
+        ),
+    )]);
+    let (graph, diags) = export_project(dir.path(), None);
+    assert!(!diags.has_errors(), "{}", diags);
+
+    let svc = graph
+        .nodes
+        .iter()
+        .find(|n| n.logical_name == "svc")
+        .expect("svc node");
+    assert!(
+        svc.literal_properties
+            .iter()
+            .any(|(k, v)| k == "name" && v == "collector-eyls"),
+        "the derived suffix must be resolved, not skipped; literals: {:?}",
+        svc.literal_properties
+    );
+    // The pre-existing literal is untouched.
+    assert!(svc
+        .literal_properties
+        .iter()
+        .any(|(k, v)| k == "location" && v == "US"));
+}
+
+/// The shorthand form resolves too, so the two spellings cannot disagree about
+/// a deployed name.
+#[test]
+fn the_derive_shorthand_also_reaches_literal_properties() {
+    let dir = make_temp_project(&[(
+        "Pulumi.yaml",
+        concat!(
+            "name: proj\n",
+            "runtime: yaml\n",
+            "variables:\n",
+            "  suffix:\n",
+            "    fn::deriveString: tap_collector\n",
+            "resources:\n",
+            "  svc:\n",
+            "    type: gcp:cloudrunv2:Service\n",
+            "    properties:\n",
+            "      name: collector-${suffix}\n",
+        ),
+    )]);
+    let (graph, _) = export_project(dir.path(), None);
+    let svc = graph
+        .nodes
+        .iter()
+        .find(|n| n.logical_name == "svc")
+        .expect("svc node");
+    assert!(
+        svc.literal_properties
+            .iter()
+            .any(|(k, v)| k == "name" && v == "collector-eylsvqy8"),
+        "literals: {:?}",
+        svc.literal_properties
+    );
+}
+
+/// The same program written with `fn::randomString` resolves to nothing. This
+/// is the before-and-after of the change stated as one assertion, and it is
+/// what makes the case above meaningful rather than incidental.
+#[test]
+fn a_random_name_still_reaches_no_literal() {
+    let dir = make_temp_project(&[(
+        "Pulumi.yaml",
+        concat!(
+            "name: proj\n",
+            "runtime: yaml\n",
+            "variables:\n",
+            "  suffix:\n",
+            "    fn::randomString: 4\n",
+            "resources:\n",
+            "  svc:\n",
+            "    type: gcp:cloudrunv2:Service\n",
+            "    properties:\n",
+            "      name: collector-${suffix}\n",
+        ),
+    )]);
+    let (graph, _) = export_project(dir.path(), None);
+    let svc = graph
+        .nodes
+        .iter()
+        .find(|n| n.logical_name == "svc")
+        .expect("svc node");
+    assert!(
+        !svc.literal_properties.iter().any(|(k, _)| k == "name"),
+        "a random value must not be guessed at; literals: {:?}",
+        svc.literal_properties
+    );
+}
+
+/// A derive whose seed is itself unresolvable resolves to nothing rather than
+/// to a guess -- this module's standing contract, which the new arm must not
+/// weaken.
+#[test]
+fn a_derive_over_an_unresolvable_seed_reaches_no_literal() {
+    let dir = make_temp_project(&[(
+        "Pulumi.yaml",
+        concat!(
+            "name: proj\n",
+            "runtime: yaml\n",
+            "resources:\n",
+            "  bucket:\n",
+            "    type: gcp:storage:Bucket\n",
+            "  svc:\n",
+            "    type: gcp:cloudrunv2:Service\n",
+            "    properties:\n",
+            "      name:\n",
+            "        fn::deriveString:\n",
+            "          from: ${bucket.id}\n",
+            "          length: 4\n",
+        ),
+    )]);
+    let (graph, _) = export_project(dir.path(), None);
+    let svc = graph
+        .nodes
+        .iter()
+        .find(|n| n.logical_name == "svc")
+        .expect("svc node");
+    assert!(
+        !svc.literal_properties.iter().any(|(k, _)| k == "name"),
+        "an unresolvable seed must not be guessed at; literals: {:?}",
+        svc.literal_properties
+    );
+}
+
+/// A mistyped argument resolves to nothing rather than to the value it would
+/// have had with the default, so a typo cannot quietly rename a resource.
+#[test]
+fn a_mistyped_derive_argument_reaches_no_literal() {
+    let dir = make_temp_project(&[(
+        "Pulumi.yaml",
+        concat!(
+            "name: proj\n",
+            "runtime: yaml\n",
+            "variables:\n",
+            "  suffix:\n",
+            "    fn::deriveString:\n",
+            "      from: tap_collector\n",
+            "      len: 4\n",
+            "resources:\n",
+            "  svc:\n",
+            "    type: gcp:cloudrunv2:Service\n",
+            "    properties:\n",
+            "      name: collector-${suffix}\n",
+        ),
+    )]);
+    let (graph, _) = export_project(dir.path(), None);
+    let svc = graph
+        .nodes
+        .iter()
+        .find(|n| n.logical_name == "svc")
+        .expect("svc node");
+    assert!(
+        !svc.literal_properties.iter().any(|(k, _)| k == "name"),
+        "a mistyped argument must not resolve; literals: {:?}",
+        svc.literal_properties
+    );
+}

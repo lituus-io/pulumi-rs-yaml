@@ -360,6 +360,11 @@ fn try_parse_builtin(
             let args = parse_expr(value, diags);
             return Some(Expr::RandomString(meta, Box::new(args)));
         }
+        "fn::derivestring" => {
+            check_casing(key, "fn::deriveString", diags);
+            let args = parse_expr(value, diags);
+            return Some(Expr::DeriveString(meta, Box::new(args)));
+        }
         // Date builtins
         "fn::dateformat" => {
             check_casing(key, "fn::dateFormat", diags);

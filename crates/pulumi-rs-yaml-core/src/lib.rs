@@ -9,13 +9,14 @@ pub mod diag;
 pub mod encoding;
 pub mod eval;
 pub mod jinja;
-pub(crate) mod literal_resolve;
+pub mod literal_resolve;
 pub mod multi_file;
 pub mod packages;
 pub mod pcl_gen;
 pub mod provider_scope;
 pub mod resource_graph;
 pub mod schema;
+pub mod sha256;
 pub mod source;
 #[cfg(feature = "sql-lineage")]
 pub mod sql_lineage;

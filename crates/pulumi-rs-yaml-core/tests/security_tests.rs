@@ -2843,3 +2843,205 @@ mod string_filter_security {
         assert_eq!(rejoined, subject, "wordwrap altered the text: {out:?}");
     }
 }
+
+// =========================================================================
+// builtins.rs — fn::deriveString, on arguments nobody chose
+// =========================================================================
+
+mod derive_string_security {
+    //! The seed, the length and the alphabet are all author-controlled, and the
+    //! value produced becomes a resource name. So what matters is that no
+    //! combination allocates without bound, spins, panics, splits a multi-byte
+    //! character, or emits a character the author did not offer.
+    use std::collections::HashMap;
+
+    use pulumi_rs_yaml_core::ast::parse::parse_template;
+    use pulumi_rs_yaml_core::eval::evaluator::Evaluator;
+    use pulumi_rs_yaml_core::eval::mock::MockCallback;
+
+    fn derive(args: &str) -> Result<String, String> {
+        let source = format!(
+            "name: test\nruntime: yaml\nvariables:\n  d:\n    fn::deriveString:\n{args}\
+             outputs:\n  r: ${{d}}\n"
+        );
+        let (template, d) = parse_template(&source, None);
+        if d.has_errors() {
+            return Err(format!("{d}"));
+        }
+        let template: &'static _ = Box::leak(Box::new(template));
+        let eval = Evaluator::with_callback(
+            "test".to_string(),
+            "dev".to_string(),
+            "/tmp".to_string(),
+            false,
+            MockCallback::new(),
+        );
+        eval.evaluate_template(template, &HashMap::new(), &[]);
+        if eval.has_errors() {
+            return Err(eval.diags_display());
+        }
+        eval.get_output("r")
+            .and_then(|v| v.as_str().map(str::to_string))
+            .ok_or_else(|| "no output".to_string())
+    }
+
+    /// The output is a function of `length` alone, so an enormous seed cannot
+    /// make an enormous value. A megabyte of seed still yields four characters.
+    #[test]
+    fn an_enormous_seed_produces_a_short_value() {
+        let big = "x".repeat(1024 * 1024);
+        let out = derive(&format!("      from: \"{big}\"\n      length: 4\n")).expect("derives");
+        assert_eq!(out.len(), 4);
+    }
+
+    /// `length` is the only argument that sizes the output, and it is capped.
+    /// Without the cap a program could ask the allocator for a value nobody can
+    /// use.
+    #[test]
+    fn an_enormous_length_is_refused_not_allocated() {
+        for n in ["65", "1000", "1000000", "18446744073709551615"] {
+            let r = derive(&format!("      from: abc\n      length: {n}\n"));
+            assert!(r.is_err(), "length {n} was answered with {r:?}");
+        }
+    }
+
+    /// A zero or negative length is refused rather than yielding an empty name.
+    #[test]
+    fn a_zero_or_negative_length_is_refused() {
+        assert!(derive("      from: abc\n      length: 0\n").is_err());
+        assert!(derive("      from: abc\n      length: -1\n").is_err());
+        assert!(derive("      from: abc\n      length: 2.5\n").is_err());
+    }
+
+    /// Every character of the output is drawn from the alphabet the author
+    /// offered — never a byte of the digest, and never a character from the
+    /// default when an alphabet was given.
+    #[test]
+    fn no_character_escapes_the_alphabet() {
+        for alphabet in ["01", "abc", "0", "αβγ", "日本語", "-_."] {
+            let out = derive(&format!(
+                "      from: seed\n      length: 32\n      alphabet: \"{alphabet}\"\n"
+            ))
+            .expect("derives");
+            assert_eq!(out.chars().count(), 32, "alphabet {alphabet:?}");
+            for c in out.chars() {
+                assert!(
+                    alphabet.contains(c),
+                    "{c:?} is not in {alphabet:?} (output {out:?})"
+                );
+            }
+        }
+    }
+
+    /// A multi-byte alphabet selects whole characters. The draw indexes
+    /// characters, not bytes, so no output can carry half of one — which would
+    /// not even be a valid `String`.
+    #[test]
+    fn a_multibyte_alphabet_is_never_split() {
+        let out =
+            derive("      from: seed\n      length: 16\n      alphabet: \"日本語のあいう\"\n")
+                .expect("derives");
+        assert_eq!(out.chars().count(), 16);
+        assert!(std::str::from_utf8(out.as_bytes()).is_ok());
+    }
+
+    /// An empty alphabet has nothing to draw from and is refused rather than
+    /// looping.
+    #[test]
+    fn an_empty_alphabet_is_refused() {
+        assert!(derive("      from: abc\n      alphabet: \"\"\n").is_err());
+    }
+
+    /// Rejection sampling discards bytes, so the draw must terminate for every
+    /// admissible alphabet size — including the sizes where the discarded band
+    /// is widest. A size whose `limit` left no room would spin forever.
+    #[test]
+    fn the_draw_terminates_for_every_alphabet_size() {
+        // One character per size, cycling through printable ASCII so each
+        // alphabet is distinct and non-empty.
+        for n in 1..=256usize {
+            let alphabet: String = (0..n).map(|i| char::from(b'!' + (i % 94) as u8)).collect();
+            // Sizes that repeat a character are still legal; the draw does not
+            // require distinctness, only a non-empty set.
+            let args = format!(
+                "      from: seed\n      length: 8\n      alphabet: {}\n",
+                serde_json::to_string(&alphabet).expect("serialises")
+            );
+            let out = derive(&args).unwrap_or_else(|e| panic!("n={n} refused: {e}"));
+            assert_eq!(out.chars().count(), 8, "n={n}");
+        }
+    }
+
+    /// An alphabet larger than a byte can address is refused, because the draw
+    /// could not reach its tail and the bias would be silent.
+    #[test]
+    fn an_alphabet_over_the_addressable_size_is_refused() {
+        let alphabet: String = (0..257)
+            .map(|i| char::from_u32(0x4e00 + i).unwrap())
+            .collect();
+        let args = format!(
+            "      from: abc\n      alphabet: {}\n",
+            serde_json::to_string(&alphabet).expect("serialises")
+        );
+        assert!(derive(&args).is_err());
+    }
+
+    /// A seed is hashed, so no seed content can reach the output. A seed full
+    /// of quotes, newlines, shell metacharacters and an escaped `$$` produces
+    /// an ordinary name.
+    #[test]
+    fn a_hostile_seed_cannot_reach_the_output() {
+        let args = format!(
+            "      from: {}\n      length: 12\n",
+            serde_json::to_string("\"; rm -rf /\n$${evil}\u{1b}[31m\t<&|>").expect("serialises")
+        );
+        let out = derive(&args).expect("derives");
+        assert_eq!(out.len(), 12);
+        assert!(out
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()));
+    }
+
+    /// `from` is an ordinary expression, so a `${...}` in it is a reference the
+    /// engine resolves *before* the derive sees anything -- and an undefined
+    /// one is refused there, not here.
+    ///
+    /// Worth pinning because it is the other half of the `Unknown` guard: a
+    /// seed that resolves to a live output defers, a seed that resolves to
+    /// nothing is an authoring error, and neither reaches the draw.
+    #[test]
+    fn an_undefined_reference_in_the_seed_is_refused_by_the_engine() {
+        let err = derive("      from: ${nope}\n      length: 4\n").expect_err("refused");
+        assert!(
+            err.contains("not defined"),
+            "the diagnostic should name the undefined reference, got {err:?}"
+        );
+    }
+
+    /// A seed that resolves through a declared variable works, so the refusal
+    /// above is about the reference being undefined and not about references.
+    #[test]
+    fn a_seed_reached_through_a_variable_derives() {
+        let source = "name: test\nruntime: yaml\nvariables:\n  base: tap_collector\n  \
+                      d:\n    fn::deriveString:\n      from: ${base}\n      length: 4\n\
+                      outputs:\n  r: ${d}\n";
+        let (template, d) = parse_template(source, None);
+        assert!(!d.has_errors(), "{d}");
+        let template: &'static _ = Box::leak(Box::new(template));
+        let eval = Evaluator::with_callback(
+            "test".to_string(),
+            "dev".to_string(),
+            "/tmp".to_string(),
+            false,
+            MockCallback::new(),
+        );
+        eval.evaluate_template(template, &HashMap::new(), &[]);
+        assert!(!eval.has_errors(), "{}", eval.diags_display());
+        assert_eq!(
+            eval.get_output("r")
+                .and_then(|v| v.as_str().map(str::to_string)),
+            Some("eyls".to_string()),
+            "the same value the literal seed produces"
+        );
+    }
+}

@@ -612,6 +612,222 @@ pub fn eval_date_format<'src>(value: &Value<'src>, diags: &mut Diagnostics) -> O
 // UUID/Random builtins
 // =============================================================================
 
+/// The default alphabet: lowercase alphanumeric, which is what the
+/// `random:RandomString` calls this replaces ask for (`upper: false`,
+/// `special: false`) and what GCP resource names accept. It can therefore begin
+/// with a digit, which is fine for a suffix -- the only way it is used -- but a
+/// value used as a whole name where the provider demands a leading letter needs
+/// an explicit `alphabet` or a prefix.
+pub(crate) const DERIVE_ALPHABET: &str = "0123456789abcdefghijklmnopqrstuvwxyz";
+
+/// Default output length for the scalar shorthand.
+pub(crate) const DERIVE_DEFAULT_LEN: usize = 8;
+
+/// Longest derived value. Resource names are short; a cap keeps a program from
+/// asking the allocator for a value nobody can use, and makes the extension
+/// loop below provably finite.
+const MAX_DERIVE_LEN: usize = 64;
+
+/// Most characters an alphabet may offer. Rejection sampling draws one byte per
+/// character, so an alphabet larger than a byte could not be addressed without
+/// changing the draw -- and an alphabet that big is not a naming scheme.
+const MAX_DERIVE_ALPHABET: usize = 256;
+
+/// Hard ceiling on digest extensions, so the draw cannot spin.
+///
+/// Each extension yields 32 fresh bytes and the worst acceptance rate over all
+/// admissible alphabet sizes is just above one half, so 64 characters need four
+/// or five extensions in expectation. This bound is several hundred times that:
+/// it exists to make termination a fact rather than a probability.
+const MAX_DERIVE_EXTENSIONS: u32 = 1024;
+
+/// Derives the value, or says why it cannot.
+///
+/// The one implementation of the algorithm. `eval_derive_string` reaches it
+/// with values from the evaluator and [`crate::literal_resolve`] reaches it
+/// with values read statically off the AST; both must produce the same string
+/// for the same arguments, so neither may own a copy of this.
+///
+/// `Err` carries the message a diagnostic would print. A static caller that
+/// cannot act on it discards it and resolves to nothing rather than guessing.
+pub(crate) fn derive(from: &str, length: usize, alphabet: &str) -> Result<String, String> {
+    if length == 0 {
+        return Err("fn::deriveString 'length' must be at least 1".to_string());
+    }
+    if length > MAX_DERIVE_LEN {
+        return Err(format!(
+            "fn::deriveString 'length' {length} exceeds maximum {MAX_DERIVE_LEN}"
+        ));
+    }
+
+    // `n` is a character count, not a byte count, so a multi-byte alphabet
+    // selects whole characters and can never split one.
+    //
+    // An ASCII alphabet -- the default, and every realistic naming scheme --
+    // has one byte per character, so the draw can index its bytes directly
+    // instead of decoding UTF-8 to reach the nth character. That turns the
+    // per-character cost from a walk of the alphabet into one load. Measured
+    // on the 64-character worst case: 2.39us before, and the walk was the
+    // whole of the difference from the 4-character case.
+    let ascii = alphabet.is_ascii();
+    let bytes = alphabet.as_bytes();
+    let n = if ascii {
+        bytes.len()
+    } else {
+        alphabet.chars().count()
+    };
+    if n == 0 {
+        return Err("fn::deriveString 'alphabet' must not be empty".to_string());
+    }
+    if n > MAX_DERIVE_ALPHABET {
+        return Err(format!(
+            "fn::deriveString 'alphabet' has {n} characters, over the \
+             {MAX_DERIVE_ALPHABET} this draw can address"
+        ));
+    }
+
+    // Rejection sampling, not `byte % n`. For the default alphabet
+    // `256 % 36 == 4`, so a plain modulo would favour four of its thirty-six
+    // characters; discarding the short final block removes the bias. `limit` is
+    // the largest multiple of `n` that fits in a byte.
+    let limit = 256 - (256 % n);
+
+    let mut out = String::with_capacity(length);
+    let mut digest = crate::sha256::digest(from.as_bytes());
+    let mut cursor = 0usize;
+    let mut extension = 0u32;
+    let mut chars = 0usize;
+
+    while chars < length {
+        if cursor == digest.len() {
+            // The digest is spent; extend deterministically with a counter so
+            // the sequence stays a pure function of the seed.
+            extension += 1;
+            if extension > MAX_DERIVE_EXTENSIONS {
+                return Err(
+                    "fn::deriveString could not draw enough unbiased characters".to_string()
+                );
+            }
+            let mut seed = Vec::with_capacity(from.len() + 4);
+            seed.extend_from_slice(from.as_bytes());
+            seed.extend_from_slice(&extension.to_le_bytes());
+            digest = crate::sha256::digest(&seed);
+            cursor = 0;
+        }
+        let byte = usize::from(digest[cursor]);
+        cursor += 1;
+        if byte >= limit {
+            continue;
+        }
+        let index = byte % n;
+        if ascii {
+            // One load. `index < n == bytes.len()`, and every byte of an ASCII
+            // string is a whole character, so this cannot split one.
+            out.push(char::from(bytes[index]));
+        } else {
+            // A multi-byte alphabet is rare enough to walk. `n` and `length`
+            // are both bounded small, so this costs less than the allocation a
+            // lookup table would need.
+            out.push(
+                alphabet
+                    .chars()
+                    .nth(index)
+                    .expect("index is below the character count"),
+            );
+        }
+        chars += 1;
+    }
+
+    Ok(out)
+}
+
+/// Reads `fn::deriveString`'s arguments off an already-evaluated value.
+///
+/// Shared with the static resolver through [`derive`]; this half is only the
+/// argument shape, which the two callers read from different places.
+pub(crate) fn derive_args<'a>(
+    value: &'a Value<'_>,
+    diags: &mut Diagnostics,
+) -> Option<(&'a str, usize, &'a str)> {
+    match value {
+        // Shorthand: the seed alone.
+        Value::String(s) => Some((s.as_ref(), DERIVE_DEFAULT_LEN, DERIVE_ALPHABET)),
+        Value::Object(entries) => {
+            let mut from: Option<&str> = None;
+            let mut length = DERIVE_DEFAULT_LEN;
+            let mut alphabet = DERIVE_ALPHABET;
+            for (key, val) in entries {
+                match key.as_ref() {
+                    "from" => from = Some(expect_string(val, "fn::deriveString 'from'", diags)?),
+                    "length" => {
+                        let n = expect_number(val, "fn::deriveString 'length'", diags)?;
+                        length = checked_f64_to_usize(n, diags, "fn::deriveString 'length'")?;
+                    }
+                    "alphabet" => {
+                        alphabet = expect_string(val, "fn::deriveString 'alphabet'", diags)?;
+                    }
+                    // Named rather than ignored: a silently defaulted typo is
+                    // how a stack gets a name nobody intended.
+                    other => {
+                        diags.error(
+                            None,
+                            format!("fn::deriveString has no argument named '{other}'"),
+                            "Valid arguments are 'from', 'length' and 'alphabet'.",
+                        );
+                        return None;
+                    }
+                }
+            }
+            match from {
+                Some(f) => Some((f, length, alphabet)),
+                None => {
+                    diags.error(
+                        None,
+                        "fn::deriveString requires a 'from' argument".to_string(),
+                        "Give it the seed to derive from, e.g. `from: my-service`.",
+                    );
+                    None
+                }
+            }
+        }
+        _ => {
+            diags.error(
+                None,
+                format!(
+                    "argument to fn::deriveString must be a string or an object, got {}",
+                    value.type_name()
+                ),
+                "",
+            );
+            None
+        }
+    }
+}
+
+/// Evaluates `fn::deriveString` - a stable value computed from a seed.
+///
+/// Unlike `fn::randomString` this is a pure function of its argument, so it is
+/// known at preview, identical on every evaluation, and resolvable statically
+/// (see [`crate::literal_resolve`]). That is the entire point: a name a policy
+/// check, an import and a graph export can all read before anything is
+/// deployed.
+pub fn eval_derive_string<'src>(
+    value: &Value<'src>,
+    diags: &mut Diagnostics,
+) -> Option<Value<'src>> {
+    if has_unknown(value) {
+        return Some(Value::Unknown);
+    }
+    let (from, length, alphabet) = derive_args(value, diags)?;
+    match derive(from, length, alphabet) {
+        Ok(s) => Some(Value::String(Cow::Owned(s))),
+        Err(msg) => {
+            diags.error(None, msg, "");
+            None
+        }
+    }
+}
+
 /// Evaluates `fn::uuid` - generates a random UUID v4.
 pub fn eval_uuid<'src>(_value: &Value<'src>, _diags: &mut Diagnostics) -> Option<Value<'src>> {
     let id = uuid::Uuid::new_v4().to_string();
@@ -1375,5 +1591,184 @@ mod tests {
         // 2024-01-15T12:30:45Z = 1705321845
         let (y, m, d, h, min, s) = unix_to_civil(1705321845);
         assert_eq!((y, m, d, h, min, s), (2024, 1, 15, 12, 30, 45));
+    }
+}
+
+#[cfg(test)]
+mod derive_tests {
+    use super::*;
+
+    fn obj<'a>(pairs: &[(&'a str, Value<'a>)]) -> Value<'a> {
+        Value::Object(
+            pairs
+                .iter()
+                .map(|(k, v)| (Cow::Borrowed(*k), v.clone()))
+                .collect(),
+        )
+    }
+
+    /// An `Unknown` seed defers instead of erroring.
+    ///
+    /// `fn::randomString` and `fn::uuid` are the only two builtins that skip the
+    /// `has_unknown` guard, and skipping it here would turn a seed built from a
+    /// live output into a hard error at preview rather than a value the deploy
+    /// resolves.
+    #[test]
+    fn an_unknown_seed_propagates_unknown() {
+        let mut diags = Diagnostics::default();
+        let out = eval_derive_string(&Value::Unknown, &mut diags);
+        assert_eq!(out, Some(Value::Unknown));
+        assert!(!diags.has_errors(), "deferring is not an error: {diags}");
+
+        // Also when the unknown is nested in the argument object.
+        let mut diags = Diagnostics::default();
+        let arg = obj(&[("from", Value::Unknown), ("length", Value::Number(4.0))]);
+        assert_eq!(
+            eval_derive_string(&arg, &mut diags),
+            Some(Value::Unknown),
+            "an unknown inside the argument object defers too"
+        );
+        assert!(!diags.has_errors(), "{diags}");
+    }
+
+    /// A secret seed is refused rather than quietly unwrapped.
+    ///
+    /// A secret is not an unknown -- it has a value -- but unwrapping it here
+    /// would put a secret-derived value into a plain resource name without
+    /// saying so. Refusing is the conservative reading, and it is stated
+    /// because the alternative is silent.
+    #[test]
+    fn a_secret_seed_is_refused_rather_than_unwrapped() {
+        let mut diags = Diagnostics::default();
+        let arg = Value::Secret(Box::new(Value::String(Cow::Borrowed("tap_collector"))));
+        // A secret is not a string, so the argument shape is refused rather
+        // than silently unwrapped -- unwrapping would put a secret-derived
+        // value into a plain name without saying so.
+        let out = eval_derive_string(&arg, &mut diags);
+        assert!(out.is_none());
+        assert!(diags.has_errors());
+    }
+
+    #[test]
+    fn the_shorthand_defaults_to_eight_characters() {
+        let mut diags = Diagnostics::default();
+        let out = eval_derive_string(&Value::String(Cow::Borrowed("abc")), &mut diags);
+        assert_eq!(out, Some(Value::String(Cow::Owned("6cmbz1ri".to_string()))));
+        assert!(!diags.has_errors(), "{diags}");
+    }
+
+    #[test]
+    fn a_missing_from_is_refused_with_advice() {
+        let mut diags = Diagnostics::default();
+        let arg = obj(&[("length", Value::Number(4.0))]);
+        assert!(eval_derive_string(&arg, &mut diags).is_none());
+        let text = format!("{diags}");
+        assert!(text.contains("requires a 'from' argument"), "{text}");
+    }
+
+    /// A mistyped argument is named, not defaulted. A silently defaulted typo
+    /// is how a stack gets a name nobody intended.
+    #[test]
+    fn an_unknown_argument_is_named_not_defaulted() {
+        let mut diags = Diagnostics::default();
+        let arg = obj(&[
+            ("from", Value::String(Cow::Borrowed("abc"))),
+            ("len", Value::Number(4.0)),
+        ]);
+        assert!(eval_derive_string(&arg, &mut diags).is_none());
+        let text = format!("{diags}");
+        assert!(text.contains("no argument named 'len'"), "{text}");
+        assert!(text.contains("'from', 'length' and 'alphabet'"), "{text}");
+    }
+
+    #[test]
+    fn a_non_string_non_object_argument_is_refused() {
+        for bad in [
+            Value::Number(4.0),
+            Value::Bool(true),
+            Value::Null,
+            Value::List(vec![Value::String(Cow::Borrowed("abc"))]),
+        ] {
+            let mut diags = Diagnostics::default();
+            assert!(
+                eval_derive_string(&bad, &mut diags).is_none(),
+                "{bad:?} was accepted"
+            );
+            assert!(diags.has_errors());
+        }
+    }
+
+    /// The bounds, at and either side of each edge.
+    #[test]
+    fn the_length_bounds_are_exact() {
+        assert!(derive("abc", 0, DERIVE_ALPHABET).is_err());
+        assert_eq!(derive("abc", 1, DERIVE_ALPHABET).map(|s| s.len()), Ok(1));
+        assert_eq!(derive("abc", 64, DERIVE_ALPHABET).map(|s| s.len()), Ok(64));
+        assert!(derive("abc", 65, DERIVE_ALPHABET).is_err());
+    }
+
+    /// A one-character alphabet is legal and produces that character, which is
+    /// the degenerate case rejection sampling must not divide by zero on.
+    #[test]
+    fn a_single_character_alphabet_repeats_it() {
+        assert_eq!(derive("abc", 5, "q"), Ok("qqqqq".to_string()));
+    }
+
+    /// The draw is unbiased, measured rather than asserted.
+    ///
+    /// `256 % 36 == 4`, so a plain `byte % 36` would map bytes 252..=255 onto
+    /// the alphabet's first four characters on top of their fair share, giving
+    /// them 8/256 of the draw instead of 7/256. Rejection sampling discards
+    /// that band instead.
+    ///
+    /// Coverage does not detect this -- a modulo draw still produces all
+    /// thirty-six characters, which an earlier version of this test proved by
+    /// passing against one -- so the test has to measure the share. Over 25,600
+    /// draws the two algorithms separate cleanly and far apart: rejection lands
+    /// at 0.1113 against an ideal 4/36 = 0.1111, while modulo lands at 0.1241.
+    /// The bound below sits between them.
+    #[test]
+    fn the_draw_is_unbiased_not_merely_covering() {
+        let first_four: Vec<char> = DERIVE_ALPHABET.chars().take(4).collect();
+        let mut total = 0usize;
+        let mut hits = 0usize;
+        let mut seen = std::collections::HashSet::new();
+        for i in 0..400 {
+            let s = derive(&format!("seed-{i}"), 64, DERIVE_ALPHABET).expect("derives");
+            total += s.chars().count();
+            hits += s.chars().filter(|c| first_four.contains(c)).count();
+            seen.extend(s.chars());
+        }
+        // Coverage, which is necessary but not sufficient.
+        assert_eq!(
+            seen.len(),
+            36,
+            "only {} of 36 characters were drawn",
+            seen.len()
+        );
+
+        let share = hits as f64 / total as f64;
+        let ideal = 4.0 / 36.0;
+        assert!(
+            share < 0.118,
+            "the first four characters took {share:.5} of {total} draws against an \
+             ideal {ideal:.5}; a plain modulo draw gives 0.1241, so this looks biased"
+        );
+        assert!(
+            share > 0.104,
+            "the first four characters took only {share:.5} of {total} draws against an \
+             ideal {ideal:.5}, which is not a fair draw either"
+        );
+    }
+
+    /// One implementation, two callers. `derive` is what both the evaluator and
+    /// the static resolver reach, so this is the contract that keeps a resolved
+    /// name and a deployed name identical.
+    #[test]
+    fn the_shared_implementation_is_a_pure_function() {
+        let a = derive("voice-usage-egress", 4, DERIVE_ALPHABET);
+        let b = derive("voice-usage-egress", 4, DERIVE_ALPHABET);
+        assert_eq!(a, b);
+        assert_eq!(a, Ok("b0aw".to_string()));
     }
 }

@@ -6548,3 +6548,54 @@ resources:
     assert_eq!(get("banner"), "   ok   ");
     assert_eq!(get("note"), "alpha beta / gamma");
 }
+
+/// A derived value carried into a registered resource input.
+///
+/// The unit and differential cases prove the value; this proves it reaches a
+/// provider the way any other scalar does, and that two evaluations of one
+/// program register byte-identical inputs — the property that makes a redeploy
+/// plan no change, and the one `fn::randomString` cannot offer.
+#[test]
+fn test_derive_string_reaches_a_registered_input() {
+    let source = r#"
+name: test
+runtime: yaml
+variables:
+  suffix:
+    fn::deriveString:
+      from: tap_collector
+      length: 4
+resources:
+  svc:
+    type: gcp:cloudrunv2:Service
+    properties:
+      name: collector-${suffix}
+outputs:
+  result: ${svc.name}
+"#;
+
+    let registered = |_: ()| {
+        let mock = MockCallback::new();
+        let (eval, has_errors) = eval_with_mock(source, mock);
+        assert!(!has_errors, "errors: {}", eval.diags_display());
+        eval.callback()
+            .registrations()
+            .iter()
+            .find(|r| r.name == "svc")
+            .map(|r| {
+                r.inputs
+                    .get("name")
+                    .and_then(|v| v.as_str().map(str::to_string))
+            })
+            .expect("svc was registered")
+    };
+
+    let first = registered(());
+    assert_eq!(
+        first.as_deref(),
+        Some("collector-eyls"),
+        "the derived suffix must reach the provider as a literal"
+    );
+    // Two evaluations of one program agree, so a redeploy plans no change.
+    assert_eq!(first, registered(()));
+}

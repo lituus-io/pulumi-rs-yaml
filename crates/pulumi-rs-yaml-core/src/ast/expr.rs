@@ -77,6 +77,11 @@ pub enum Expr<'src> {
     Uuid(ExprMeta, Box<Expr<'src>>),
     /// `fn::randomString` - generates a random alphanumeric string of given length.
     RandomString(ExprMeta, Box<Expr<'src>>),
+    /// `fn::deriveString` - a stable value computed from a seed.
+    ///
+    /// Unlike [`Expr::RandomString`] this is a pure function of its
+    /// argument, so it is known at preview and resolvable statically.
+    DeriveString(ExprMeta, Box<Expr<'src>>),
 
     // --- Date builtins ---
     /// `fn::dateFormat` - formats the current date/time with a strftime-style format string.
@@ -171,6 +176,7 @@ impl Expr<'_> {
             | Expr::TimeUnix(m, _)
             | Expr::Uuid(m, _)
             | Expr::RandomString(m, _)
+            | Expr::DeriveString(m, _)
             | Expr::DateFormat(m, _)
             | Expr::StringAsset(m, _)
             | Expr::FileAsset(m, _)

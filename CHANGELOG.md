@@ -3,6 +3,222 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.33
+
+### A derived string the engine can resolve before the deploy
+
+`fn::randomString` has been in this engine since the builtins were written, and
+it is a trap. It draws from `thread_rng` on every evaluation, so it answers
+differently on each one -- including between a preview and the update that
+follows it. A resource named from it is therefore replaced on every single
+deploy, and its name is unknowable until the resource exists. That is strictly
+worse than the `random` provider's own resource, which at least persists its
+value in state, and it is why nothing in any corpus we can see uses the builtin.
+
+What authors actually want from it is a short stable suffix, and the reason they
+want it is naming: a service, a bucket and a workflow that must not collide.
+`fn::deriveString` computes exactly that shape of value as a pure function of a
+seed. Same seed, same answer, on every evaluation, in every environment and on
+a first deploy -- so the value is known at preview and a redeploy plans no
+change.
+
+The case that prompted it: a stack computing a Cloud Run service name from a
+random suffix, and embedding that name in a workflow body so the workflow could
+call the service. A policy check that has to read the body cannot read it at
+all on a first deploy, because the name is not there yet, and a check that
+cannot read a value it is responsible for has to refuse. The same stack with a
+derived suffix reads as a literal everywhere.
+
+### The reason it is a builtin and not a Starlark snippet
+
+`fn::starlark` could express this today -- the derivation is pure integer and
+string work, and Starlark is deterministic by construction, which is the same
+property that makes it safe to run an author's script during a render. It would
+be the wrong home for one decisive reason: `literal_resolve` cannot see through
+it. That module answers plain literals, literal-only interpolations, chains
+through variables, and pure `str` invokes; its match ends in `_ => None`, and a
+Starlark call falls in that arm. So a Starlark-derived name would be as opaque
+to an import, a graph export and a shift-left policy check as a random one --
+which forfeits the whole point of making the value stable.
+
+`fn::deriveString` gets an arm in that module instead, and the arm is the
+feature. A derived name now reaches `literal_properties` in the graph export,
+so a tool can know a resource's name without evaluating the program. The
+conversion path gains the same thing: a derived value lowers to the literal it
+computes rather than the `null` the engine's other non-PCL builtins emit, so a
+converted program keeps the names the YAML produced. A seed that is not itself
+a literal still resolves to nothing, never a guess, which is that module's
+standing contract.
+
+Losing the arm is **silent** -- the catch-all absorbs it and the workspace
+compiles with zero errors -- so two graph cases exist to redden when it goes.
+
+### The draw is unbiased, and that had to be measured
+
+`256 % 36 == 4`, so a plain `byte % 36` over the default alphabet maps bytes
+252..=255 onto its first four characters on top of their fair share: 8/256 of
+the draw each instead of 7/256. Rejection sampling discards that band. When the
+digest is spent it is extended with a counter, which keeps the sequence a pure
+function of the seed, and the extension count is bounded so termination is a
+fact rather than a probability.
+
+The first test written for this asserted that every character of the alphabet
+gets drawn. It passed against a plain modulo draw, because a modulo draw is
+biased and not incomplete -- it still produces all thirty-six characters. The
+share of the favoured four is measured instead: over 25,600 draws rejection
+lands at 0.11133 against an ideal 4/36 = 0.11111, and modulo at 0.12410. The
+bound sits between them. Two independent implementations of the biased variant
+agreed on 0.1241 to five decimal places, which is how the threshold was chosen
+rather than guessed.
+
+### Author text shaped like a readFile marker is not the engine's
+
+The scheduled fuzz run of 2026-09-30 failed `fuzz_string_filters` on the
+subject `"\n\n\x00RF:\x0b\x00\n"`, which came back `"\n\n\n"`. The target
+noticed because wrapping a subject may only move characters between lines,
+never remove them -- and a line had been deleted.
+
+Not a filter defect, and older than the filters. `\x00RF:<id>\x00` is the
+Jinja module's own in-band marker for a `readFile()` result, substituted after
+the render. The whole-line branch of `resolve_readfile_markers` matched the
+marker SHAPE, failed to parse `\x0b` as an id, and then pushed nothing at all
+-- there was no `else`. So any author text of that shape was silently deleted
+from the rendered program, as was a marker whose id was numeric but absent from
+the cache.
+
+`replace_inline_markers` already got the same case right: on a parse failure or
+a cache miss it pushes the marker back verbatim. The two paths disagreeing
+about one situation is the whole of the defect, and the inline one is correct --
+a marker this engine wrote always carries a numeric id that is in the cache, so
+anything else is author text and is carried through unchanged.
+
+Four cases pin it: the fuzz subject itself, a numeric id that is not cached at
+three indents, the agreement between the two paths, and that a real marker
+still resolves and still consumes its NULs, which the fix must not break. The
+crashing input is committed as a corpus seed, so every future run takes the
+same path to it rather than relying on rediscovery.
+
+### The converter's entry point is narrow, and that is worth a megabyte
+
+The first version of the conversion support called the general
+`literal_resolve` entry. That function reaches `resolve_str_invoke`, which
+reaches `native_str`, which links `regex` -- and the converter had never
+depended on regex. Measured against the release binaries: the converter grew
+**+1,075,648 bytes, 62% on a 1.7 MB binary**, for the convenience of keeping a
+derived name in a converted program. The language host, which already carries
+regex, grew 16 KB.
+
+So the public entry is now one function that resolves `fn::deriveString` with
+inline literal arguments and nothing else. The converter grows **16 bytes**.
+Nothing is lost by the narrowing: the general entry it replaced passed an empty
+variable map, so a reference never resolved through it either, and anything
+other than inline literals still emits what it emitted before.
+
+Worth stating as a rule, not an anecdote: a `pub` on a module in this crate is
+a link-time decision as much as an API one, because the evaluator's paths pull
+in the parsing and matching machinery behind them.
+
+### SHA-256, in-crate, because the value is a compatibility contract
+
+A derived name goes into cloud state. Move the algorithm and every resource
+named through it is renamed, which a provider carries out as a delete and a
+create. So the hash cannot be something that may change underneath us.
+`std`'s `DefaultHasher` is SipHash-1-3 today and the standard library declines
+to promise it stays that way, so a toolchain bump would rename a fleet; a
+seeded `rand` generator reserves the same right between minor versions; a
+hand-rolled FNV-1a would be stable, being ours, but has nothing to be checked
+against and poor avalanche on exactly the input shape this sees -- short seeds
+differing in their last bytes.
+
+FIPS 180-4 has neither problem, and a published standard can be checked against
+something that is not this code. `sha256.rs` is one function over one slice: no
+streaming pair, no trait, no HMAC, no allocation, and **no new dependency** --
+`rand` and `uuid` stay where they were, used only by the two older builtins.
+
+### Arguments
+
+`from` (any expression), `length` (1..=64, default 8) and `alphabet`
+(lowercase alphanumeric by default, which is what the random-provider calls
+this replaces ask for). The scalar shorthand `fn::deriveString: my-seed` means
+`{from: my-seed, length: 8}`, and the two spellings are pinned equal so an
+author moving between them cannot silently rename a resource.
+
+An unknown argument is **refused by name**, not defaulted: `len:` instead of
+`length:` is an error naming the three valid arguments, because a silently
+defaulted typo is how a stack gets a name nobody intended. An `Unknown` seed
+propagates `Unknown` rather than erroring -- the `has_unknown` guard that
+`fn::randomString` and `fn::uuid` are the only builtins to skip. A `Secret`
+seed is refused rather than unwrapped, since unwrapping would put a
+secret-derived value into a plain resource name without saying so.
+
+`from` is an ordinary expression, so a `${...}` in it is resolved -- or refused
+-- by the engine before the draw sees anything. The default alphabet can begin
+with a digit, which is fine for a suffix; a value used as a whole name where
+the provider demands a leading letter wants an explicit `alphabet` or a prefix.
+
+### Bounds, each one audited rather than assumed
+
+`length` is the only argument that sizes the output, and it is capped at 64. An
+enormous `from` cannot amplify what is allocated: it is hashed, so the output is
+a function of `length` alone -- a 1 MiB seed still yields four characters.
+
+It can, however, cost time, and the distinction is worth stating because the
+first draft of the bench comment got it wrong. Measured: a 4-character suffix
+is 334ns and the 64-character worst case 1.03us -- the same order, since the
+extension loop adds compressions rather than changing the shape of the work --
+while a 64 KiB seed takes 278us, ~830x the short case, because the whole seed
+is hashed. Seeds in practice are resource names of a few tens of bytes.
+
+The draw indexes an ASCII alphabet's BYTES rather than walking its characters.
+`alphabet.chars().nth(i)` decodes UTF-8 to reach the nth character, ~33ns each,
+and on the 64-character case that walk was the whole of the difference from the
+4-character case. The default alphabet is ASCII and so is every realistic
+naming scheme, so the walk survives only for a multi-byte alphabet. Measured
+by criterion at p < 0.05: -22.6% on the 4-character case, -34.1% on the
+default 8, **-56.9% on the 64-character worst case**. The differential corpus
+carries non-ASCII alphabets, so the fallback is exercised and the fast path is
+proven behaviour-preserving rather than assumed to be. An alphabet over
+256 characters is refused, because the draw takes one byte per character and
+could not address the tail, so the bias would be silent. An empty alphabet is
+refused rather than looped over. That audit is itself a test, so an argument
+added later has somewhere to declare its bound.
+
+### Tests
+
+722 differential cases against a separate implementation of the algorithm,
+written from the rule rather than from this code: every seed shape (empty,
+non-ASCII, CJK, whitespace, 200 bytes) against thirteen lengths and nine
+alphabets, including the five argument combinations that must be REFUSED rather
+than answered, all driven through the real evaluator -- a builtin that passed
+here while unregistered in the parser would satisfy every assertion and still
+fail every build. Three values are frozen in the source with a note that
+changing them renames deployed infrastructure.
+
+The encoding half is checked a third time by a Starlark implementation in the
+same program, so the digest is held to the specification and the mapping to an
+independent reading of the rule. Starlark has no `while` -- it is deliberately
+non-Turing-complete -- so the oracle is a bounded `for` over the digest bytes.
+
+Ten unit cases on the argument shape and the bounds; eleven security cases on
+arguments nobody chose, including termination of the draw for every alphabet
+size from 1 to 256 and that no character ever escapes the alphabet offered;
+five graph cases pinning static resolution from both sides -- a derived name
+reaches `literal_properties`, and a random one, an unresolvable seed and a
+mistyped argument each reach no literal at all; one converter golden carrying
+both the literal and the dynamic-seed branch; one integration case proving the
+value reaches a provider and that two evaluations register identical inputs;
+four benches; and a new fuzz target over all three arguments asserting
+totality, exact character count, alphabet containment and purity.
+
+Every suite was checked against an engine with the builtin unregistered, the
+`literal_resolve` arm deleted, the rejection band removed, the `has_unknown`
+guard dropped, the length cap raised and the unknown-argument refusal relaxed,
+and each one reddens where it should.
+
+Security tests 148 -> 159; fuzz targets 20 -> 21. Both README badges were stale
+before this release -- they read 133 and 19 against a tree that had 148 and 20 --
+and now carry the true counts.
+
 ## 0.5.32
 
 ### Three string filters a template may already be written against
