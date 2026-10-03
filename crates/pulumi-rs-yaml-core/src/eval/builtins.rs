@@ -1572,3 +1572,158 @@ mod tests {
         assert_eq!((y, m, d, h, min, s), (2024, 1, 15, 12, 30, 45));
     }
 }
+
+#[cfg(test)]
+mod derive_tests {
+    use super::*;
+
+    fn obj<'a>(pairs: &[(&'a str, Value<'a>)]) -> Value<'a> {
+        Value::Object(
+            pairs
+                .iter()
+                .map(|(k, v)| (Cow::Borrowed(*k), v.clone()))
+                .collect(),
+        )
+    }
+
+    /// An `Unknown` seed defers instead of erroring.
+    ///
+    /// `fn::randomString` and `fn::uuid` are the only two builtins that skip the
+    /// `has_unknown` guard, and skipping it here would turn a seed built from a
+    /// live output into a hard error at preview rather than a value the deploy
+    /// resolves.
+    #[test]
+    fn an_unknown_seed_propagates_unknown() {
+        let mut diags = Diagnostics::default();
+        let out = eval_derive_string(&Value::Unknown, &mut diags);
+        assert_eq!(out, Some(Value::Unknown));
+        assert!(!diags.has_errors(), "deferring is not an error: {diags}");
+
+        // Also when the unknown is nested in the argument object.
+        let mut diags = Diagnostics::default();
+        let arg = obj(&[("from", Value::Unknown), ("length", Value::Number(4.0))]);
+        assert_eq!(
+            eval_derive_string(&arg, &mut diags),
+            Some(Value::Unknown),
+            "an unknown inside the argument object defers too"
+        );
+        assert!(!diags.has_errors(), "{diags}");
+    }
+
+    /// A secret seed is refused rather than quietly unwrapped.
+    ///
+    /// A secret is not an unknown -- it has a value -- but unwrapping it here
+    /// would put a secret-derived value into a plain resource name without
+    /// saying so. Refusing is the conservative reading, and it is stated
+    /// because the alternative is silent.
+    #[test]
+    fn a_secret_seed_is_refused_rather_than_unwrapped() {
+        let mut diags = Diagnostics::default();
+        let arg = Value::Secret(Box::new(Value::String(Cow::Borrowed("tap_collector"))));
+        // A secret is not a string, so the argument shape is refused rather
+        // than silently unwrapped -- unwrapping would put a secret-derived
+        // value into a plain name without saying so.
+        let out = eval_derive_string(&arg, &mut diags);
+        assert!(out.is_none());
+        assert!(diags.has_errors());
+    }
+
+    #[test]
+    fn the_shorthand_defaults_to_eight_characters() {
+        let mut diags = Diagnostics::default();
+        let out = eval_derive_string(&Value::String(Cow::Borrowed("abc")), &mut diags);
+        assert_eq!(out, Some(Value::String(Cow::Owned("6cmbz1ri".to_string()))));
+        assert!(!diags.has_errors(), "{diags}");
+    }
+
+    #[test]
+    fn a_missing_from_is_refused_with_advice() {
+        let mut diags = Diagnostics::default();
+        let arg = obj(&[("length", Value::Number(4.0))]);
+        assert!(eval_derive_string(&arg, &mut diags).is_none());
+        let text = format!("{diags}");
+        assert!(text.contains("requires a 'from' argument"), "{text}");
+    }
+
+    /// A mistyped argument is named, not defaulted. A silently defaulted typo
+    /// is how a stack gets a name nobody intended.
+    #[test]
+    fn an_unknown_argument_is_named_not_defaulted() {
+        let mut diags = Diagnostics::default();
+        let arg = obj(&[
+            ("from", Value::String(Cow::Borrowed("abc"))),
+            ("len", Value::Number(4.0)),
+        ]);
+        assert!(eval_derive_string(&arg, &mut diags).is_none());
+        let text = format!("{diags}");
+        assert!(text.contains("no argument named 'len'"), "{text}");
+        assert!(text.contains("'from', 'length' and 'alphabet'"), "{text}");
+    }
+
+    #[test]
+    fn a_non_string_non_object_argument_is_refused() {
+        for bad in [
+            Value::Number(4.0),
+            Value::Bool(true),
+            Value::Null,
+            Value::List(vec![Value::String(Cow::Borrowed("abc"))]),
+        ] {
+            let mut diags = Diagnostics::default();
+            assert!(
+                eval_derive_string(&bad, &mut diags).is_none(),
+                "{bad:?} was accepted"
+            );
+            assert!(diags.has_errors());
+        }
+    }
+
+    /// The bounds, at and either side of each edge.
+    #[test]
+    fn the_length_bounds_are_exact() {
+        assert!(derive("abc", 0, DERIVE_ALPHABET).is_err());
+        assert_eq!(derive("abc", 1, DERIVE_ALPHABET).map(|s| s.len()), Ok(1));
+        assert_eq!(derive("abc", 64, DERIVE_ALPHABET).map(|s| s.len()), Ok(64));
+        assert!(derive("abc", 65, DERIVE_ALPHABET).is_err());
+    }
+
+    /// A one-character alphabet is legal and produces that character, which is
+    /// the degenerate case rejection sampling must not divide by zero on.
+    #[test]
+    fn a_single_character_alphabet_repeats_it() {
+        assert_eq!(derive("abc", 5, "q"), Ok("qqqqq".to_string()));
+    }
+
+    /// The draw is unbiased: over the default alphabet a long output must use
+    /// far more than the four characters a plain `byte % 36` would favour.
+    ///
+    /// A modulo draw is not detectably wrong on any single value, which is why
+    /// this is stated as a distribution over one long draw rather than as a
+    /// value.
+    #[test]
+    fn the_draw_covers_the_alphabet() {
+        // 64 is the longest single value; concatenating distinct seeds gives a
+        // larger sample without raising the cap.
+        let mut seen = std::collections::HashSet::new();
+        for i in 0..40 {
+            let s = derive(&format!("seed-{i}"), 64, DERIVE_ALPHABET).expect("derives");
+            seen.extend(s.chars());
+        }
+        assert_eq!(
+            seen.len(),
+            36,
+            "only {} of 36 characters were ever drawn: {seen:?}",
+            seen.len()
+        );
+    }
+
+    /// One implementation, two callers. `derive` is what both the evaluator and
+    /// the static resolver reach, so this is the contract that keeps a resolved
+    /// name and a deployed name identical.
+    #[test]
+    fn the_shared_implementation_is_a_pure_function() {
+        let a = derive("voice-usage-egress", 4, DERIVE_ALPHABET);
+        let b = derive("voice-usage-egress", 4, DERIVE_ALPHABET);
+        assert_eq!(a, b);
+        assert_eq!(a, Ok("b0aw".to_string()));
+    }
+}
