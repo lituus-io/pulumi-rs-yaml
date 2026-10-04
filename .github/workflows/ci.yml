@@ -36,6 +36,11 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace -- -D warnings
+      # `fuzz/` is its own workspace, so the line above has never reached it.
+      # A clippy error sat in `fuzz_scope_oracle` unnoticed because of that.
+      # The targets build on nightly, but they LINT on stable, so this needs no
+      # second toolchain.
+      - run: cargo clippy --all-targets --manifest-path fuzz/Cargo.toml -- -D warnings
 
   test-linux-x86:
     name: Test (Linux x86_64)
