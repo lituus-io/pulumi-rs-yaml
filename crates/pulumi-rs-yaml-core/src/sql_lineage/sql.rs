@@ -471,12 +471,22 @@ mod tests {
     /// 0.6.3 still hangs; 0.13.1 reports it as the parse error it always was.
     /// A test that takes a second to fail is still a pass, so what is asserted
     /// is that it RETURNS -- the bug was unboundedness, not a wrong answer.
+    ///
+    /// The fourth shape is a SECOND, independently found reproducer: the
+    /// weekly fuzz budget was raised to 120 seconds and the next run drew a
+    /// 25-byte input out of the same family -- a non-ASCII byte and a CRLF in
+    /// front, but the same identifier carrying `.` and `:` ahead of an
+    /// unclosed paren. Replayed here, 0.6.2 was still running after 90
+    /// seconds with resident memory climbing; 0.13.1 refuses it in 0.01s.
+    /// Two independent discoveries of one shape is why the pin is the fix
+    /// rather than a filter on the input.
     #[test]
     fn the_fuzz_found_input_terminates() {
         for sql in [
             "CP.:q(nc:e",
             "ECP.:qrotableIdjrotedc((nc:e\n    ",
             "CP.:q((nc:e",
+            "tgcabyamleId\u{ef}gcn.:em\r\n( ",
         ] {
             let r = one_statement(sql);
             assert!(r.is_err(), "{sql:?} is malformed and must be refused");

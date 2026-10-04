@@ -83,7 +83,14 @@ that parser is an author's `view.query`, so the input is untrusted by
 construction.
 
 The engine pin moves to 0.13.1, where the same input is reported as the parse
-error it always was, in 873us. 0.6.3 still hangs, so a patch bump is not the
+error it always was, in 873us. The shape was then found a SECOND time,
+independently: the weekly fuzz budget was raised to 120 seconds and the next run
+drew a 25-byte input out of the same family -- a non-ASCII byte and a CRLF in
+front, the same identifier carrying `.` and `:` ahead of an unclosed paren.
+Replayed locally, 0.6.2 was still running after 90 seconds with resident memory
+climbing; 0.13.1 refuses it in 0.01s. Two independent discoveries of one shape
+is the reason the pin is the fix rather than a filter on the input, and both
+are now corpus seeds. 0.6.3 still hangs, so a patch bump is not the
 fix; the API cost of the seven-minor-version jump is one field, which is what
 keeping the integration in one file was for. The full suite passes unchanged --
 no lineage result moved, which was the risk worth checking rather than assuming.
