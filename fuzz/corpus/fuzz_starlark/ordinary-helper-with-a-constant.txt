@@ -1,0 +1,2 @@
+def f(s):
+    return s.upper() + '1048576'

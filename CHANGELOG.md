@@ -183,6 +183,42 @@ could not address the tail, so the bias would be silent. An empty alphabet is
 refused rather than looped over. That audit is itself a test, so an argument
 added later has somewhere to declare its bound.
 
+### A Starlark script that asks for a gigabyte gets it
+
+`fuzz_starlark` reported an out-of-memory: 2202 MB against libFuzzer's 2048 MB
+limit, from `'   '*333333333`. That is a correct Starlark program, and the
+engine is doing what it was asked to do, so this is a finding about the harness
+rather than a defect in the crate -- but it cost a triage to establish that, and
+it would have cost one again on every weekly run, so it is written down here.
+
+There is no in-process remedy to reach for, which is the part worth recording.
+`starlark-rust` 0.13 exposes no heap limit -- there is no `set_max_*` on the
+evaluator and `Heap::alloc` is infallible, so there is nothing to check a return
+value against -- and the allocation happens inside ONE expression, where
+`str_type.rs` reaches `String::with_capacity(self.len() * l)` directly. A
+statement hook (`before_stmt_for_dap` is the only one offered) never fires
+between the multiplication and the reservation, and a wall-clock budget cannot
+either, because the memory is taken before any deadline could be observed. The
+script also comes from the `starlark:` block of the author's own program: an
+author who writes a gigabyte allocation has broken their own build and no one
+else's, which is a different risk class from the hostile text this target
+exists to probe.
+
+So the target skips a script that names an eight-digit-or-longer run of digits,
+or any `**`. The bound admits every constant a derivation helper plausibly holds
+-- a year, a port, a timeout in milliseconds, `1048576` -- and refuses the
+repeat counts. It is a scan for a run of digits rather than a parse, so it costs
+one pass over the bytes and needs no Starlark grammar. It is deliberately a
+HARNESS heuristic and not an engine rule: a skipped input is merely untested, so
+being approximate is free here in a way it would not be in the crate. It is
+also knowingly incomplete -- a script can reach a large number without writing
+a large literal -- and the answer to a shape that slips through is the note
+above, not a cleverer filter.
+
+A step or fuel limit on `fn::starlark` is still owed and still out of scope; a
+`while True:` in an author's script appears to hang a render today. That wants
+its own change with its own security suite, not a line in this one.
+
 ### Tests
 
 722 differential cases against a separate implementation of the algorithm,
