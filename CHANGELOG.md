@@ -103,6 +103,37 @@ that two exports of one input are identical, so a budget would have traded a
 hang for a flake. It would also have needed a detached thread burning a core,
 since a thread cannot be cancelled under `panic = "abort"`.
 
+### One parser worker, reused, instead of a thread per call
+
+A thread with a 64 MiB stack was spawned PER PARSER CALL. Measured: 31.5us to
+spawn and join one, and a twenty-view program makes about forty such calls --
+**1.26ms of pure thread churn**, which turned out to be the largest single item
+in `sql_lineage_20_views`. The worker is now one per calling thread, parked on
+a channel receive between jobs, so an idle one costs no CPU and the repeated
+64 MiB reservation is gone. `in_parser_thread` is deleted rather than kept
+beside it.
+
+Jobs cross as an explicit enum rather than a boxed closure -- there is no `dyn`
+in this crate -- which has the side benefit of making the isolation contract
+legible: `Reply` lists exactly what leaves the worker, and it is owned fact
+structs, never AST nodes. A worker that dies is cleared from its slot so one
+failure cannot poison every later call on that thread, and a parse that cannot
+reach a worker is reported rather than silently skipped.
+
+The numbers, and they are the reason this is in the same release as the pin:
+
+| | `sql_lineage_20_views` |
+|---|---|
+| before any of this (0.6.2, thread per call) | 3.423 ms |
+| 0.13.1 alone | 4.690 ms (+37%, and the gate refused it) |
+| 0.13.1 + reused worker | **2.077 ms (-39%)** |
+
+0.13.1 costs 1.9x more per call -- `analyze_query` 29.8us -> 56.3us, `parse`
+7.6us -> 13.5us, of which the guard is about a third -- and the path is still
+39% faster, because the churn was always the dominant term. It was being paid
+before this release too; nothing here created it, and the benchmark gate is
+what found it rather than any claim made for the change.
+
 ### One parser thread for a script, not one per statement
 
 Found while reading the path the hang took, and ours rather than upstream's.

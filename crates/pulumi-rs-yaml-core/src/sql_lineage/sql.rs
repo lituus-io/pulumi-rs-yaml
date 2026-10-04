@@ -22,22 +22,113 @@ const MAX_SQL_BYTES: usize = 1024 * 1024;
 /// under `panic = "abort"` an overflow would abort the whole process.
 const PARSER_STACK_BYTES: usize = 64 * 1024 * 1024;
 
-/// Runs a parser closure on a thread with a large explicit stack.
+/// A parser job. An enum rather than a boxed closure: the worker is reused, so
+/// the work has to cross a channel, and the set of jobs is closed and small.
+/// It also keeps the isolation contract legible -- what crosses is listed here.
+enum Job {
+    /// Each entry is an owned statement, or the reason it was refused.
+    Statements(Vec<Result<String, String>>),
+    Select(String),
+}
+
+/// A parser answer. Only owned, `Send` fact structs -- parser AST nodes never
+/// leave the worker, which is the whole point of the boundary.
+enum Reply {
+    Statements(Vec<Result<Vec<StatementFacts>, String>>),
+    Select(Result<SelectFacts, String>),
+}
+
+/// One parser worker per calling thread, parked between jobs.
 ///
-/// Only owned, `Send` fact structs cross the boundary — parser AST nodes
-/// never escape the worker.
-fn in_parser_thread<T, F>(f: F) -> Result<T, String>
-where
-    T: Send + 'static,
-    F: FnOnce() -> T + Send + 'static,
-{
-    std::thread::Builder::new()
-        .stack_size(PARSER_STACK_BYTES)
-        .name("sql-lineage-parser".to_string())
-        .spawn(f)
-        .map_err(|e| format!("failed to spawn SQL parser thread: {}", e))?
-        .join()
-        .map_err(|_| "SQL parser thread terminated unexpectedly".to_string())
+/// A thread with a `PARSER_STACK_BYTES` stack used to be spawned PER CALL.
+/// Measured: 31.5us to spawn and join one, and a twenty-view program makes
+/// about forty such calls -- 1.26ms of pure thread churn, which was the
+/// largest single item in `sql_lineage_20_views`. Reusing one worker removes
+/// all of it, and removes the repeated 64 MiB stack reservation with it.
+///
+/// Thread-local rather than threaded through the context: the saving is the
+/// same and the call sites keep their signatures. The worker parks on a
+/// channel receive between jobs, so an idle one costs no CPU, and dropping the
+/// sender when the calling thread ends closes the loop.
+struct Parser {
+    jobs: std::sync::mpsc::Sender<Job>,
+    replies: std::sync::mpsc::Receiver<Reply>,
+}
+
+impl Parser {
+    fn spawn() -> Result<Self, String> {
+        let (job_tx, job_rx) = std::sync::mpsc::channel::<Job>();
+        let (reply_tx, reply_rx) = std::sync::mpsc::channel::<Reply>();
+        std::thread::Builder::new()
+            .stack_size(PARSER_STACK_BYTES)
+            .name("sql-lineage-parser".to_string())
+            .spawn(move || {
+                // Ends when the sender is dropped, i.e. when the calling
+                // thread goes away.
+                while let Ok(job) = job_rx.recv() {
+                    let reply = match job {
+                        Job::Statements(entries) => Reply::Statements(
+                            entries
+                                .into_iter()
+                                .map(|entry| {
+                                    let sql = entry?;
+                                    polyglot_sql::parse(&sql, DialectType::BigQuery)
+                                        .map_err(|e| e.to_string())
+                                        .map(|stmts| {
+                                            stmts
+                                                .iter()
+                                                .map(|stmt| statement_facts(stmt, &sql))
+                                                .collect()
+                                        })
+                                })
+                                .collect(),
+                        ),
+                        Job::Select(sql) => Reply::Select(analyze_select_inner(&sql)),
+                    };
+                    if reply_tx.send(reply).is_err() {
+                        break; // the caller is gone
+                    }
+                }
+            })
+            .map_err(|e| format!("failed to spawn SQL parser thread: {}", e))?;
+        Ok(Parser {
+            jobs: job_tx,
+            replies: reply_rx,
+        })
+    }
+
+    fn run(&self, job: Job) -> Result<Reply, String> {
+        self.jobs
+            .send(job)
+            .map_err(|_| "SQL parser thread terminated unexpectedly".to_string())?;
+        self.replies
+            .recv()
+            .map_err(|_| "SQL parser thread terminated unexpectedly".to_string())
+    }
+}
+
+thread_local! {
+    /// `None` until first use, and `None` again if the worker could not be
+    /// spawned -- a parse that cannot reach a worker is reported, never
+    /// silently skipped.
+    static PARSER: std::cell::RefCell<Option<Parser>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Runs one job on this thread's parser worker, spawning it on first use.
+fn on_parser_thread(job: Job) -> Result<Reply, String> {
+    PARSER.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        if slot.is_none() {
+            *slot = Some(Parser::spawn()?);
+        }
+        let parser = slot.as_ref().expect("just filled");
+        let out = parser.run(job);
+        if out.is_err() {
+            // A dead worker must not poison every later call on this thread.
+            *slot = None;
+        }
+        out
+    })
 }
 
 /// Pre-flight guard shared by every parser entry point.
@@ -103,30 +194,20 @@ pub(crate) fn statement_facts_for_all(
         .map(|s| guard(s).map(|()| (*s).to_string()))
         .collect();
 
-    in_parser_thread(move || {
-        owned
-            .into_iter()
-            .map(|entry| {
-                let sql = entry?;
-                polyglot_sql::parse(&sql, DialectType::BigQuery)
-                    .map_err(|e| e.to_string())
-                    .map(|stmts| {
-                        stmts
-                            .iter()
-                            .map(|stmt| statement_facts(stmt, &sql))
-                            .collect()
-                    })
-            })
-            .collect()
-    })
-    .unwrap_or_else(|e| statements.iter().map(|_| Err(e.clone())).collect())
+    match on_parser_thread(Job::Statements(owned)) {
+        Ok(Reply::Statements(out)) => out,
+        Ok(Reply::Select(_)) => unreachable!("a Statements job answers Statements"),
+        Err(e) => statements.iter().map(|_| Err(e.clone())).collect(),
+    }
 }
 
 /// Analyzes a single SELECT-shaped statement for table + column facts.
 pub(crate) fn analyze_select(sql: &str) -> Result<SelectFacts, String> {
     guard(sql)?;
-    let owned = sql.to_string();
-    in_parser_thread(move || analyze_select_inner(&owned))?
+    match on_parser_thread(Job::Select(sql.to_string()))? {
+        Reply::Select(out) => out,
+        Reply::Statements(_) => unreachable!("a Select job answers Select"),
+    }
 }
 
 fn analyze_select_inner(sql: &str) -> Result<SelectFacts, String> {
