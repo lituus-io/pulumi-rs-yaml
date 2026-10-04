@@ -1,0 +1,2 @@
+Cdef fuzz_func(x):
+    return str(x).upper()

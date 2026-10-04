@@ -183,41 +183,82 @@ could not address the tail, so the bias would be silent. An empty alphabet is
 refused rather than looped over. That audit is itself a test, so an argument
 added later has somewhere to declare its bound.
 
-### A Starlark script that asks for a gigabyte gets it
+### `fuzz_starlark` was asserting a property that is not true
 
-`fuzz_starlark` reported an out-of-memory: 2202 MB against libFuzzer's 2048 MB
-limit, from `'   '*333333333`. That is a correct Starlark program, and the
-engine is doing what it was asked to do, so this is a finding about the harness
-rather than a defect in the crate -- but it cost a triage to establish that, and
-it would have cost one again on every weekly run, so it is written down here.
+The target fed arbitrary bytes to the `starlark:` block as a script and ran
+them. It reported an out-of-memory -- 2202 MB against libFuzzer's 2048 MB
+limit -- on `'   '*333333333`, which is a correct Starlark program run
+correctly. The engine was not at fault and neither was the input. The
+assertion was: that running an arbitrary script leaves the process alive. It
+does not, if the script says otherwise.
 
-There is no in-process remedy to reach for, which is the part worth recording.
-`starlark-rust` 0.13 exposes no heap limit -- there is no `set_max_*` on the
-evaluator and `Heap::alloc` is infallible, so there is nothing to check a return
-value against -- and the allocation happens inside ONE expression, where
-`str_type.rs` reaches `String::with_capacity(self.len() * l)` directly. A
-statement hook (`before_stmt_for_dap` is the only one offered) never fires
-between the multiplication and the reservation, and a wall-clock budget cannot
-either, because the memory is taken before any deadline could be observed. The
-script also comes from the `starlark:` block of the author's own program: an
-author who writes a gigabyte allocation has broken their own build and no one
-else's, which is a different risk class from the hostile text this target
-exists to probe.
+**Nothing in this process can refuse the allocation.** starlark-rust 0.13
+exposes no heap limit -- there is no `set_max_*` on the evaluator and
+`Heap::alloc` is infallible, so there is no failure to handle -- and the
+allocation happens inside ONE expression, where `str_type.rs` reaches
+`String::with_capacity(self.len() * l)` directly. The only hook offered is
+`before_stmt_for_dap`, which never fires between the multiplication and the
+reservation; a wall-clock budget cannot observe a deadline the memory is taken
+before; and an allocator returning null only moves the abort into
+`handle_alloc_error`.
 
-So the target skips a script that names an eight-digit-or-longer run of digits,
-or any `**`. The bound admits every constant a derivation helper plausibly holds
--- a year, a port, a timeout in milliseconds, `1048576` -- and refuses the
-repeat counts. It is a scan for a run of digits rather than a parse, so it costs
-one pass over the bytes and needs no Starlark grammar. It is deliberately a
-HARNESS heuristic and not an engine rule: a skipped input is merely untested, so
-being approximate is free here in a way it would not be in the crate. It is
-also knowingly incomplete -- a script can reach a large number without writing
-a large literal -- and the answer to a shape that slips through is the note
-above, not a cleverer filter.
+**Two lexical filters were tried, and both were wrong.** This is the part
+worth recording, because the first looked sufficient and passed a full run.
+Skipping a source that named a large numeric literal rejected the reproducer,
+and the target went green. The next run produced `'   '*3332323*3332323` --
+two literals under the bound, multiplied -- and AddressSanitizer refused a
+33 TB request. Widening the bound does not help either, because the growth
+needs no large literal at all: `s = 'x'` followed by
+`for _ in range(45): s = s + s` reaches the same size with two digits and no
+`*`. Source text cannot be screened for what it will allocate, so no filter
+is shipped.
 
-A step or fuel limit on `fn::starlark` is still owed and still out of scope; a
-`while True:` in an author's script appears to hang a render today. That wants
-its own change with its own security suite, not a line in this one.
+**And `compile` is not a parse.** It calls `eval_module`, which EXECUTES the
+module's top-level statements -- that is how the `def` becomes a binding. So
+an expression at the top level of an author's `starlark:` block runs when the
+program is loaded, whether or not `fn::starlark` is ever invoked. That is why
+handing arbitrary bytes to `compile` was never safe, and it sharpens the step
+limit still owed below: a bound has to cover module execution, not only a
+call.
+
+So the target is now split by what can hold each input safely:
+
+| half | input | property |
+|---|---|---|
+| template parser | arbitrary bytes | this crate's own parser, which evaluates nothing, must not panic or overflow the stack |
+| compile | hostile text inside a string LITERAL | the parser sees arbitrary text through a skeleton that cannot express an operator, so there is nothing for the module to compute |
+| call | hostile DATA through a fixed script | the value bridge must not panic in either direction, and must answer the same twice |
+| diagnostics | fixed scripts that fail | the four refusal paths, unreached once arbitrary bytes stop reaching the compiler |
+
+The data half is the realistic threat model, which the original target did not
+have: in a `Pulumi.yaml` the script is the author's own text, while the
+`input:` carries a config value or a resource output -- the part the author
+does not control. Fourteen fixed scripts cover every return type the bridge
+carries, a read of each input shape, an out-of-range index, a type error
+raised inside Starlark and a `fail()`; the fuzzer chooses the script by the
+first byte, so a reproducer stays tied to one, and supplies the data,
+including as an object KEY, which has its own conversion path.
+
+Writing the refusal half turned up a second behaviour worth pinning. Of seven
+scripts assumed not to compile, two do: `compile` keys the frozen module on
+the DECLARED name rather than on what the script defines, so a script defining
+`other`, or defining nothing at all, leaves `has_function("fuzz_func")`
+answering true and the mismatch surfacing at call time instead. The two cases
+are now asserted separately -- `NON_COMPILING` must be reported at compile
+time, `COMPILES_BUT_NOT_CALLABLE` must compile cleanly, claim the name, and
+report at the call -- so neither half can drift into the other unnoticed.
+
+What is given up is fuzzing the execution of arbitrary author text. That was
+never a property this engine could hold, and three findings in two runs are
+the proof. What is gained is that a finding from this target is a finding.
+
+The five corpus seeds are the shapes that defeated the filters, kept so the
+parser halves keep seeing them.
+
+A step or fuel limit on `fn::starlark` is still owed and still out of scope:
+an author's `while True:` appears to hang a render today, and by the above it
+can do so at load time rather than on invocation. That wants its own change
+with its own security suite.
 
 ### The weekly fuzz budget was too short to reach its own findings
 

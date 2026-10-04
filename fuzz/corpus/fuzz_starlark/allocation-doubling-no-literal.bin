@@ -1,0 +1,3 @@
+As = 'x'
+for _ in range(45):
+    s = s + s
