@@ -152,10 +152,17 @@ bounded the count.
 `statement_facts_for_all` parses a whole script on one worker, returning one
 result per statement in order so a caller can still fall back per statement.
 The isolation contract is unchanged: AST nodes never leave the worker, only
-owned fact structs. This is a cost REMOVED rather than a bound added -- a
-twenty-view program was paying twenty-odd thread spawns and as many 64 MiB
-stack reservations for no reason -- so `statement_facts_for` is deleted rather
-than kept beside it, and its three cases now run through the batch entry point.
+owned fact structs. `statement_facts_for` is deleted rather than kept beside
+it, and its three cases now run through the batch entry point.
+
+What this buys, stated honestly, because a first draft of this entry claimed
+more and the benchmark refused it: batching bounds the WITHIN-ONE-SOURCE
+amplification, which is the 65,000 above. It does not speed up the fleet's
+actual shape. A view holds one statement, so a twenty-view program makes twenty
+one-statement batches and the per-statement saving is zero -- which is why
+`sql_lineage_20_views` moved 3.423 ms -> 4.690 ms on this change plus the pin,
+and the gate was right to refuse it. The twenty-view cost is a thread per CALL,
+not per statement, and it is the next section that removes it.
 
 ### Author text shaped like a readFile marker is not the engine's
 
