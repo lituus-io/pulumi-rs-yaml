@@ -7,7 +7,7 @@ on:
     inputs:
       duration:
         description: 'Fuzz duration per target (seconds)'
-        default: '60'
+        default: '120'
         type: string
 
 permissions:
@@ -16,7 +16,9 @@ permissions:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   CARGO_TERM_COLOR: always
-  FUZZ_DURATION: ${{ inputs.duration || '60' }}
+  # 60s under-explored: three separate latent defects were found at 120s that
+  # the weekly run had never reached, one of them sitting unnoticed for days.
+  FUZZ_DURATION: ${{ inputs.duration || '120' }}
   # PINNED, and it has to be. cargo-fuzz requires nightly, and this job took
   # whatever nightly was current that morning — so every rustc change was a
   # coin flip on whether the week's fuzzing ran at all. It came up tails on

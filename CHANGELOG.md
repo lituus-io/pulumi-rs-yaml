@@ -219,6 +219,16 @@ A step or fuel limit on `fn::starlark` is still owed and still out of scope; a
 `while True:` in an author's script appears to hang a render today. That wants
 its own change with its own security suite, not a line in this one.
 
+### The weekly fuzz budget was too short to reach its own findings
+
+`FUZZ_DURATION` moves from 60 seconds to 120. Three separate latent defects
+were found at 120 seconds that the weekly run at 60 had never reached -- the
+non-terminating parse above among them, sitting unnoticed for days. A target
+that stops before it explores is a green check that means nothing, and doubling
+the budget is the cheapest available fix for that. The `workflow_dispatch`
+input default moves with it so a manual run explores as far as the scheduled
+one.
+
 ### Tests
 
 722 differential cases against a separate implementation of the algorithm,
