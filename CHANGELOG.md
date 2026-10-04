@@ -71,6 +71,54 @@ bound sits between them. Two independent implementations of the biased variant
 agreed on 0.1241 to five decimal places, which is how the threshold was chosen
 rather than guessed.
 
+### A ten-character query that never came back
+
+The `Fuzz` workflow reports `fuzz_sql_lineage` as a timeout on one run and an
+out-of-memory on the next. Both are the same thing: on
+`polyglot-sql` 0.6.2, `parse("CP.:q(nc:e", BigQuery)` **does not terminate**.
+Ten characters -- reduced from the 34 the fuzzer found, and a single unclosed
+paren after an identifier carrying both `.` and `:` is enough. Measured on the
+pipeline: flat RSS, 100% of a core, ten minutes and counting. The SQL reaching
+that parser is an author's `view.query`, so the input is untrusted by
+construction.
+
+The engine pin moves to 0.13.1, where the same input is reported as the parse
+error it always was, in 873us. 0.6.3 still hangs, so a patch bump is not the
+fix; the API cost of the seven-minor-version jump is one field, which is what
+keeping the integration in one file was for. The full suite passes unchanged --
+no lineage result moved, which was the risk worth checking rather than assuming.
+
+That field is `complexity_guard`, and it is set to `Some(..default())`
+deliberately. `None` disables every limit, which would be a silent fail-open.
+It bounds parser depth, AST depth and node count, parenthesis and function-call
+depth, token count and input size, all before an AST exists -- 600 levels of
+nesting are refused in 148us naming the limit and the value that exceeded it.
+Our own 1 MiB pre-flight stays, being stricter than the 16 MiB default and
+cheaper to check.
+
+A wall-clock budget was designed first and then rejected on a property the
+guard has and it does not: a refusal by input SHAPE is a deterministic function
+of the text, while a timeout depends on machine load -- and this target asserts
+that two exports of one input are identical, so a budget would have traded a
+hang for a flake. It would also have needed a detached thread burning a core,
+since a thread cannot be cancelled under `panic = "abort"`.
+
+### One parser thread for a script, not one per statement
+
+Found while reading the path the hang took, and ours rather than upstream's.
+`MAX_SQL_BYTES` bounds the TEXT at 1 MiB and `split_statements` drops only the
+EMPTY statements, so 1 MiB of `select 1 from t;` is about 65,000 non-empty
+statements -- and each one spawned a thread with a 64 MiB stack. Nothing
+bounded the count.
+
+`statement_facts_for_all` parses a whole script on one worker, returning one
+result per statement in order so a caller can still fall back per statement.
+The isolation contract is unchanged: AST nodes never leave the worker, only
+owned fact structs. This is a cost REMOVED rather than a bound added -- a
+twenty-view program was paying twenty-odd thread spawns and as many 64 MiB
+stack reservations for no reason -- so `statement_facts_for` is deleted rather
+than kept beside it, and its three cases now run through the batch entry point.
+
 ### Author text shaped like a readFile marker is not the engine's
 
 The scheduled fuzz run of 2026-09-30 failed `fuzz_string_filters` on the

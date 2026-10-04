@@ -18,7 +18,7 @@ pulumi-rs-yaml-proto = { path = "../pulumi-rs-yaml-proto" }
 # enabled: it grows the parser's stack dynamically, so deeply nested SQL
 # cannot overflow (verified to depth 500 in debug builds, where the default
 # stack overflowed around depth 14). It requires rustc >= 1.88.
-polyglot-sql = { version = "=0.6.2", default-features = false, features = [
+polyglot-sql = { version = "=0.13.1", default-features = false, features = [
     "dialect-bigquery",
     "semantic",
     "generate",
