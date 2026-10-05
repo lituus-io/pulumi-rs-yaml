@@ -103,7 +103,7 @@ fn trace(stage: usize) {
         return;
     }
     let n = COUNTS[stage].fetch_add(1, Ordering::Relaxed) + 1;
-    if stage == 0 && n % 500 == 0 {
+    if stage == 0 && n.is_multiple_of(500) {
         eprintln!(
             "TRACE generated={} parsed={} protected={} regions-checked={}",
             COUNTS[0].load(Ordering::Relaxed),
