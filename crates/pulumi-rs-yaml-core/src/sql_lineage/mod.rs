@@ -1227,9 +1227,13 @@ fn script_lineage(
         None => (None, None),
     };
     let statements = sql::split_statements(text);
+    // One parser thread for the whole script, not one per statement: nothing
+    // bounds how many statements a script has, and each used to cost a thread
+    // with a 64 MiB stack.
+    let parsed = sql::statement_facts_for_all(&statements);
     let mut any_parsed = false;
-    for stmt_text in &statements {
-        match sql::statement_facts_for(stmt_text) {
+    for (stmt_text, result) in statements.iter().zip(parsed) {
+        match result {
             Ok(all_facts) => {
                 any_parsed = true;
                 for facts in &all_facts {

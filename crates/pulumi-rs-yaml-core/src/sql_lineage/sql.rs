@@ -4,6 +4,7 @@
 //! lives here so an API bump touches one file. All functions degrade
 //! (returning `None`/empty + caller warnings) rather than erroring.
 
+use polyglot_sql::guard::ComplexityGuardOptions;
 use polyglot_sql::query_analysis::{analyze_query, AnalyzeQueryOptions};
 use polyglot_sql::{DialectType, Expression};
 
@@ -21,22 +22,113 @@ const MAX_SQL_BYTES: usize = 1024 * 1024;
 /// under `panic = "abort"` an overflow would abort the whole process.
 const PARSER_STACK_BYTES: usize = 64 * 1024 * 1024;
 
-/// Runs a parser closure on a thread with a large explicit stack.
+/// A parser job. An enum rather than a boxed closure: the worker is reused, so
+/// the work has to cross a channel, and the set of jobs is closed and small.
+/// It also keeps the isolation contract legible -- what crosses is listed here.
+enum Job {
+    /// Each entry is an owned statement, or the reason it was refused.
+    Statements(Vec<Result<String, String>>),
+    Select(String),
+}
+
+/// A parser answer. Only owned, `Send` fact structs -- parser AST nodes never
+/// leave the worker, which is the whole point of the boundary.
+enum Reply {
+    Statements(Vec<Result<Vec<StatementFacts>, String>>),
+    Select(Result<SelectFacts, String>),
+}
+
+/// One parser worker per calling thread, parked between jobs.
 ///
-/// Only owned, `Send` fact structs cross the boundary — parser AST nodes
-/// never escape the worker.
-fn in_parser_thread<T, F>(f: F) -> Result<T, String>
-where
-    T: Send + 'static,
-    F: FnOnce() -> T + Send + 'static,
-{
-    std::thread::Builder::new()
-        .stack_size(PARSER_STACK_BYTES)
-        .name("sql-lineage-parser".to_string())
-        .spawn(f)
-        .map_err(|e| format!("failed to spawn SQL parser thread: {}", e))?
-        .join()
-        .map_err(|_| "SQL parser thread terminated unexpectedly".to_string())
+/// A thread with a `PARSER_STACK_BYTES` stack used to be spawned PER CALL.
+/// Measured: 31.5us to spawn and join one, and a twenty-view program makes
+/// about forty such calls -- 1.26ms of pure thread churn, which was the
+/// largest single item in `sql_lineage_20_views`. Reusing one worker removes
+/// all of it, and removes the repeated 64 MiB stack reservation with it.
+///
+/// Thread-local rather than threaded through the context: the saving is the
+/// same and the call sites keep their signatures. The worker parks on a
+/// channel receive between jobs, so an idle one costs no CPU, and dropping the
+/// sender when the calling thread ends closes the loop.
+struct Parser {
+    jobs: std::sync::mpsc::Sender<Job>,
+    replies: std::sync::mpsc::Receiver<Reply>,
+}
+
+impl Parser {
+    fn spawn() -> Result<Self, String> {
+        let (job_tx, job_rx) = std::sync::mpsc::channel::<Job>();
+        let (reply_tx, reply_rx) = std::sync::mpsc::channel::<Reply>();
+        std::thread::Builder::new()
+            .stack_size(PARSER_STACK_BYTES)
+            .name("sql-lineage-parser".to_string())
+            .spawn(move || {
+                // Ends when the sender is dropped, i.e. when the calling
+                // thread goes away.
+                while let Ok(job) = job_rx.recv() {
+                    let reply = match job {
+                        Job::Statements(entries) => Reply::Statements(
+                            entries
+                                .into_iter()
+                                .map(|entry| {
+                                    let sql = entry?;
+                                    polyglot_sql::parse(&sql, DialectType::BigQuery)
+                                        .map_err(|e| e.to_string())
+                                        .map(|stmts| {
+                                            stmts
+                                                .iter()
+                                                .map(|stmt| statement_facts(stmt, &sql))
+                                                .collect()
+                                        })
+                                })
+                                .collect(),
+                        ),
+                        Job::Select(sql) => Reply::Select(analyze_select_inner(&sql)),
+                    };
+                    if reply_tx.send(reply).is_err() {
+                        break; // the caller is gone
+                    }
+                }
+            })
+            .map_err(|e| format!("failed to spawn SQL parser thread: {}", e))?;
+        Ok(Parser {
+            jobs: job_tx,
+            replies: reply_rx,
+        })
+    }
+
+    fn run(&self, job: Job) -> Result<Reply, String> {
+        self.jobs
+            .send(job)
+            .map_err(|_| "SQL parser thread terminated unexpectedly".to_string())?;
+        self.replies
+            .recv()
+            .map_err(|_| "SQL parser thread terminated unexpectedly".to_string())
+    }
+}
+
+thread_local! {
+    /// `None` until first use, and `None` again if the worker could not be
+    /// spawned -- a parse that cannot reach a worker is reported, never
+    /// silently skipped.
+    static PARSER: std::cell::RefCell<Option<Parser>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Runs one job on this thread's parser worker, spawning it on first use.
+fn on_parser_thread(job: Job) -> Result<Reply, String> {
+    PARSER.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        if slot.is_none() {
+            *slot = Some(Parser::spawn()?);
+        }
+        let parser = slot.as_ref().expect("just filled");
+        let out = parser.run(job);
+        if out.is_err() {
+            // A dead worker must not poison every later call on this thread.
+            *slot = None;
+        }
+        out
+    })
 }
 
 /// Pre-flight guard shared by every parser entry point.
@@ -72,34 +164,63 @@ pub(crate) struct SelectFacts {
     pub has_unexpanded_star: bool,
 }
 
-/// Parses and extracts table-level facts for one statement entirely
-/// inside the parser worker thread (AST never crosses the boundary).
-pub(crate) fn statement_facts_for(sql: &str) -> Result<Vec<StatementFacts>, String> {
-    guard(sql)?;
-    let owned = sql.to_string();
-    in_parser_thread(move || {
-        polyglot_sql::parse(&owned, DialectType::BigQuery)
-            .map_err(|e| e.to_string())
-            .map(|stmts| {
-                stmts
-                    .iter()
-                    .map(|stmt| statement_facts(stmt, &owned))
-                    .collect()
-            })
-    })?
+/// Table-level facts for EVERY statement of a script, on ONE parser thread.
+///
+/// The per-statement entry point spawned a thread -- with a
+/// `PARSER_STACK_BYTES` stack -- for each statement, and nothing bounds how
+/// many statements a script has: `MAX_SQL_BYTES` bounds the TEXT, and
+/// `split_statements` only drops the EMPTY ones, so 1 MiB of
+/// `select 1 from t;` is ~65,000 non-empty statements and so ~65,000 thread
+/// spawns at 64 MiB of stack reservation each.
+///
+/// Batching them removes that entirely: one spawn and one stack for a whole
+/// script, however many statements it holds. It is also strictly less work on
+/// every real stack -- a twenty-view program paid twenty-odd spawns for no
+/// reason -- so this is a cost removed rather than a bound bolted on.
+///
+/// Returns one result per input statement, in order, so a caller can still
+/// fall back per statement. The isolation contract is unchanged: parser AST
+/// nodes never leave the worker, only owned `Send` fact structs.
+pub(crate) fn statement_facts_for_all(
+    statements: &[&str],
+) -> Vec<Result<Vec<StatementFacts>, String>> {
+    if statements.is_empty() {
+        return Vec::new();
+    }
+    // Oversized statements are refused here rather than inside the worker, so
+    // the guard's verdict does not depend on where it is checked.
+    let owned: Vec<Result<String, String>> = statements
+        .iter()
+        .map(|s| guard(s).map(|()| (*s).to_string()))
+        .collect();
+
+    match on_parser_thread(Job::Statements(owned)) {
+        Ok(Reply::Statements(out)) => out,
+        Ok(Reply::Select(_)) => unreachable!("a Statements job answers Statements"),
+        Err(e) => statements.iter().map(|_| Err(e.clone())).collect(),
+    }
 }
 
 /// Analyzes a single SELECT-shaped statement for table + column facts.
 pub(crate) fn analyze_select(sql: &str) -> Result<SelectFacts, String> {
     guard(sql)?;
-    let owned = sql.to_string();
-    in_parser_thread(move || analyze_select_inner(&owned))?
+    match on_parser_thread(Job::Select(sql.to_string()))? {
+        Reply::Select(out) => out,
+        Reply::Statements(_) => unreachable!("a Select job answers Select"),
+    }
 }
 
 fn analyze_select_inner(sql: &str) -> Result<SelectFacts, String> {
     let analysis = analyze_query(
         sql,
         AnalyzeQueryOptions {
+            // EXPLICITLY Some. `None` disables every limit, and the limits are
+            // the whole reason this version is pinned: 0.6.2 did not terminate
+            // on `CP.:q(nc:e` -- ten characters of malformed SQL from an
+            // author-controlled `view.query`. The guard refuses by INPUT
+            // SHAPE, so a refusal is a deterministic function of the text,
+            // which a wall-clock budget could not be.
+            complexity_guard: Some(ComplexityGuardOptions::default()),
             dialect: DialectType::BigQuery,
             schema: None,
         },
@@ -339,6 +460,116 @@ fn strip_comments_and_strings(sql: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// The input the scheduled fuzz run found, which used to never return.
+    ///
+    /// `polyglot_sql::parse("CP.:q(nc:e", BigQuery)` did not terminate on
+    /// 0.6.2 -- ten characters, reduced from the 34 the fuzzer found, and a
+    /// single unclosed paren after an identifier carrying both `.` and `:` is
+    /// enough. The SQL reaching here comes from an author's `view.query`, so
+    /// it is untrusted by construction.
+    ///
+    /// 0.6.3 still hangs; 0.13.1 reports it as the parse error it always was.
+    /// A test that takes a second to fail is still a pass, so what is asserted
+    /// is that it RETURNS -- the bug was unboundedness, not a wrong answer.
+    ///
+    /// The fourth shape is a SECOND, independently found reproducer: the
+    /// weekly fuzz budget was raised to 120 seconds and the next run drew a
+    /// 25-byte input out of the same family -- a non-ASCII byte and a CRLF in
+    /// front, but the same identifier carrying `.` and `:` ahead of an
+    /// unclosed paren. Replayed here, 0.6.2 was still running after 90
+    /// seconds with resident memory climbing; 0.13.1 refuses it in 0.01s.
+    /// Two independent discoveries of one shape is why the pin is the fix
+    /// rather than a filter on the input.
+    #[test]
+    fn the_fuzz_found_input_terminates() {
+        for sql in [
+            "CP.:q(nc:e",
+            "ECP.:qrotableIdjrotedc((nc:e\n    ",
+            "CP.:q((nc:e",
+            "tgcabyamleId\u{ef}gcn.:em\r\n( ",
+        ] {
+            let r = one_statement(sql);
+            assert!(r.is_err(), "{sql:?} is malformed and must be refused");
+        }
+    }
+
+    /// The complexity guard is ENABLED. `complexity_guard: None` disables every
+    /// limit, so this pins that the analysis path refuses a pathological shape
+    /// rather than attempting it.
+    #[test]
+    fn a_pathological_nesting_depth_is_refused() {
+        let deep = format!("SELECT {}1{}", "(".repeat(600), ")".repeat(600));
+        let err = analyze_select(&deep).expect_err("600 levels must be refused");
+        assert!(
+            err.contains("GUARD") || err.to_lowercase().contains("depth"),
+            "the refusal should name the guard that fired, got {err:?}"
+        );
+    }
+
+    /// Valid SQL is unaffected by the guard -- the case that matters most,
+    /// since a guard that refused real queries would be worse than the hang.
+    #[test]
+    fn ordinary_sql_still_parses_under_the_guard() {
+        let facts = analyze_select("SELECT a.id, b.v FROM `p.d.t` a JOIN `p.d.u` b ON a.id = b.id")
+            .expect("ordinary SQL parses");
+        assert_eq!(
+            facts.reads.len(),
+            2,
+            "both tables are read: {:?}",
+            facts.reads
+        );
+    }
+
+    /// One parser thread for a whole script, not one per statement.
+    ///
+    /// Nothing bounds the statement count -- `MAX_SQL_BYTES` bounds the text
+    /// and `split_statements` only drops the EMPTY ones -- so the per-statement
+    /// entry point let 1 MiB of `select 1 from t;` demand ~65,000 thread
+    /// spawns at 64 MiB of stack each. Counted, not timed: the batch call
+    /// returns one result per statement from a single worker.
+    #[test]
+    fn a_whole_script_is_parsed_on_one_worker() {
+        let stmts: Vec<String> = (0..500)
+            .map(|i| format!("SELECT {i} FROM `p.d.t{i}`"))
+            .collect();
+        let refs: Vec<&str> = stmts.iter().map(String::as_str).collect();
+        let out = statement_facts_for_all(&refs);
+        assert_eq!(out.len(), refs.len(), "one result per statement, in order");
+        assert!(
+            out.iter().all(|r| r.is_ok()),
+            "every statement is ordinary SQL and must parse"
+        );
+    }
+
+    /// An oversized statement is refused per statement, so one bad statement
+    /// in a batch does not cost the others their results.
+    #[test]
+    fn one_oversized_statement_does_not_poison_the_batch() {
+        let big = "SELECT ".to_string() + &"a,".repeat(MAX_SQL_BYTES / 2 + 8) + "1";
+        let good = "SELECT 1 FROM `p.d.t`";
+        let out = statement_facts_for_all(&[good, big.as_str(), good]);
+        assert_eq!(out.len(), 3);
+        assert!(out[0].is_ok(), "{:?}", out[0]);
+        assert!(out[1].is_err(), "the oversized one is refused");
+        assert!(out[2].is_ok(), "{:?}", out[2]);
+    }
+
+    /// An empty batch spawns nothing at all.
+    #[test]
+    fn an_empty_batch_spawns_no_worker() {
+        assert!(statement_facts_for_all(&[]).is_empty());
+    }
+
+    /// One statement through the batch entry point, so these cases keep
+    /// reading as single-statement tests without a second implementation
+    /// existing to drift from it.
+    fn one_statement(sql: &str) -> Result<Vec<super::StatementFacts>, String> {
+        super::statement_facts_for_all(&[sql])
+            .into_iter()
+            .next()
+            .expect("one input yields one result")
+    }
+
     use super::*;
 
     #[test]
@@ -366,7 +597,7 @@ mod tests {
 
     #[test]
     fn statement_facts_insert_and_merge() {
-        let facts = statement_facts_for("INSERT INTO `p.mart.daily` SELECT dt FROM `p.raw.events`")
+        let facts = one_statement("INSERT INTO `p.mart.daily` SELECT dt FROM `p.raw.events`")
             .expect("parsed");
         assert_eq!(facts[0].writes, vec!["p.mart.daily"]);
         assert_eq!(facts[0].reads, vec!["p.raw.events"]);
@@ -375,7 +606,7 @@ mod tests {
     #[test]
     fn statement_facts_call() {
         let raw = "CALL `p.ds.refresh_mart`()";
-        if let Ok(facts) = statement_facts_for(raw) {
+        if let Ok(facts) = one_statement(raw) {
             if let Some(first) = facts.first() {
                 assert_eq!(first.calls, vec!["p.ds.refresh_mart"]);
                 return;
@@ -406,7 +637,7 @@ mod tests {
     #[test]
     fn oversized_sql_skipped() {
         let big = format!("SELECT '{}'", "x".repeat(MAX_SQL_BYTES));
-        assert!(statement_facts_for(&big).is_err());
+        assert!(one_statement(&big).is_err());
         assert!(analyze_select(&big).is_err());
     }
 

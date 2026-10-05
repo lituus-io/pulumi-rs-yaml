@@ -71,6 +71,99 @@ bound sits between them. Two independent implementations of the biased variant
 agreed on 0.1241 to five decimal places, which is how the threshold was chosen
 rather than guessed.
 
+### A ten-character query that never came back
+
+The `Fuzz` workflow reports `fuzz_sql_lineage` as a timeout on one run and an
+out-of-memory on the next. Both are the same thing: on
+`polyglot-sql` 0.6.2, `parse("CP.:q(nc:e", BigQuery)` **does not terminate**.
+Ten characters -- reduced from the 34 the fuzzer found, and a single unclosed
+paren after an identifier carrying both `.` and `:` is enough. Measured on the
+pipeline: flat RSS, 100% of a core, ten minutes and counting. The SQL reaching
+that parser is an author's `view.query`, so the input is untrusted by
+construction.
+
+The engine pin moves to 0.13.1, where the same input is reported as the parse
+error it always was, in 873us. The shape was then found a SECOND time,
+independently: the weekly fuzz budget was raised to 120 seconds and the next run
+drew a 25-byte input out of the same family -- a non-ASCII byte and a CRLF in
+front, the same identifier carrying `.` and `:` ahead of an unclosed paren.
+Replayed locally, 0.6.2 was still running after 90 seconds with resident memory
+climbing; 0.13.1 refuses it in 0.01s. Two independent discoveries of one shape
+is the reason the pin is the fix rather than a filter on the input, and both
+are now corpus seeds. 0.6.3 still hangs, so a patch bump is not the
+fix; the API cost of the seven-minor-version jump is one field, which is what
+keeping the integration in one file was for. The full suite passes unchanged --
+no lineage result moved, which was the risk worth checking rather than assuming.
+
+That field is `complexity_guard`, and it is set to `Some(..default())`
+deliberately. `None` disables every limit, which would be a silent fail-open.
+It bounds parser depth, AST depth and node count, parenthesis and function-call
+depth, token count and input size, all before an AST exists -- 600 levels of
+nesting are refused in 148us naming the limit and the value that exceeded it.
+Our own 1 MiB pre-flight stays, being stricter than the 16 MiB default and
+cheaper to check.
+
+A wall-clock budget was designed first and then rejected on a property the
+guard has and it does not: a refusal by input SHAPE is a deterministic function
+of the text, while a timeout depends on machine load -- and this target asserts
+that two exports of one input are identical, so a budget would have traded a
+hang for a flake. It would also have needed a detached thread burning a core,
+since a thread cannot be cancelled under `panic = "abort"`.
+
+### One parser worker, reused, instead of a thread per call
+
+A thread with a 64 MiB stack was spawned PER PARSER CALL. Measured: 31.5us to
+spawn and join one, and a twenty-view program makes about forty such calls --
+**1.26ms of pure thread churn**, which turned out to be the largest single item
+in `sql_lineage_20_views`. The worker is now one per calling thread, parked on
+a channel receive between jobs, so an idle one costs no CPU and the repeated
+64 MiB reservation is gone. `in_parser_thread` is deleted rather than kept
+beside it.
+
+Jobs cross as an explicit enum rather than a boxed closure -- there is no `dyn`
+in this crate -- which has the side benefit of making the isolation contract
+legible: `Reply` lists exactly what leaves the worker, and it is owned fact
+structs, never AST nodes. A worker that dies is cleared from its slot so one
+failure cannot poison every later call on that thread, and a parse that cannot
+reach a worker is reported rather than silently skipped.
+
+The numbers, and they are the reason this is in the same release as the pin:
+
+| | `sql_lineage_20_views` |
+|---|---|
+| before any of this (0.6.2, thread per call) | 3.423 ms |
+| 0.13.1 alone | 4.690 ms (+37%, and the gate refused it) |
+| 0.13.1 + reused worker | **2.077 ms (-39%)** |
+
+0.13.1 costs 1.9x more per call -- `analyze_query` 29.8us -> 56.3us, `parse`
+7.6us -> 13.5us, of which the guard is about a third -- and the path is still
+39% faster, because the churn was always the dominant term. It was being paid
+before this release too; nothing here created it, and the benchmark gate is
+what found it rather than any claim made for the change.
+
+### One parser thread for a script, not one per statement
+
+Found while reading the path the hang took, and ours rather than upstream's.
+`MAX_SQL_BYTES` bounds the TEXT at 1 MiB and `split_statements` drops only the
+EMPTY statements, so 1 MiB of `select 1 from t;` is about 65,000 non-empty
+statements -- and each one spawned a thread with a 64 MiB stack. Nothing
+bounded the count.
+
+`statement_facts_for_all` parses a whole script on one worker, returning one
+result per statement in order so a caller can still fall back per statement.
+The isolation contract is unchanged: AST nodes never leave the worker, only
+owned fact structs. `statement_facts_for` is deleted rather than kept beside
+it, and its three cases now run through the batch entry point.
+
+What this buys, stated honestly, because a first draft of this entry claimed
+more and the benchmark refused it: batching bounds the WITHIN-ONE-SOURCE
+amplification, which is the 65,000 above. It does not speed up the fleet's
+actual shape. A view holds one statement, so a twenty-view program makes twenty
+one-statement batches and the per-statement saving is zero -- which is why
+`sql_lineage_20_views` moved 3.423 ms -> 4.690 ms on this change plus the pin,
+and the gate was right to refuse it. The twenty-view cost is a thread per CALL,
+not per statement, and it is the next section that removes it.
+
 ### Author text shaped like a readFile marker is not the engine's
 
 The scheduled fuzz run of 2026-09-30 failed `fuzz_string_filters` on the
