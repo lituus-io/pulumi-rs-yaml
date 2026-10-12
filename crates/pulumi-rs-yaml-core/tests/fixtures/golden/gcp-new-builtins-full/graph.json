@@ -1,0 +1,203 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "gcp-new-builtins-full",
+  "stack": "golden",
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-new-builtins-full/golden::absVal",
+      "kind": "output",
+      "logical_name": "absVal",
+      "name": "absVal",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-new-builtins-full",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-new-builtins-full/golden::bucketName",
+      "kind": "output",
+      "logical_name": "bucketName",
+      "name": "bucketName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-new-builtins-full",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-new-builtins-full/golden::ceilVal",
+      "kind": "output",
+      "logical_name": "ceilVal",
+      "name": "ceilVal",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-new-builtins-full",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-new-builtins-full/golden::currentTime",
+      "kind": "output",
+      "logical_name": "currentTime",
+      "name": "currentTime",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-new-builtins-full",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-new-builtins-full/golden::floorVal",
+      "kind": "output",
+      "logical_name": "floorVal",
+      "name": "floorVal",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-new-builtins-full",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-new-builtins-full/golden::formattedDate",
+      "kind": "output",
+      "logical_name": "formattedDate",
+      "name": "formattedDate",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-new-builtins-full",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-new-builtins-full/golden::maxVal",
+      "kind": "output",
+      "logical_name": "maxVal",
+      "name": "maxVal",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-new-builtins-full",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-new-builtins-full/golden::minVal",
+      "kind": "output",
+      "logical_name": "minVal",
+      "name": "minVal",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-new-builtins-full",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-new-builtins-full/golden::nameLen",
+      "kind": "output",
+      "logical_name": "nameLen",
+      "name": "nameLen",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-new-builtins-full",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-new-builtins-full/golden::nameSubstr",
+      "kind": "output",
+      "logical_name": "nameSubstr",
+      "name": "nameSubstr",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-new-builtins-full",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-new-builtins-full/golden::randomSuffix",
+      "kind": "output",
+      "logical_name": "randomSuffix",
+      "name": "randomSuffix",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-new-builtins-full",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-new-builtins-full/golden::uniqueId",
+      "kind": "output",
+      "logical_name": "uniqueId",
+      "name": "uniqueId",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-new-builtins-full",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-new-builtins-full/golden::unixTime",
+      "kind": "output",
+      "logical_name": "unixTime",
+      "name": "unixTime",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-new-builtins-full",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-new-builtins-full::gcp:storage/bucket:Bucket::builtinBucket",
+      "kind": "resource",
+      "logical_name": "builtinBucket",
+      "name": "builtinBucket",
+      "type_token": "gcp:storage/bucket:Bucket",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "name": "new-builtins-full-test",
+        "uniformBucketLevelAccess": "true"
+      },
+      "organization": "org",
+      "project": "gcp-new-builtins-full",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-new-builtins-full::pulumi:pulumi:Stack::gcp-new-builtins-full-golden",
+      "kind": "stack",
+      "logical_name": "stack",
+      "name": "gcp-new-builtins-full-golden",
+      "type_token": "pulumi:pulumi:Stack",
+      "package": "pulumi",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-new-builtins-full",
+      "stack": "golden"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "stackoutput::org/gcp-new-builtins-full/golden::bucketName",
+      "target_id": "urn:pulumi:golden::gcp-new-builtins-full::gcp:storage/bucket:Bucket::builtinBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "bucketName"
+      ],
+      "organization": "org",
+      "project": "gcp-new-builtins-full",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-new-builtins-full::pulumi:pulumi:Stack::gcp-new-builtins-full-golden",
+      "target_id": "urn:pulumi:golden::gcp-new-builtins-full::gcp:storage/bucket:Bucket::builtinBucket",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-new-builtins-full",
+      "stack": "golden"
+    }
+  ]
+}

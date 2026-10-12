@@ -1,0 +1,208 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "gcp-parent-resource-test",
+  "stack": "golden",
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-parent-resource-test/golden::childObjectName",
+      "kind": "output",
+      "logical_name": "childObjectName",
+      "name": "childObjectName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-parent-resource-test/golden::parentBucketName",
+      "kind": "output",
+      "logical_name": "parentBucketName",
+      "name": "parentBucketName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-parent-resource-test/golden::siblingObjectName",
+      "kind": "output",
+      "logical_name": "siblingObjectName",
+      "name": "siblingObjectName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::childObject",
+      "kind": "resource",
+      "logical_name": "childObject",
+      "name": "childObject",
+      "type_token": "gcp:storage/bucketObject:BucketObject",
+      "package": "gcp",
+      "parent_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket::parentBucket",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "content": "I am a child of parentBucket",
+        "name": "child-object.txt"
+      },
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::siblingObject",
+      "kind": "resource",
+      "logical_name": "siblingObject",
+      "name": "siblingObject",
+      "type_token": "gcp:storage/bucketObject:BucketObject",
+      "package": "gcp",
+      "parent_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket::parentBucket",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "content": "I am a sibling under the same parent",
+        "name": "sibling-object.txt"
+      },
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket::parentBucket",
+      "kind": "resource",
+      "logical_name": "parentBucket",
+      "name": "parentBucket",
+      "type_token": "gcp:storage/bucket:Bucket",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "labels.role": "parent",
+        "location": "US",
+        "name": "parent-resource-test-parent",
+        "uniformBucketLevelAccess": "true"
+      },
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-parent-resource-test::pulumi:pulumi:Stack::gcp-parent-resource-test-golden",
+      "kind": "stack",
+      "logical_name": "stack",
+      "name": "gcp-parent-resource-test-golden",
+      "type_token": "pulumi:pulumi:Stack",
+      "package": "pulumi",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "stack": "golden"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "stackoutput::org/gcp-parent-resource-test/golden::childObjectName",
+      "target_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::childObject",
+      "relationship": "exports",
+      "property_paths": [
+        "childObjectName"
+      ],
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "stackoutput::org/gcp-parent-resource-test/golden::parentBucketName",
+      "target_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket::parentBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "parentBucketName"
+      ],
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "stackoutput::org/gcp-parent-resource-test/golden::siblingObjectName",
+      "target_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::siblingObject",
+      "relationship": "exports",
+      "property_paths": [
+        "siblingObjectName"
+      ],
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::childObject",
+      "target_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket::parentBucket",
+      "relationship": "references",
+      "property_paths": [
+        "bucket"
+      ],
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::childObject",
+      "target_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket::parentBucket",
+      "relationship": "depends_on",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::childObject",
+      "target_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket::parentBucket",
+      "relationship": "parent",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::siblingObject",
+      "target_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket::parentBucket",
+      "relationship": "references",
+      "property_paths": [
+        "bucket"
+      ],
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::siblingObject",
+      "target_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket::parentBucket",
+      "relationship": "depends_on",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::siblingObject",
+      "target_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket::parentBucket",
+      "relationship": "parent",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-parent-resource-test::pulumi:pulumi:Stack::gcp-parent-resource-test-golden",
+      "target_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket::parentBucket",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "stack": "golden"
+    }
+  ]
+}

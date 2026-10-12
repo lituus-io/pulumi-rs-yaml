@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "graph-bq-dataset",
+  "stack": "golden",
+  "nodes": [
+    {
+      "id": "bq://golden-gcp",
+      "kind": "project",
+      "name": "golden-gcp",
+      "bq_project": "golden-gcp",
+      "organization": "org",
+      "project": "graph-bq-dataset",
+      "stack": "golden"
+    },
+    {
+      "id": "bq://golden-gcp/pulumi_rs_graph_test",
+      "kind": "dataset",
+      "name": "pulumi_rs_graph_test",
+      "bq_project": "golden-gcp",
+      "dataset": "pulumi_rs_graph_test",
+      "defined_by_urn": "urn:pulumi:golden::graph-bq-dataset::gcp:bigquery/dataset:Dataset::dataset",
+      "source_file": "Pulumi.yaml",
+      "organization": "org",
+      "project": "graph-bq-dataset",
+      "stack": "golden"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "bq://golden-gcp",
+      "target_id": "bq://golden-gcp/pulumi_rs_graph_test",
+      "relationship": "contains",
+      "resolution": "structural",
+      "organization": "org",
+      "project": "graph-bq-dataset",
+      "stack": "golden"
+    },
+    {
+      "source_id": "bq://golden-gcp/pulumi_rs_graph_test",
+      "target_id": "urn:pulumi:golden::graph-bq-dataset::gcp:bigquery/dataset:Dataset::dataset",
+      "relationship": "defined_by",
+      "resolution": "structural",
+      "organization": "org",
+      "project": "graph-bq-dataset",
+      "stack": "golden"
+    }
+  ]
+}

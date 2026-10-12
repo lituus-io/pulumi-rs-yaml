@@ -1,0 +1,145 @@
+{
+  "edges": [
+    {
+      "organization": "org",
+      "project": "new-builtins",
+      "property_paths": [
+        "bucketName"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/new-builtins/golden::bucketName",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::new-builtins::gcp:storage/bucket:Bucket::builtinBucket"
+    },
+    {
+      "organization": "org",
+      "project": "new-builtins",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::new-builtins::pulumi:pulumi:Stack::new-builtins-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::new-builtins::gcp:storage/bucket:Bucket::builtinBucket"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "stackoutput::org/new-builtins/golden::absResult",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "absResult",
+      "name": "absResult",
+      "organization": "org",
+      "project": "new-builtins",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/new-builtins/golden::bucketName",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "bucketName",
+      "name": "bucketName",
+      "organization": "org",
+      "project": "new-builtins",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/new-builtins/golden::ceilResult",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "ceilResult",
+      "name": "ceilResult",
+      "organization": "org",
+      "project": "new-builtins",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/new-builtins/golden::floorResult",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "floorResult",
+      "name": "floorResult",
+      "organization": "org",
+      "project": "new-builtins",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/new-builtins/golden::maxResult",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "maxResult",
+      "name": "maxResult",
+      "organization": "org",
+      "project": "new-builtins",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/new-builtins/golden::minResult",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "minResult",
+      "name": "minResult",
+      "organization": "org",
+      "project": "new-builtins",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/new-builtins/golden::strLen",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "strLen",
+      "name": "strLen",
+      "organization": "org",
+      "project": "new-builtins",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::new-builtins::gcp:storage/bucket:Bucket::builtinBucket",
+      "kind": "resource",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "name": "new-builtins-test-bucket",
+        "uniformBucketLevelAccess": "true"
+      },
+      "logical_name": "builtinBucket",
+      "name": "builtinBucket",
+      "organization": "org",
+      "package": "gcp",
+      "project": "new-builtins",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucket:Bucket"
+    },
+    {
+      "id": "urn:pulumi:golden::new-builtins::pulumi:pulumi:Stack::new-builtins-golden",
+      "kind": "stack",
+      "literal_properties": {},
+      "logical_name": "stack",
+      "name": "new-builtins-golden",
+      "organization": "org",
+      "package": "pulumi",
+      "project": "new-builtins",
+      "stack": "golden",
+      "type_token": "pulumi:pulumi:Stack"
+    }
+  ],
+  "organization": "org",
+  "project": "new-builtins",
+  "schema_version": 1,
+  "sql_lineage": {
+    "edges": [],
+    "nodes": [],
+    "organization": "org",
+    "project": "new-builtins",
+    "schema_version": 1,
+    "stack": "golden"
+  },
+  "stack": "golden"
+}

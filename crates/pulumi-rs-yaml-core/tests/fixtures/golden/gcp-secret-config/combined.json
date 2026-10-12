@@ -1,0 +1,112 @@
+{
+  "edges": [
+    {
+      "organization": "org",
+      "project": "gcp-secret-config-test",
+      "property_paths": [
+        "bucketName"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-secret-config-test/golden::bucketName",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-secret-config-test::gcp:storage/bucket:Bucket::secretBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-secret-config-test",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::gcp-secret-config-test::pulumi:pulumi:Stack::gcp-secret-config-test-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-secret-config-test::gcp:storage/bucket:Bucket::secretBucket"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-secret-config-test/golden::bucketName",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "bucketName",
+      "name": "bucketName",
+      "organization": "org",
+      "project": "gcp-secret-config-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-secret-config-test/golden::configJson",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "configJson",
+      "name": "configJson",
+      "organization": "org",
+      "project": "gcp-secret-config-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-secret-config-test/golden::secretApiKey",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "secretApiKey",
+      "name": "secretApiKey",
+      "organization": "org",
+      "project": "gcp-secret-config-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-secret-config-test/golden::secretPassword",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "secretPassword",
+      "name": "secretPassword",
+      "organization": "org",
+      "project": "gcp-secret-config-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-secret-config-test::gcp:storage/bucket:Bucket::secretBucket",
+      "kind": "resource",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "labels.test": "secret-config",
+        "location": "US",
+        "uniformBucketLevelAccess": "true"
+      },
+      "logical_name": "secretBucket",
+      "name": "secretBucket",
+      "organization": "org",
+      "package": "gcp",
+      "project": "gcp-secret-config-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucket:Bucket"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-secret-config-test::pulumi:pulumi:Stack::gcp-secret-config-test-golden",
+      "kind": "stack",
+      "literal_properties": {},
+      "logical_name": "stack",
+      "name": "gcp-secret-config-test-golden",
+      "organization": "org",
+      "package": "pulumi",
+      "project": "gcp-secret-config-test",
+      "stack": "golden",
+      "type_token": "pulumi:pulumi:Stack"
+    }
+  ],
+  "organization": "org",
+  "project": "gcp-secret-config-test",
+  "schema_version": 1,
+  "sql_lineage": {
+    "edges": [],
+    "nodes": [],
+    "organization": "org",
+    "project": "gcp-secret-config-test",
+    "schema_version": 1,
+    "stack": "golden"
+  },
+  "stack": "golden"
+}

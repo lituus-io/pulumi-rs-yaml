@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "gcp-cross-file-dag",
+  "stack": "golden",
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-cross-file-dag/golden::storageBucketName",
+      "kind": "output",
+      "logical_name": "storageBucketName",
+      "name": "storageBucketName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-cross-file-dag",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-cross-file-dag/golden::storageBucketUrl",
+      "kind": "output",
+      "logical_name": "storageBucketUrl",
+      "name": "storageBucketUrl",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-cross-file-dag",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-cross-file-dag/golden::tableBucketName",
+      "kind": "output",
+      "logical_name": "tableBucketName",
+      "name": "tableBucketName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-cross-file-dag",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-cross-file-dag::gcp:storage/bucket:Bucket::storageBucket",
+      "kind": "resource",
+      "logical_name": "storageBucket",
+      "name": "storageBucket",
+      "type_token": "gcp:storage/bucket:Bucket",
+      "package": "gcp",
+      "source_file": "Pulumi.storage.yaml",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "labels.layer": "storage",
+        "location": "US",
+        "name": "cross-dag-storage",
+        "uniformBucketLevelAccess": "true"
+      },
+      "organization": "org",
+      "project": "gcp-cross-file-dag",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-cross-file-dag::gcp:storage/bucket:Bucket::tableBucket",
+      "kind": "resource",
+      "logical_name": "tableBucket",
+      "name": "tableBucket",
+      "type_token": "gcp:storage/bucket:Bucket",
+      "package": "gcp",
+      "source_file": "Pulumi.tables.yaml",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "labels.layer": "tables",
+        "location": "US",
+        "name": "cross-dag-tables",
+        "uniformBucketLevelAccess": "true"
+      },
+      "organization": "org",
+      "project": "gcp-cross-file-dag",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-cross-file-dag::pulumi:pulumi:Stack::gcp-cross-file-dag-golden",
+      "kind": "stack",
+      "logical_name": "stack",
+      "name": "gcp-cross-file-dag-golden",
+      "type_token": "pulumi:pulumi:Stack",
+      "package": "pulumi",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-cross-file-dag",
+      "stack": "golden"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "stackoutput::org/gcp-cross-file-dag/golden::storageBucketName",
+      "target_id": "urn:pulumi:golden::gcp-cross-file-dag::gcp:storage/bucket:Bucket::storageBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "storageBucketName"
+      ],
+      "organization": "org",
+      "project": "gcp-cross-file-dag",
+      "stack": "golden"
+    },
+    {
+      "source_id": "stackoutput::org/gcp-cross-file-dag/golden::storageBucketUrl",
+      "target_id": "urn:pulumi:golden::gcp-cross-file-dag::gcp:storage/bucket:Bucket::storageBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "storageBucketUrl"
+      ],
+      "organization": "org",
+      "project": "gcp-cross-file-dag",
+      "stack": "golden"
+    },
+    {
+      "source_id": "stackoutput::org/gcp-cross-file-dag/golden::tableBucketName",
+      "target_id": "urn:pulumi:golden::gcp-cross-file-dag::gcp:storage/bucket:Bucket::tableBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "tableBucketName"
+      ],
+      "organization": "org",
+      "project": "gcp-cross-file-dag",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-cross-file-dag::gcp:storage/bucket:Bucket::tableBucket",
+      "target_id": "urn:pulumi:golden::gcp-cross-file-dag::gcp:storage/bucket:Bucket::storageBucket",
+      "relationship": "references",
+      "property_paths": [
+        "labels"
+      ],
+      "organization": "org",
+      "project": "gcp-cross-file-dag",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-cross-file-dag::gcp:storage/bucket:Bucket::tableBucket",
+      "target_id": "urn:pulumi:golden::gcp-cross-file-dag::gcp:storage/bucket:Bucket::storageBucket",
+      "relationship": "depends_on",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-cross-file-dag",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-cross-file-dag::pulumi:pulumi:Stack::gcp-cross-file-dag-golden",
+      "target_id": "urn:pulumi:golden::gcp-cross-file-dag::gcp:storage/bucket:Bucket::storageBucket",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-cross-file-dag",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-cross-file-dag::pulumi:pulumi:Stack::gcp-cross-file-dag-golden",
+      "target_id": "urn:pulumi:golden::gcp-cross-file-dag::gcp:storage/bucket:Bucket::tableBucket",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-cross-file-dag",
+      "stack": "golden"
+    }
+  ]
+}

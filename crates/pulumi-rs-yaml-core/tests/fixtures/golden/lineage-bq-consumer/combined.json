@@ -1,0 +1,257 @@
+{
+  "edges": [
+    {
+      "organization": "org",
+      "project": "lineage-bq-consumer",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::lineage-bq-consumer::pulumi:pulumi:Stack::lineage-bq-consumer-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-consumer::gcp:bigquery/table:Table::boostedView"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "urn:pulumi:golden::lineage-bq-consumer::gcp:bigquery/table:Table::boostedView",
+      "kind": "resource",
+      "literal_properties": {
+        "datasetId": "pulumi_rs_lineage_test",
+        "deletionProtection": "false",
+        "project": "golden-gcp",
+        "tableId": "boosted_view",
+        "view.query": "SELECT r.order_id, r.revenue * 2 AS boosted FROM `golden-gcp.pulumi_rs_lineage_test.revenue_view` r",
+        "view.useLegacySql": "false"
+      },
+      "logical_name": "boostedView",
+      "name": "boostedView",
+      "organization": "org",
+      "package": "gcp",
+      "project": "lineage-bq-consumer",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/table:Table"
+    },
+    {
+      "id": "urn:pulumi:golden::lineage-bq-consumer::pulumi:pulumi:Stack::lineage-bq-consumer-golden",
+      "kind": "stack",
+      "literal_properties": {},
+      "logical_name": "stack",
+      "name": "lineage-bq-consumer-golden",
+      "organization": "org",
+      "package": "pulumi",
+      "project": "lineage-bq-consumer",
+      "stack": "golden",
+      "type_token": "pulumi:pulumi:Stack"
+    }
+  ],
+  "organization": "org",
+  "project": "lineage-bq-consumer",
+  "schema_version": 1,
+  "sql_lineage": {
+    "edges": [
+      {
+        "organization": "org",
+        "project": "lineage-bq-consumer",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_test"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-consumer",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_test",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_test/boosted_view"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-consumer",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_test",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_test/revenue_view"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-consumer",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_test/boosted_view",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_test/boosted_view#boosted"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-consumer",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_test/boosted_view",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_test/boosted_view#order_id"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-consumer",
+        "relationship": "derives_from",
+        "resolution": "parsed",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_test/boosted_view",
+        "sql_provenance": "inline",
+        "sql_role": "view",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_test/revenue_view"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-consumer",
+        "relationship": "defined_by",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_test/boosted_view",
+        "stack": "golden",
+        "target_id": "urn:pulumi:golden::lineage-bq-consumer::gcp:bigquery/table:Table::boostedView"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-consumer",
+        "relationship": "column_derives_from",
+        "resolution": "parsed",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_test/boosted_view#boosted",
+        "sql_provenance": "inline",
+        "sql_role": "view",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_test/revenue_view#revenue"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-consumer",
+        "relationship": "column_derives_from",
+        "resolution": "parsed",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_test/boosted_view#order_id",
+        "sql_provenance": "inline",
+        "sql_role": "view",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_test/revenue_view#order_id"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-consumer",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_test/revenue_view",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_test/revenue_view#order_id"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-consumer",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_test/revenue_view",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_test/revenue_view#revenue"
+      }
+    ],
+    "nodes": [
+      {
+        "bq_project": "golden-gcp",
+        "id": "bq://golden-gcp",
+        "kind": "project",
+        "name": "golden-gcp",
+        "organization": "org",
+        "project": "lineage-bq-consumer",
+        "stack": "golden"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "dataset": "pulumi_rs_lineage_test",
+        "id": "bq://golden-gcp/pulumi_rs_lineage_test",
+        "kind": "dataset",
+        "name": "pulumi_rs_lineage_test",
+        "organization": "org",
+        "project": "lineage-bq-consumer",
+        "stack": "golden"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "dataset": "pulumi_rs_lineage_test",
+        "defined_by_urn": "urn:pulumi:golden::lineage-bq-consumer::gcp:bigquery/table:Table::boostedView",
+        "id": "bq://golden-gcp/pulumi_rs_lineage_test/boosted_view",
+        "kind": "view",
+        "name": "boosted_view",
+        "organization": "org",
+        "project": "lineage-bq-consumer",
+        "source_file": "Pulumi.yaml",
+        "stack": "golden",
+        "table": "boosted_view"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "column": "boosted",
+        "dataset": "pulumi_rs_lineage_test",
+        "id": "bq://golden-gcp/pulumi_rs_lineage_test/boosted_view#boosted",
+        "kind": "column",
+        "name": "boosted",
+        "organization": "org",
+        "project": "lineage-bq-consumer",
+        "stack": "golden",
+        "table": "boosted_view"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "column": "order_id",
+        "dataset": "pulumi_rs_lineage_test",
+        "id": "bq://golden-gcp/pulumi_rs_lineage_test/boosted_view#order_id",
+        "kind": "column",
+        "name": "order_id",
+        "organization": "org",
+        "project": "lineage-bq-consumer",
+        "stack": "golden",
+        "table": "boosted_view"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "dataset": "pulumi_rs_lineage_test",
+        "id": "bq://golden-gcp/pulumi_rs_lineage_test/revenue_view",
+        "kind": "table",
+        "name": "revenue_view",
+        "organization": "org",
+        "project": "lineage-bq-consumer",
+        "stack": "golden",
+        "table": "revenue_view"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "column": "order_id",
+        "dataset": "pulumi_rs_lineage_test",
+        "id": "bq://golden-gcp/pulumi_rs_lineage_test/revenue_view#order_id",
+        "kind": "column",
+        "name": "order_id",
+        "organization": "org",
+        "project": "lineage-bq-consumer",
+        "stack": "golden",
+        "table": "revenue_view"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "column": "revenue",
+        "dataset": "pulumi_rs_lineage_test",
+        "id": "bq://golden-gcp/pulumi_rs_lineage_test/revenue_view#revenue",
+        "kind": "column",
+        "name": "revenue",
+        "organization": "org",
+        "project": "lineage-bq-consumer",
+        "stack": "golden",
+        "table": "revenue_view"
+      }
+    ],
+    "organization": "org",
+    "project": "lineage-bq-consumer",
+    "schema_version": 1,
+    "stack": "golden"
+  },
+  "stack": "golden"
+}

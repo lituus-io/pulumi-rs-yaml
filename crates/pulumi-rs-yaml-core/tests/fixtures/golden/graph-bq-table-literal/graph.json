@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "graph-bq-table-literal",
+  "stack": "golden",
+  "nodes": [
+    {
+      "id": "urn:pulumi:golden::graph-bq-table-literal::gcp:bigquery/table:Table::eventsTable",
+      "kind": "resource",
+      "logical_name": "eventsTable",
+      "name": "eventsTable",
+      "type_token": "gcp:bigquery/table:Table",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "datasetId": "pulumi_rs_graph_test",
+        "deletionProtection": "false",
+        "project": "golden-gcp",
+        "schema": "[{\"name\":\"id\",\"type\":\"STRING\"},{\"name\":\"ts\",\"type\":\"TIMESTAMP\"}]",
+        "tableId": "events"
+      },
+      "organization": "org",
+      "project": "graph-bq-table-literal",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-bq-table-literal::pulumi:pulumi:Stack::graph-bq-table-literal-golden",
+      "kind": "stack",
+      "logical_name": "stack",
+      "name": "graph-bq-table-literal-golden",
+      "type_token": "pulumi:pulumi:Stack",
+      "package": "pulumi",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "graph-bq-table-literal",
+      "stack": "golden"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "urn:pulumi:golden::graph-bq-table-literal::pulumi:pulumi:Stack::graph-bq-table-literal-golden",
+      "target_id": "urn:pulumi:golden::graph-bq-table-literal::gcp:bigquery/table:Table::eventsTable",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "graph-bq-table-literal",
+      "stack": "golden"
+    }
+  ]
+}

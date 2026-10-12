@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "gcp-bucket-test",
+  "stack": "golden",
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-bucket-test/golden::bucketName",
+      "kind": "output",
+      "logical_name": "bucketName",
+      "name": "bucketName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-bucket-test",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-bucket-test/golden::bucketSelfLink",
+      "kind": "output",
+      "logical_name": "bucketSelfLink",
+      "name": "bucketSelfLink",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-bucket-test",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-bucket-test/golden::bucketUrl",
+      "kind": "output",
+      "logical_name": "bucketUrl",
+      "name": "bucketUrl",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-bucket-test",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-bucket-test::gcp:storage/bucket:Bucket::testBucket",
+      "kind": "resource",
+      "logical_name": "testBucket",
+      "name": "testBucket",
+      "type_token": "gcp:storage/bucket:Bucket",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "name": "pulumi-rs-yaml-acceptance-test-bucket",
+        "uniformBucketLevelAccess": "true"
+      },
+      "organization": "org",
+      "project": "gcp-bucket-test",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-bucket-test::pulumi:pulumi:Stack::gcp-bucket-test-golden",
+      "kind": "stack",
+      "logical_name": "stack",
+      "name": "gcp-bucket-test-golden",
+      "type_token": "pulumi:pulumi:Stack",
+      "package": "pulumi",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-bucket-test",
+      "stack": "golden"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "stackoutput::org/gcp-bucket-test/golden::bucketName",
+      "target_id": "urn:pulumi:golden::gcp-bucket-test::gcp:storage/bucket:Bucket::testBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "bucketName"
+      ],
+      "organization": "org",
+      "project": "gcp-bucket-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "stackoutput::org/gcp-bucket-test/golden::bucketSelfLink",
+      "target_id": "urn:pulumi:golden::gcp-bucket-test::gcp:storage/bucket:Bucket::testBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "bucketSelfLink"
+      ],
+      "organization": "org",
+      "project": "gcp-bucket-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "stackoutput::org/gcp-bucket-test/golden::bucketUrl",
+      "target_id": "urn:pulumi:golden::gcp-bucket-test::gcp:storage/bucket:Bucket::testBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "bucketUrl"
+      ],
+      "organization": "org",
+      "project": "gcp-bucket-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-bucket-test::pulumi:pulumi:Stack::gcp-bucket-test-golden",
+      "target_id": "urn:pulumi:golden::gcp-bucket-test::gcp:storage/bucket:Bucket::testBucket",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-bucket-test",
+      "stack": "golden"
+    }
+  ]
+}

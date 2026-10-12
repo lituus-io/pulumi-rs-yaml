@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "gcp-interpolation",
+  "stack": "golden",
+  "nodes": [],
+  "edges": []
+}

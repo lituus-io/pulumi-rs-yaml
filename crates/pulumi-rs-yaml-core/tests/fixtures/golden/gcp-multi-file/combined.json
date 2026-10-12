@@ -1,0 +1,230 @@
+{
+  "edges": [
+    {
+      "organization": "org",
+      "project": "gcp-multi-file-test",
+      "property_paths": [
+        "archiveBucketName"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-multi-file-test/golden::archiveBucketName",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-multi-file-test::gcp:storage/bucket:Bucket::archiveBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-multi-file-test",
+      "property_paths": [
+        "logBucketName"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-multi-file-test/golden::logBucketName",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-multi-file-test::gcp:storage/bucket:Bucket::logBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-multi-file-test",
+      "property_paths": [
+        "logBucketUrl"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-multi-file-test/golden::logBucketUrl",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-multi-file-test::gcp:storage/bucket:Bucket::logBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-multi-file-test",
+      "property_paths": [
+        "storageBucketName"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-multi-file-test/golden::storageBucketName",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-multi-file-test::gcp:storage/bucket:Bucket::storageBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-multi-file-test",
+      "property_paths": [
+        "storageBucketUrl"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-multi-file-test/golden::storageBucketUrl",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-multi-file-test::gcp:storage/bucket:Bucket::storageBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-multi-file-test",
+      "property_paths": [],
+      "relationship": "depends_on",
+      "source_id": "urn:pulumi:golden::gcp-multi-file-test::gcp:storage/bucket:Bucket::logBucket",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-multi-file-test::gcp:storage/bucket:Bucket::storageBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-multi-file-test",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::gcp-multi-file-test::pulumi:pulumi:Stack::gcp-multi-file-test-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-multi-file-test::gcp:storage/bucket:Bucket::archiveBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-multi-file-test",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::gcp-multi-file-test::pulumi:pulumi:Stack::gcp-multi-file-test-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-multi-file-test::gcp:storage/bucket:Bucket::logBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-multi-file-test",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::gcp-multi-file-test::pulumi:pulumi:Stack::gcp-multi-file-test-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-multi-file-test::gcp:storage/bucket:Bucket::storageBucket"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-multi-file-test/golden::archiveBucketName",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "archiveBucketName",
+      "name": "archiveBucketName",
+      "organization": "org",
+      "project": "gcp-multi-file-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-multi-file-test/golden::logBucketName",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "logBucketName",
+      "name": "logBucketName",
+      "organization": "org",
+      "project": "gcp-multi-file-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-multi-file-test/golden::logBucketUrl",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "logBucketUrl",
+      "name": "logBucketUrl",
+      "organization": "org",
+      "project": "gcp-multi-file-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-multi-file-test/golden::storageBucketName",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "storageBucketName",
+      "name": "storageBucketName",
+      "organization": "org",
+      "project": "gcp-multi-file-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-multi-file-test/golden::storageBucketUrl",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "storageBucketUrl",
+      "name": "storageBucketUrl",
+      "organization": "org",
+      "project": "gcp-multi-file-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-multi-file-test::gcp:storage/bucket:Bucket::archiveBucket",
+      "kind": "resource",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "name": "gcp-multi-file-test-archive",
+        "uniformBucketLevelAccess": "true"
+      },
+      "logical_name": "archiveBucket",
+      "name": "archiveBucket",
+      "organization": "org",
+      "package": "gcp",
+      "project": "gcp-multi-file-test",
+      "source_file": "Pulumi.logging.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucket:Bucket"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-multi-file-test::gcp:storage/bucket:Bucket::logBucket",
+      "kind": "resource",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "name": "gcp-multi-file-test-logs",
+        "uniformBucketLevelAccess": "true"
+      },
+      "logical_name": "logBucket",
+      "name": "logBucket",
+      "organization": "org",
+      "package": "gcp",
+      "project": "gcp-multi-file-test",
+      "source_file": "Pulumi.logging.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucket:Bucket"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-multi-file-test::gcp:storage/bucket:Bucket::storageBucket",
+      "kind": "resource",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "name": "gcp-multi-file-test-storage",
+        "uniformBucketLevelAccess": "true"
+      },
+      "logical_name": "storageBucket",
+      "name": "storageBucket",
+      "organization": "org",
+      "package": "gcp",
+      "project": "gcp-multi-file-test",
+      "source_file": "Pulumi.storage.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucket:Bucket"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-multi-file-test::pulumi:pulumi:Stack::gcp-multi-file-test-golden",
+      "kind": "stack",
+      "literal_properties": {},
+      "logical_name": "stack",
+      "name": "gcp-multi-file-test-golden",
+      "organization": "org",
+      "package": "pulumi",
+      "project": "gcp-multi-file-test",
+      "stack": "golden",
+      "type_token": "pulumi:pulumi:Stack"
+    }
+  ],
+  "organization": "org",
+  "project": "gcp-multi-file-test",
+  "schema_version": 1,
+  "sql_lineage": {
+    "edges": [],
+    "nodes": [],
+    "organization": "org",
+    "project": "gcp-multi-file-test",
+    "schema_version": 1,
+    "stack": "golden"
+  },
+  "stack": "golden"
+}

@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "gcp-config-types",
+  "stack": "golden",
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-config-types/golden::bucketName",
+      "kind": "output",
+      "logical_name": "bucketName",
+      "name": "bucketName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-config-types",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-config-types/golden::count",
+      "kind": "output",
+      "logical_name": "count",
+      "name": "count",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-config-types",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-config-types/golden::enabled",
+      "kind": "output",
+      "logical_name": "enabled",
+      "name": "enabled",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-config-types",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-config-types/golden::prefix",
+      "kind": "output",
+      "logical_name": "prefix",
+      "name": "prefix",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-config-types",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-config-types::gcp:storage/bucket:Bucket::configBucket",
+      "kind": "resource",
+      "logical_name": "configBucket",
+      "name": "configBucket",
+      "type_token": "gcp:storage/bucket:Bucket",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "uniformBucketLevelAccess": "true"
+      },
+      "organization": "org",
+      "project": "gcp-config-types",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-config-types::pulumi:pulumi:Stack::gcp-config-types-golden",
+      "kind": "stack",
+      "logical_name": "stack",
+      "name": "gcp-config-types-golden",
+      "type_token": "pulumi:pulumi:Stack",
+      "package": "pulumi",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-config-types",
+      "stack": "golden"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "stackoutput::org/gcp-config-types/golden::bucketName",
+      "target_id": "urn:pulumi:golden::gcp-config-types::gcp:storage/bucket:Bucket::configBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "bucketName"
+      ],
+      "organization": "org",
+      "project": "gcp-config-types",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-config-types::pulumi:pulumi:Stack::gcp-config-types-golden",
+      "target_id": "urn:pulumi:golden::gcp-config-types::gcp:storage/bucket:Bucket::configBucket",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-config-types",
+      "stack": "golden"
+    }
+  ]
+}

@@ -1,0 +1,207 @@
+{
+  "edges": [
+    {
+      "organization": "org",
+      "project": "graph-bq-dataset",
+      "property_paths": [
+        "datasetId"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/graph-bq-dataset/golden::datasetId",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-bq-dataset::gcp:bigquery/dataset:Dataset::dataset"
+    },
+    {
+      "organization": "org",
+      "project": "graph-bq-dataset",
+      "property_paths": [
+        "datasetProject"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/graph-bq-dataset/golden::datasetProject",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-bq-dataset::gcp:bigquery/dataset:Dataset::dataset"
+    },
+    {
+      "organization": "org",
+      "project": "graph-bq-dataset",
+      "property_paths": [
+        "bucket"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-bq-dataset::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::auditMarker",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-bq-dataset::gcp:storage/bucket:Bucket::auditBucket"
+    },
+    {
+      "organization": "org",
+      "project": "graph-bq-dataset",
+      "property_paths": [],
+      "relationship": "parent",
+      "source_id": "urn:pulumi:golden::graph-bq-dataset::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::auditMarker",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-bq-dataset::gcp:storage/bucket:Bucket::auditBucket"
+    },
+    {
+      "organization": "org",
+      "project": "graph-bq-dataset",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-bq-dataset::pulumi:pulumi:Stack::graph-bq-dataset-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-bq-dataset::gcp:bigquery/dataset:Dataset::dataset"
+    },
+    {
+      "organization": "org",
+      "project": "graph-bq-dataset",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-bq-dataset::pulumi:pulumi:Stack::graph-bq-dataset-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-bq-dataset::gcp:storage/bucket:Bucket::auditBucket"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "stackoutput::org/graph-bq-dataset/golden::datasetId",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "datasetId",
+      "name": "datasetId",
+      "organization": "org",
+      "project": "graph-bq-dataset",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/graph-bq-dataset/golden::datasetProject",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "datasetProject",
+      "name": "datasetProject",
+      "organization": "org",
+      "project": "graph-bq-dataset",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-bq-dataset::gcp:bigquery/dataset:Dataset::dataset",
+      "kind": "resource",
+      "literal_properties": {
+        "datasetId": "pulumi_rs_graph_test",
+        "deleteContentsOnDestroy": "true",
+        "friendlyName": "graph-export-test",
+        "location": "US",
+        "project": "golden-gcp"
+      },
+      "logical_name": "dataset",
+      "name": "dataset",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-bq-dataset",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/dataset:Dataset"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-bq-dataset::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::auditMarker",
+      "kind": "resource",
+      "literal_properties": {
+        "content": "graph-export acceptance marker",
+        "name": "marker.txt"
+      },
+      "logical_name": "auditMarker",
+      "name": "auditMarker",
+      "organization": "org",
+      "package": "gcp",
+      "parent_id": "urn:pulumi:golden::graph-bq-dataset::gcp:storage/bucket:Bucket::auditBucket",
+      "project": "graph-bq-dataset",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucketObject:BucketObject"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-bq-dataset::gcp:storage/bucket:Bucket::auditBucket",
+      "kind": "resource",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "name": "pulumi-rs-graph-test-audit",
+        "uniformBucketLevelAccess": "true"
+      },
+      "logical_name": "auditBucket",
+      "name": "auditBucket",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-bq-dataset",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucket:Bucket"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-bq-dataset::pulumi:pulumi:Stack::graph-bq-dataset-golden",
+      "kind": "stack",
+      "literal_properties": {},
+      "logical_name": "stack",
+      "name": "graph-bq-dataset-golden",
+      "organization": "org",
+      "package": "pulumi",
+      "project": "graph-bq-dataset",
+      "stack": "golden",
+      "type_token": "pulumi:pulumi:Stack"
+    }
+  ],
+  "organization": "org",
+  "project": "graph-bq-dataset",
+  "schema_version": 1,
+  "sql_lineage": {
+    "edges": [
+      {
+        "organization": "org",
+        "project": "graph-bq-dataset",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_graph_test"
+      },
+      {
+        "organization": "org",
+        "project": "graph-bq-dataset",
+        "relationship": "defined_by",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_graph_test",
+        "stack": "golden",
+        "target_id": "urn:pulumi:golden::graph-bq-dataset::gcp:bigquery/dataset:Dataset::dataset"
+      }
+    ],
+    "nodes": [
+      {
+        "bq_project": "golden-gcp",
+        "id": "bq://golden-gcp",
+        "kind": "project",
+        "name": "golden-gcp",
+        "organization": "org",
+        "project": "graph-bq-dataset",
+        "stack": "golden"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "dataset": "pulumi_rs_graph_test",
+        "defined_by_urn": "urn:pulumi:golden::graph-bq-dataset::gcp:bigquery/dataset:Dataset::dataset",
+        "id": "bq://golden-gcp/pulumi_rs_graph_test",
+        "kind": "dataset",
+        "name": "pulumi_rs_graph_test",
+        "organization": "org",
+        "project": "graph-bq-dataset",
+        "source_file": "Pulumi.yaml",
+        "stack": "golden"
+      }
+    ],
+    "organization": "org",
+    "project": "graph-bq-dataset",
+    "schema_version": 1,
+    "stack": "golden"
+  },
+  "stack": "golden"
+}

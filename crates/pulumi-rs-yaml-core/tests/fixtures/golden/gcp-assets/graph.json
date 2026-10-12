@@ -1,0 +1,185 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "gcp-assets-test",
+  "stack": "golden",
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-assets-test/golden::bucketName",
+      "kind": "output",
+      "logical_name": "bucketName",
+      "name": "bucketName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-assets-test",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-assets-test/golden::fileObjectName",
+      "kind": "output",
+      "logical_name": "fileObjectName",
+      "name": "fileObjectName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-assets-test",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-assets-test/golden::stringObjectName",
+      "kind": "output",
+      "logical_name": "stringObjectName",
+      "name": "stringObjectName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-assets-test",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-assets-test::gcp:storage/bucket:Bucket::assetBucket",
+      "kind": "resource",
+      "logical_name": "assetBucket",
+      "name": "assetBucket",
+      "type_token": "gcp:storage/bucket:Bucket",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "name": "pulumi-rs-yaml-assets-test",
+        "uniformBucketLevelAccess": "true"
+      },
+      "organization": "org",
+      "project": "gcp-assets-test",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-assets-test::gcp:storage/bucketObject:BucketObject::fileAssetObject",
+      "kind": "resource",
+      "logical_name": "fileAssetObject",
+      "name": "fileAssetObject",
+      "type_token": "gcp:storage/bucketObject:BucketObject",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "name": "file-asset.txt"
+      },
+      "organization": "org",
+      "project": "gcp-assets-test",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-assets-test::gcp:storage/bucketObject:BucketObject::stringAssetObject",
+      "kind": "resource",
+      "logical_name": "stringAssetObject",
+      "name": "stringAssetObject",
+      "type_token": "gcp:storage/bucketObject:BucketObject",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "name": "string-asset.txt"
+      },
+      "organization": "org",
+      "project": "gcp-assets-test",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-assets-test::pulumi:pulumi:Stack::gcp-assets-test-golden",
+      "kind": "stack",
+      "logical_name": "stack",
+      "name": "gcp-assets-test-golden",
+      "type_token": "pulumi:pulumi:Stack",
+      "package": "pulumi",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-assets-test",
+      "stack": "golden"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "stackoutput::org/gcp-assets-test/golden::bucketName",
+      "target_id": "urn:pulumi:golden::gcp-assets-test::gcp:storage/bucket:Bucket::assetBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "bucketName"
+      ],
+      "organization": "org",
+      "project": "gcp-assets-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "stackoutput::org/gcp-assets-test/golden::fileObjectName",
+      "target_id": "urn:pulumi:golden::gcp-assets-test::gcp:storage/bucketObject:BucketObject::fileAssetObject",
+      "relationship": "exports",
+      "property_paths": [
+        "fileObjectName"
+      ],
+      "organization": "org",
+      "project": "gcp-assets-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "stackoutput::org/gcp-assets-test/golden::stringObjectName",
+      "target_id": "urn:pulumi:golden::gcp-assets-test::gcp:storage/bucketObject:BucketObject::stringAssetObject",
+      "relationship": "exports",
+      "property_paths": [
+        "stringObjectName"
+      ],
+      "organization": "org",
+      "project": "gcp-assets-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-assets-test::gcp:storage/bucketObject:BucketObject::fileAssetObject",
+      "target_id": "urn:pulumi:golden::gcp-assets-test::gcp:storage/bucket:Bucket::assetBucket",
+      "relationship": "references",
+      "property_paths": [
+        "bucket"
+      ],
+      "organization": "org",
+      "project": "gcp-assets-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-assets-test::gcp:storage/bucketObject:BucketObject::stringAssetObject",
+      "target_id": "urn:pulumi:golden::gcp-assets-test::gcp:storage/bucket:Bucket::assetBucket",
+      "relationship": "references",
+      "property_paths": [
+        "bucket"
+      ],
+      "organization": "org",
+      "project": "gcp-assets-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-assets-test::pulumi:pulumi:Stack::gcp-assets-test-golden",
+      "target_id": "urn:pulumi:golden::gcp-assets-test::gcp:storage/bucket:Bucket::assetBucket",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-assets-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-assets-test::pulumi:pulumi:Stack::gcp-assets-test-golden",
+      "target_id": "urn:pulumi:golden::gcp-assets-test::gcp:storage/bucketObject:BucketObject::fileAssetObject",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-assets-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-assets-test::pulumi:pulumi:Stack::gcp-assets-test-golden",
+      "target_id": "urn:pulumi:golden::gcp-assets-test::gcp:storage/bucketObject:BucketObject::stringAssetObject",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-assets-test",
+      "stack": "golden"
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "edges": [
+    {
+      "organization": "org",
+      "project": "gcp-exec-jinja-bucket",
+      "property_paths": [
+        "bucketName"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-exec-jinja-bucket/golden::bucketName",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-exec-jinja-bucket::gcp:storage/bucket:Bucket::execBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-exec-jinja-bucket",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::gcp-exec-jinja-bucket::pulumi:pulumi:Stack::gcp-exec-jinja-bucket-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-exec-jinja-bucket::gcp:storage/bucket:Bucket::execBucket"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-exec-jinja-bucket/golden::bucketName",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "bucketName",
+      "name": "bucketName",
+      "organization": "org",
+      "project": "gcp-exec-jinja-bucket",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-exec-jinja-bucket::gcp:storage/bucket:Bucket::execBucket",
+      "kind": "resource",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "name": "exec-jinja-test-bucket",
+        "uniformBucketLevelAccess": "true"
+      },
+      "logical_name": "execBucket",
+      "name": "execBucket",
+      "organization": "org",
+      "package": "gcp",
+      "project": "gcp-exec-jinja-bucket",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucket:Bucket"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-exec-jinja-bucket::pulumi:pulumi:Stack::gcp-exec-jinja-bucket-golden",
+      "kind": "stack",
+      "literal_properties": {},
+      "logical_name": "stack",
+      "name": "gcp-exec-jinja-bucket-golden",
+      "organization": "org",
+      "package": "pulumi",
+      "project": "gcp-exec-jinja-bucket",
+      "stack": "golden",
+      "type_token": "pulumi:pulumi:Stack"
+    }
+  ],
+  "organization": "org",
+  "project": "gcp-exec-jinja-bucket",
+  "schema_version": 1,
+  "sql_lineage": {
+    "edges": [],
+    "nodes": [],
+    "organization": "org",
+    "project": "gcp-exec-jinja-bucket",
+    "schema_version": 1,
+    "stack": "golden"
+  },
+  "stack": "golden"
+}

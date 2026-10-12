@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "gcp-invoke-options-test",
+  "stack": "golden",
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-invoke-options-test/golden::bucketName",
+      "kind": "output",
+      "logical_name": "bucketName",
+      "name": "bucketName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-invoke-options-test",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-invoke-options-test/golden::projectIdAfterBucket",
+      "kind": "output",
+      "logical_name": "projectIdAfterBucket",
+      "name": "projectIdAfterBucket",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-invoke-options-test",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-invoke-options-test/golden::projectIdViaProvider",
+      "kind": "output",
+      "logical_name": "projectIdViaProvider",
+      "name": "projectIdViaProvider",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-invoke-options-test",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-invoke-options-test::gcp:storage/bucket:Bucket::invokeBucket",
+      "kind": "resource",
+      "logical_name": "invokeBucket",
+      "name": "invokeBucket",
+      "type_token": "gcp:storage/bucket:Bucket",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "name": "invoke-opts-test-bucket",
+        "uniformBucketLevelAccess": "true"
+      },
+      "organization": "org",
+      "project": "gcp-invoke-options-test",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-invoke-options-test::pulumi:providers:gcp::explicitProvider",
+      "kind": "provider",
+      "logical_name": "explicitProvider",
+      "name": "explicitProvider",
+      "type_token": "pulumi:providers:gcp",
+      "package": "pulumi",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "project": "spacy-muffin-lab-5a292e",
+        "region": "us-central1"
+      },
+      "organization": "org",
+      "project": "gcp-invoke-options-test",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-invoke-options-test::pulumi:pulumi:Stack::gcp-invoke-options-test-golden",
+      "kind": "stack",
+      "logical_name": "stack",
+      "name": "gcp-invoke-options-test-golden",
+      "type_token": "pulumi:pulumi:Stack",
+      "package": "pulumi",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-invoke-options-test",
+      "stack": "golden"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "stackoutput::org/gcp-invoke-options-test/golden::bucketName",
+      "target_id": "urn:pulumi:golden::gcp-invoke-options-test::gcp:storage/bucket:Bucket::invokeBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "bucketName"
+      ],
+      "organization": "org",
+      "project": "gcp-invoke-options-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "stackoutput::org/gcp-invoke-options-test/golden::projectIdAfterBucket",
+      "target_id": "urn:pulumi:golden::gcp-invoke-options-test::gcp:storage/bucket:Bucket::invokeBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "projectIdAfterBucket"
+      ],
+      "organization": "org",
+      "project": "gcp-invoke-options-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "stackoutput::org/gcp-invoke-options-test/golden::projectIdViaProvider",
+      "target_id": "urn:pulumi:golden::gcp-invoke-options-test::pulumi:providers:gcp::explicitProvider",
+      "relationship": "exports",
+      "property_paths": [
+        "projectIdViaProvider"
+      ],
+      "organization": "org",
+      "project": "gcp-invoke-options-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-invoke-options-test::pulumi:pulumi:Stack::gcp-invoke-options-test-golden",
+      "target_id": "urn:pulumi:golden::gcp-invoke-options-test::gcp:storage/bucket:Bucket::invokeBucket",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-invoke-options-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-invoke-options-test::pulumi:pulumi:Stack::gcp-invoke-options-test-golden",
+      "target_id": "urn:pulumi:golden::gcp-invoke-options-test::pulumi:providers:gcp::explicitProvider",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-invoke-options-test",
+      "stack": "golden"
+    }
+  ]
+}

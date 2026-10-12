@@ -1,0 +1,80 @@
+{
+  "edges": [
+    {
+      "organization": "org",
+      "project": "gcp-preview-only",
+      "property_paths": [
+        "bucketName"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-preview-only/golden::bucketName",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-preview-only::gcp:storage/bucket:Bucket::previewBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-preview-only",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::gcp-preview-only::pulumi:pulumi:Stack::gcp-preview-only-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-preview-only::gcp:storage/bucket:Bucket::previewBucket"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-preview-only/golden::bucketName",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "bucketName",
+      "name": "bucketName",
+      "organization": "org",
+      "project": "gcp-preview-only",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-preview-only::gcp:storage/bucket:Bucket::previewBucket",
+      "kind": "resource",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "labels.env": "preview",
+        "location": "US",
+        "name": "preview-only-test-bucket",
+        "uniformBucketLevelAccess": "true"
+      },
+      "logical_name": "previewBucket",
+      "name": "previewBucket",
+      "organization": "org",
+      "package": "gcp",
+      "project": "gcp-preview-only",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucket:Bucket"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-preview-only::pulumi:pulumi:Stack::gcp-preview-only-golden",
+      "kind": "stack",
+      "literal_properties": {},
+      "logical_name": "stack",
+      "name": "gcp-preview-only-golden",
+      "organization": "org",
+      "package": "pulumi",
+      "project": "gcp-preview-only",
+      "stack": "golden",
+      "type_token": "pulumi:pulumi:Stack"
+    }
+  ],
+  "organization": "org",
+  "project": "gcp-preview-only",
+  "schema_version": 1,
+  "sql_lineage": {
+    "edges": [],
+    "nodes": [],
+    "organization": "org",
+    "project": "gcp-preview-only",
+    "schema_version": 1,
+    "stack": "golden"
+  },
+  "stack": "golden"
+}
