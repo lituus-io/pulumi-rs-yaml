@@ -187,3 +187,37 @@ resources:
         assert ("bq://p/marts/v", st["id"], "has_statement") in kinds
         assert (st["id"], "bq://p/raw/events", "reads") in kinds
         assert (st["id"], "bq://p/marts/v", "writes") in kinds
+
+
+class TestScriptColumnLineage:
+    ROUTINE = """\
+name: r
+runtime: yaml
+resources:
+  load:
+    type: gcp:bigquery:Routine
+    properties:
+      project: p
+      datasetId: ops
+      routineId: load
+      routineType: PROCEDURE
+      definitionBody: "CREATE TABLE `p.marts.t` AS SELECT id, amount AS total FROM `p.raw.s`"
+"""
+
+    def _col_edges(self, g):
+        return {
+            (e["source_id"], e["target_id"])
+            for e in g["edges"]
+            if e["relationship"] == "column_derives_from"
+        }
+
+    def test_off_by_default(self, tmp_project):
+        g = export_sql_lineage(tmp_project(self.ROUTINE), "prod", "org")
+        assert not self._col_edges(g)
+
+    def test_ctas_columns(self, tmp_project):
+        g = export_sql_lineage(
+            tmp_project(self.ROUTINE), "prod", "org", script_column_lineage=True
+        )
+        assert ("bq://p/marts/t#total", "bq://p/raw/s#amount") in self._col_edges(g)
+        assert ("bq://p/marts/t#id", "bq://p/raw/s#id") in self._col_edges(g)

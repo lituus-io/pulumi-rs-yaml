@@ -29,8 +29,12 @@ const PARSER_STACK_BYTES: usize = 64 * 1024 * 1024;
 /// the work has to cross a channel, and the set of jobs is closed and small.
 /// It also keeps the isolation contract legible -- what crosses is listed here.
 enum Job {
-    /// Each entry is an owned statement, or the reason it was refused.
-    Statements(Vec<Result<String, String>>),
+    /// Each entry is an owned statement, or the reason it was refused;
+    /// `columns` asks for column lineage of the statements that have it.
+    Statements {
+        entries: Vec<Result<String, String>>,
+        columns: bool,
+    },
     Select(String),
 }
 
@@ -70,7 +74,7 @@ impl Parser {
                 // thread goes away.
                 while let Ok(job) = job_rx.recv() {
                     let reply = match job {
-                        Job::Statements(entries) => Reply::Statements(
+                        Job::Statements { entries, columns } => Reply::Statements(
                             entries
                                 .into_iter()
                                 .map(|entry| {
@@ -80,7 +84,14 @@ impl Parser {
                                         .map(|stmts| {
                                             stmts
                                                 .iter()
-                                                .map(|stmt| statement_facts(stmt, &sql))
+                                                .map(|stmt| {
+                                                    let mut facts = statement_facts(stmt, &sql);
+                                                    if columns {
+                                                        facts.columns =
+                                                            column_facts(stmt).unwrap_or_default();
+                                                    }
+                                                    facts
+                                                })
                                                 .collect()
                                         })
                                 })
@@ -193,7 +204,15 @@ pub(crate) struct StatementFacts {
     pub external_reads: Vec<String>,
     /// External locations written: the URI an `EXPORT DATA` writes to.
     pub external_writes: Vec<String>,
+    /// Column lineage of the table the statement writes: (target column,
+    /// [(source table, source column)]). Filled only when asked for, and only
+    /// where the target's columns are known -- see [`column_facts`].
+    pub columns: ColumnLineage,
 }
+
+/// (output column, [(source table as written, source column)]), one entry
+/// per output column.
+pub(crate) type ColumnLineage = Vec<(String, Vec<(String, String)>)>;
 
 /// Column-level facts for a SELECT-shaped statement.
 #[derive(Debug)]
@@ -223,8 +242,18 @@ pub(crate) struct SelectFacts {
 /// Returns one result per input statement, in order, so a caller can still
 /// fall back per statement. The isolation contract is unchanged: parser AST
 /// nodes never leave the worker, only owned `Send` fact structs.
+#[cfg(test)]
 pub(crate) fn statement_facts_for_all(
     statements: &[&str],
+) -> Vec<Result<Vec<StatementFacts>, String>> {
+    statement_facts_with_columns(statements, false)
+}
+
+/// [`statement_facts_for_all`], with column lineage for every statement that
+/// writes a table from a query when `columns` is set.
+pub(crate) fn statement_facts_with_columns(
+    statements: &[&str],
+    columns: bool,
 ) -> Vec<Result<Vec<StatementFacts>, String>> {
     if statements.is_empty() {
         return Vec::new();
@@ -236,7 +265,10 @@ pub(crate) fn statement_facts_for_all(
         .map(|s| guard(s).map(|()| (*s).to_string()))
         .collect();
 
-    match on_parser_thread(Job::Statements(owned)) {
+    match on_parser_thread(Job::Statements {
+        entries: owned,
+        columns,
+    }) {
         Ok(Reply::Statements(out)) => out,
         Ok(Reply::Select(_)) => unreachable!("a Statements job answers Statements"),
         Err(e) => statements.iter().map(|_| Err(e.clone())).collect(),
@@ -365,6 +397,52 @@ fn qualified_table_names(expr: &Expression) -> Vec<String> {
         }
     }
     out
+}
+
+/// Column lineage for a statement that writes a table from a query.
+///
+/// The query is regenerated as SQL and analysed exactly as a view's is --
+/// `analyze_query` takes only a query, not the statement around it.
+///
+/// - `CREATE TABLE ... AS SELECT` and `CREATE VIEW`: the projections ARE the
+///   new object's columns, by name.
+/// - `INSERT INTO t (a, b) SELECT ...`: projections map onto the listed
+///   columns by position, and only when the counts agree.
+///
+/// Anything whose target columns cannot be known statically answers `None`
+/// rather than a guess: an INSERT without a column list (its order is the
+/// table's schema, which is not in the SQL), a `*` projection, or a CTE the
+/// parser keeps outside the query, which the regenerated text would lack.
+fn column_facts(stmt: &Expression) -> Option<ColumnLineage> {
+    let (query, insert_columns) = match stmt {
+        Expression::CreateTable(c) if c.with_cte.is_none() => (c.as_select.as_ref()?, None),
+        Expression::CreateView(v) if v.columns.is_empty() => (&v.query, None),
+        Expression::Insert(i) if i.with.is_none() && !i.columns.is_empty() => {
+            (i.query.as_ref()?, Some(&i.columns))
+        }
+        _ => return None,
+    };
+    let sql = polyglot_sql::generate(query, DialectType::BigQuery).ok()?;
+    guard(&sql).ok()?;
+    let facts = analyze_select_inner(&sql).ok()?;
+    if facts.has_unexpanded_star {
+        return None;
+    }
+    match insert_columns {
+        None => Some(facts.columns),
+        Some(targets) => {
+            if targets.len() != facts.columns.len() {
+                return None;
+            }
+            Some(
+                targets
+                    .iter()
+                    .zip(facts.columns)
+                    .map(|(target, (_, upstream))| (target.name.clone(), upstream))
+                    .collect(),
+            )
+        }
+    }
 }
 
 fn tableref_name(t: &polyglot_sql::expressions::TableRef) -> String {
@@ -1526,5 +1604,81 @@ mod tests {
     fn a_cte_is_not_a_table() {
         let f = facts_of("WITH x AS (SELECT * FROM p.raw.s) SELECT * FROM x");
         assert_eq!(f.reads, vec!["p.raw.s".to_string()]);
+    }
+
+    fn columns_of(sql: &str) -> ColumnLineage {
+        let mut out = statement_facts_with_columns(&[sql], true);
+        let mut stmts = out.remove(0).unwrap_or_else(|e| panic!("{sql:?}: {e}"));
+        stmts.remove(0).columns
+    }
+
+    fn sources(cols: &ColumnLineage, col: &str) -> Vec<(String, String)> {
+        cols.iter()
+            .find(|(c, _)| c == col)
+            .map(|(_, s)| s.clone())
+            .unwrap_or_else(|| panic!("no column {col}; have {cols:?}"))
+    }
+
+    #[test]
+    fn ctas_columns_are_its_projections() {
+        let cols = columns_of(
+            "CREATE TABLE `p.m.t` AS SELECT a.id, b.v AS value FROM `p.r.a` a JOIN `p.r.b` b ON a.id = b.id",
+        );
+        assert_eq!(
+            sources(&cols, "id"),
+            vec![("p.r.a".to_string(), "id".to_string())]
+        );
+        assert_eq!(
+            sources(&cols, "value"),
+            vec![("p.r.b".to_string(), "v".to_string())]
+        );
+    }
+
+    #[test]
+    fn insert_with_a_column_list_maps_by_position() {
+        let cols = columns_of("INSERT INTO `p.m.t` (k, total) SELECT id, amount FROM `p.r.s`");
+        assert_eq!(
+            sources(&cols, "k"),
+            vec![("p.r.s".to_string(), "id".to_string())]
+        );
+        assert_eq!(
+            sources(&cols, "total"),
+            vec![("p.r.s".to_string(), "amount".to_string())]
+        );
+    }
+
+    #[test]
+    fn create_view_in_a_script_has_column_lineage() {
+        let cols = columns_of("CREATE VIEW `p.m.v` AS SELECT id FROM `p.r.s`");
+        assert_eq!(
+            sources(&cols, "id"),
+            vec![("p.r.s".to_string(), "id".to_string())]
+        );
+    }
+
+    #[test]
+    fn unknowable_targets_answer_nothing_rather_than_a_guess() {
+        for sql in [
+            // No column list: the target order is the table's schema.
+            "INSERT INTO `p.m.t` SELECT id, amount FROM `p.r.s`",
+            // A star cannot be expanded without a schema.
+            "CREATE TABLE `p.m.t` AS SELECT * FROM `p.r.s`",
+            // Counts disagree.
+            "INSERT INTO `p.m.t` (a, b, c) SELECT id, amount FROM `p.r.s`",
+            // Not a query-backed write at all.
+            "DELETE FROM `p.m.t` WHERE TRUE",
+            "UPDATE `p.m.t` SET a = 1 WHERE TRUE",
+        ] {
+            assert!(columns_of(sql).is_empty(), "{sql}");
+        }
+    }
+
+    #[test]
+    fn columns_are_only_computed_when_asked_for() {
+        let mut out = statement_facts_with_columns(
+            &["CREATE TABLE `p.m.t` AS SELECT id FROM `p.r.s`"],
+            false,
+        );
+        assert!(out.remove(0).expect("parsed")[0].columns.is_empty());
     }
 }

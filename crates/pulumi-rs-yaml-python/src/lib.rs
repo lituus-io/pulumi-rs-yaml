@@ -1174,9 +1174,12 @@ fn export_dependency_graph(
 /// `statement_occurrences` (where each is written: `carrier_id`,
 /// `statement_index`, `byte_offset`, `byte_len`, `sql_role`, `text_origin`,
 /// `carrier_file`, ...), with `has_statement`, `reads` and `writes` edges.
+/// `script_column_lineage=True` adds `column_derives_from` edges through
+/// `INSERT ... (cols) SELECT`, `CREATE TABLE ... AS SELECT` and `CREATE VIEW`
+/// in routines, jobs and scheduled queries.
 #[cfg(feature = "sql-lineage")]
 #[pyfunction]
-#[pyo3(signature = (project_dir, stack, organization="", jinja_context=None, schema_dir=None, default_bq_project=None, include_statements=false))]
+#[pyo3(signature = (project_dir, stack, organization="", jinja_context=None, schema_dir=None, default_bq_project=None, include_statements=false, script_column_lineage=false))]
 #[allow(clippy::too_many_arguments)]
 fn export_sql_lineage(
     py: Python<'_>,
@@ -1187,6 +1190,7 @@ fn export_sql_lineage(
     schema_dir: Option<&str>,
     default_bq_project: Option<&str>,
     include_statements: bool,
+    script_column_lineage: bool,
 ) -> PyResult<Py<PyAny>> {
     let ctx_map = jinja_context.map(py_dict_to_string_map).transpose()?;
     let exported = py.detach(|| -> Result<(serde_json::Value, Diagnostics), String> {
@@ -1228,6 +1232,7 @@ fn export_sql_lineage(
             extra_sql_sources: &[],
             sql_sources: Some(&sql_sources),
             include_statements,
+            script_column_lineage,
         };
         let (lineage, diags) =
             pulumi_rs_yaml_core::sql_lineage::export_sql_lineage(&template, &infra, &lineage_opts);

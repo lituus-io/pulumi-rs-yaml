@@ -291,6 +291,12 @@ pub struct SqlLineageOptions<'src> {
     /// because statement text can carry secrets a caller did not ask to
     /// export.
     pub include_statements: bool,
+    /// Column lineage through scripts: `INSERT ... (cols) SELECT`, `CREATE
+    /// TABLE ... AS SELECT` and `CREATE VIEW` in routine bodies, jobs,
+    /// scheduled queries and SQL jobs gain `column_derives_from` edges from
+    /// the written table's columns to the source columns, `via` the script.
+    /// Off by default, so existing output does not move.
+    pub script_column_lineage: bool,
 }
 
 /// Extracts the data-object lineage graph. Pure and deterministic;
@@ -433,6 +439,17 @@ fn text_origin(borrowed: bool, provenance: SqlProvenance) -> TextOrigin {
         (_, SqlProvenance::File) => TextOrigin::File,
         (true, SqlProvenance::Inline) => TextOrigin::Literal,
         (false, SqlProvenance::Inline) => TextOrigin::Interpolated,
+    }
+}
+
+/// A column known only by name, for an edge endpoint that needs a node.
+fn column_def(name: &str) -> resolve::ColumnDef {
+    resolve::ColumnDef {
+        name: name.to_owned(),
+        data_type: None,
+        mode: None,
+        description: None,
+        renamed_from: None,
     }
 }
 
@@ -1570,7 +1587,7 @@ fn script_lineage<'src>(
     // One parser thread for the whole script, not one per statement: nothing
     // bounds how many statements a script has, and each used to cost a thread
     // with a 64 MiB stack.
-    let parsed = sql::statement_facts_for_all(&statements);
+    let parsed = sql::statement_facts_with_columns(&statements, ctx.opts.script_column_lineage);
     let mut any_parsed = false;
     for (index, ((span, stmt_text), result)) in
         spans.iter().zip(&statements).zip(parsed).enumerate()
@@ -1770,6 +1787,33 @@ fn emit_statement_facts(
                     via: None,
                 };
                 ctx.edge(statement.to_owned(), src.id(), DataEdgeKind::Reads, val);
+            }
+        }
+    }
+    // Column lineage onto the one table the statement writes. `column_facts`
+    // only answers for statements with a single, known target.
+    if let [write] = facts.writes.as_slice() {
+        if let Some(target) = resolve_name(write).filter(|_| !facts.columns.is_empty()) {
+            for (out_col, upstream) in &facts.columns {
+                for (raw_table, src_col) in upstream {
+                    let Some(src) = resolve_name(raw_table) else {
+                        continue;
+                    };
+                    let val = EdgeVal {
+                        resolution,
+                        sql_role: Some(role),
+                        sql_provenance: Some(provenance),
+                        via: Some(Cow::Owned(subject_id.to_string())),
+                    };
+                    ctx.edge(
+                        target.column_id(out_col),
+                        src.column_id(src_col),
+                        DataEdgeKind::ColumnDerivesFrom,
+                        val,
+                    );
+                    ctx.emit_columns(&target, std::slice::from_ref(&column_def(out_col)));
+                    ctx.emit_columns(&src, std::slice::from_ref(&column_def(src_col)));
+                }
             }
         }
     }

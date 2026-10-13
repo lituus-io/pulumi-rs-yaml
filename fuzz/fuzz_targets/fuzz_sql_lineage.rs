@@ -89,8 +89,11 @@ fuzz_target!(|data: &[u8]| {
     // ...and with the statement layer on: deterministic, every id the hash
     // of its own text, every occurrence slicing exactly that text out of the
     // input, and every statement edge starting at a statement that exists.
+    // Column lineage through scripts rides along: it regenerates SQL from the
+    // parsed statement and analyses it again, on fuzzer-shaped statements.
     let with_statements = SqlLineageOptions {
         include_statements: true,
+        script_column_lineage: true,
         organization: opts.organization,
         project: opts.project,
         stack: opts.stack,

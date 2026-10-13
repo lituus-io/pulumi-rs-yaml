@@ -8,7 +8,7 @@
 //!                            [--format json|ndjson] [--out <dir>]
 //!                            [--lineage] [--default-bq-project <p>]
 //!                            [--sql-statements] [--compress gzip|none]
-//!                            [--backend-url <url>]
+//!                            [--backend-url <url>] [--script-column-lineage]
 //! ```
 //!
 //! With `--lineage`, the JSON document gains a `sql_lineage` root key
@@ -19,6 +19,10 @@
 //! statement-level `reads`/`writes` edges -- as `statements` and
 //! `statement_occurrences` in JSON, and as `lineage_statements.ndjson` and
 //! `lineage_statement_occurrences.ndjson`.
+//!
+//! `--script-column-lineage` (with `--lineage`) adds column lineage through
+//! scripts: `INSERT ... (cols) SELECT`, `CREATE TABLE ... AS SELECT` and
+//! `CREATE VIEW` in routines, jobs and scheduled queries.
 //!
 //! `--backend-url` names where the stack's state lives (Pulumi Cloud or a
 //! `gs://`, `s3://`, `azblob://` or `file://` backend); without it the
@@ -44,7 +48,7 @@ use pulumi_rs_yaml_core::sql_lineage::{export_sql_lineage, SqlLineageOptions, Sq
 const USAGE: &str = "usage: pulumi-language-yaml graph --stack <stack> \
     [--organization <org>] [--dir <project-dir>] [--format json|ndjson] [--out <dir>] \
     [--lineage] [--default-bq-project <project>] [--sql-statements] [--compress gzip|none] \
-    [--backend-url <url>]";
+    [--backend-url <url>] [--script-column-lineage]";
 
 struct GraphArgs {
     stack: String,
@@ -61,6 +65,8 @@ struct GraphArgs {
     sql_statements: bool,
     compress: Compression,
     backend_url: Option<String>,
+    #[cfg_attr(not(feature = "sql-lineage"), allow(dead_code))]
+    script_column_lineage: bool,
 }
 
 /// How NDJSON tables are written.
@@ -88,6 +94,7 @@ fn parse_args(args: &[String]) -> Result<GraphArgs, String> {
     let mut sql_statements = false;
     let mut compress = Compression::None;
     let mut backend_url: Option<String> = None;
+    let mut script_column_lineage = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -138,6 +145,10 @@ fn parse_args(args: &[String]) -> Result<GraphArgs, String> {
                 };
                 i += 2;
             }
+            "--script-column-lineage" => {
+                script_column_lineage = true;
+                i += 1;
+            }
             "--backend-url" => {
                 backend_url = Some(take_value(i)?.clone());
                 i += 2;
@@ -163,6 +174,12 @@ fn parse_args(args: &[String]) -> Result<GraphArgs, String> {
     if sql_statements && !lineage {
         return Err(format!("--sql-statements requires --lineage\n{}", USAGE));
     }
+    if script_column_lineage && !lineage {
+        return Err(format!(
+            "--script-column-lineage requires --lineage\n{}",
+            USAGE
+        ));
+    }
     if compress != Compression::None && format != OutputFormat::Ndjson {
         return Err(format!("--compress applies to --format ndjson\n{}", USAGE));
     }
@@ -184,6 +201,7 @@ fn parse_args(args: &[String]) -> Result<GraphArgs, String> {
         sql_statements,
         compress,
         backend_url,
+        script_column_lineage,
     })
 }
 
@@ -287,6 +305,7 @@ pub fn run_graph(args: &[String]) -> i32 {
             extra_sql_sources: &[],
             sql_sources: sql_sources.as_ref(),
             include_statements: parsed.sql_statements,
+            script_column_lineage: parsed.script_column_lineage,
         };
         let (lineage, lineage_diags) = export_sql_lineage(&template, &graph, &lineage_opts);
         for diag in lineage_diags.iter() {
@@ -742,6 +761,18 @@ mod tests {
             export(&["--backend-url", "https://api.pulumi.com"])["stack_uri"],
             "https://app.pulumi.com/acme/proj/dev"
         );
+    }
+
+    #[test]
+    fn script_column_lineage_requires_lineage() {
+        assert!(parse_args(&args(&["--stack", "dev", "--script-column-lineage"])).is_err());
+        assert!(parse_args(&args(&[
+            "--stack",
+            "dev",
+            "--lineage",
+            "--script-column-lineage"
+        ]))
+        .is_ok());
     }
 
     #[test]

@@ -1174,3 +1174,79 @@ fn the_store_changes_nothing_but_where_the_text_lives() {
         without.to_json().expect("json")
     );
 }
+
+// ---------------------------------------------------------------------------
+// Column lineage through scripts
+// ---------------------------------------------------------------------------
+
+fn export_script_columns(yaml: &str, on: bool) -> SqlLineageGraph<'static> {
+    let (template, diags) = parse_template(yaml, None);
+    assert!(!diags.has_errors(), "{diags}");
+    let template: &'static TemplateDecl<'static> = Box::leak(Box::new(template));
+    let graph_opts = GraphExportOptions {
+        organization: "org",
+        project: "routines",
+        stack: "prod",
+        ..Default::default()
+    };
+    let (infra, _) = export_resource_graph(template, &graph_opts);
+    let infra: &'static ResourceGraph<'static> = Box::leak(Box::new(infra));
+    let opts = SqlLineageOptions {
+        organization: "org",
+        project: "routines",
+        stack: "prod",
+        default_bq_project: Some("p"),
+        script_column_lineage: on,
+        ..Default::default()
+    };
+    export_sql_lineage(template, infra, &opts).0
+}
+
+#[test]
+fn script_column_lineage_follows_ctas_and_insert_via_the_routine() {
+    let yaml = routine(
+        "BEGIN\n  CREATE OR REPLACE TABLE `p.marts.daily` AS SELECT o.order_id, o.amount_cents / 100 AS revenue FROM `p.raw.orders` o;\n  INSERT INTO `p.marts.audit` (oid) SELECT order_id FROM `p.marts.daily`;\nEND",
+    );
+    let g = export_script_columns(&yaml, true);
+    let e = edge_of(
+        &g,
+        "bq://p/marts/daily#revenue",
+        "bq://p/raw/orders#amount_cents",
+        DataEdgeKind::ColumnDerivesFrom,
+    )
+    .expect("revenue derives from amount_cents");
+    assert_eq!(e.via.as_deref(), Some(ROUTINE));
+    assert_eq!(e.resolution, Resolution::Parsed);
+    assert!(has_edge(
+        &g,
+        "bq://p/marts/audit#oid",
+        "bq://p/marts/daily#order_id",
+        DataEdgeKind::ColumnDerivesFrom
+    ));
+    // Both ends exist as column nodes.
+    assert_eq!(
+        node(&g, "bq://p/marts/daily#revenue").kind,
+        DataNodeKind::Column
+    );
+    assert_eq!(
+        node(&g, "bq://p/raw/orders#amount_cents").kind,
+        DataNodeKind::Column
+    );
+}
+
+#[test]
+fn script_column_lineage_is_off_by_default() {
+    let yaml = routine("CREATE TABLE `p.marts.t` AS SELECT id FROM `p.raw.s`");
+    let off = export_script_columns(&yaml, false);
+    assert!(!off
+        .edges
+        .iter()
+        .any(|e| e.relationship == DataEdgeKind::ColumnDerivesFrom));
+    // Every table in the routine is fully qualified, so the default project
+    // `export` leaves unset changes nothing: the outputs must agree exactly.
+    let plain = export(&yaml, "routines", "prod");
+    assert_eq!(
+        off.to_json().expect("json"),
+        plain.lineage.to_json().expect("json")
+    );
+}

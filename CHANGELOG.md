@@ -3,6 +3,49 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.37
+
+### Column lineage through scripts
+
+A view's columns were traced to their sources; a routine's were not. A
+procedure that rebuilds a mart with `CREATE OR REPLACE TABLE ... AS SELECT`,
+or appends to it with `INSERT ... SELECT`, said which tables it read and
+wrote and nothing about which column came from where. `--script-column-lineage`
+(Python: `script_column_lineage=True`) adds `column_derives_from` edges for
+those statements in routine bodies, jobs, scheduled queries and SQL jobs,
+`via` the script, with column nodes at both ends.
+
+The parser's column analysis takes a query and nothing else, so the worker
+regenerates the statement's query as SQL and analyses it exactly as it
+analyses a view; only the answer crosses back. What is recorded is only what
+the SQL says:
+
+- `CREATE TABLE ... AS SELECT` and `CREATE VIEW`: the projections are the new
+  object's columns, by name.
+- `INSERT INTO t (a, b) SELECT ...`: projections map onto the listed columns
+  by position, and only when the counts agree -- an unnamed projection is
+  dropped by the analysis, and a count that no longer agrees is the signal.
+
+Everything whose target columns the SQL does not state is left out rather
+than guessed: an `INSERT` with no column list, whose order is the table's
+schema; a `*` projection; a CTE the parser keeps outside the query, which the
+regenerated text would lack; a statement writing more than one table.
+
+Off by default, and the default output is byte-identical to 0.5.36. It is not
+free: regenerating and re-analysing every query-backed statement takes the
+fifty-statement routine bench from 1.5 ms to 6.7 ms, which is why it is a
+flag.
+
+### Tests
+
+Five unit tests: CTAS columns by name, an INSERT column list by position,
+CREATE VIEW in a script, five statements that must answer nothing rather
+than a guess, and no columns computed unless asked for. Two lineage tests:
+a routine's CTAS and INSERT traced column to column `via` the routine, and the
+flag off giving output identical to before. One CLI test, two Python tests.
+`fuzz_sql_lineage` runs the column path in its statement-layer pass. One
+bench, `sql_lineage_routine_50_statements_columns`.
+
 ## 0.5.36
 
 ### Where a stack's state lives, and where every resource is

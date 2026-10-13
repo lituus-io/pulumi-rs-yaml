@@ -159,6 +159,13 @@ union self-links at project, table, and column level with no derivation step.
 Edges carry `resolution` (`declared` > `parsed` > `structural` > `heuristic`)
 and column nodes carry type/mode/description from table schemas.
 
+Column lineage through scripts is opt-in: `--script-column-lineage` (Python:
+`script_column_lineage=True`) traces `INSERT ... (cols) SELECT`, `CREATE TABLE
+... AS SELECT` and `CREATE VIEW` statements in routines, jobs and scheduled
+queries to their source columns, `via` the script. Only columns the SQL names
+are recorded; an `INSERT` without a column list, a `*` projection, or a CTE
+outside the query records none.
+
 Components may declare lineage directly through an output named `lineage`
 (or `*Lineage`) containing JSON
 `{"produces": [...], "consumes": [...], "columnLineage": [...]}` — the same

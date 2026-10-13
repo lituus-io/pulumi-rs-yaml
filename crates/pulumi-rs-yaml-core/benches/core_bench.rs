@@ -650,6 +650,22 @@ fn bench_sql_lineage_routine_script(c: &mut Criterion) {
             std::hint::black_box(lineage.edges.len())
         })
     });
+
+    // The same routine with column lineage through its INSERTs: each
+    // statement's query is regenerated and analysed on the parser worker.
+    c.bench_function("sql_lineage_routine_50_statements_columns", |b| {
+        b.iter(|| {
+            let opts = SqlLineageOptions {
+                organization: "org",
+                project: "bench",
+                stack: "dev",
+                script_column_lineage: true,
+                ..Default::default()
+            };
+            let (lineage, _) = export_sql_lineage(template, infra, &opts);
+            std::hint::black_box(lineage.edges.len())
+        })
+    });
 }
 
 #[cfg(not(feature = "sql-lineage"))]
