@@ -192,3 +192,142 @@ jobs:
         run: cargo zigbuild --workspace --exclude pulumi-rs-yaml-python --target x86_64-unknown-linux-musl --release
       - name: Check musl aarch64
         run: cargo zigbuild --workspace --exclude pulumi-rs-yaml-python --target aarch64-unknown-linux-musl --release
+
+  benchmark-regression:
+    name: Benchmark Regression Check
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    needs: fmt
+    # The merge-base is benched as it was built on main, where -D warnings
+    # did not apply to bench builds; a lint newer than that commit must not
+    # fail the baseline.
+    env:
+      RUSTFLAGS: ""
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bench
+
+      - name: Install critcmp
+        run: cargo install critcmp --locked
+
+      # Target the criterion bench directly: `cargo bench --workspace` would
+      # forward the criterion-only --save-baseline flag to every crate's
+      # default libtest bench harness, which rejects it.
+      - name: Benchmark merge-base (baseline)
+        run: |
+          git checkout "$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
+          cargo bench -p pulumi-rs-yaml-core --bench core_bench -- --save-baseline base
+
+      - name: Benchmark PR head
+        run: |
+          # benching at the merge-base can rewrite Cargo.lock; discard it so
+          # the checkout of the PR head doesn't abort on a dirty tree
+          git checkout -f ${{ github.sha }}
+          cargo bench -p pulumi-rs-yaml-core --bench core_bench -- --save-baseline head
+
+      # Fail if any benchmark regressed beyond the noise threshold (25%).
+      # Same-runner back-to-back runs keep hardware variance low, but shared
+      # runners are still noisy — the threshold is deliberately generous.
+      - name: Compare against baseline
+        run: |
+          critcmp base head | tee critcmp.txt
+          python3 - <<'EOF'
+          import json, subprocess, sys
+
+          export = subprocess.run(
+              ["critcmp", "--export", "base"], capture_output=True, text=True, check=True
+          )
+          base = {
+              name: bench["criterion_estimates_v1"]["mean"]["point_estimate"]
+              for name, bench in json.loads(export.stdout)["benchmarks"].items()
+          }
+          export = subprocess.run(
+              ["critcmp", "--export", "head"], capture_output=True, text=True, check=True
+          )
+          head = {
+              name: bench["criterion_estimates_v1"]["mean"]["point_estimate"]
+              for name, bench in json.loads(export.stdout)["benchmarks"].items()
+          }
+
+          THRESHOLD = 1.25
+          # Relative threshold alone flags nanosecond-scale benchmarks whose
+          # timings shift by fractions of a ns from code alignment alone —
+          # require the absolute delta to clear a noise floor too.
+          MIN_DELTA_NS = 100.0
+          regressions = []
+          for name, base_mean in base.items():
+              head_mean = head.get(name)
+              if (
+                  head_mean is not None
+                  and head_mean > base_mean * THRESHOLD
+                  and head_mean - base_mean > MIN_DELTA_NS
+              ):
+                  regressions.append(
+                      f"{name}: {base_mean:.0f}ns -> {head_mean:.0f}ns "
+                      f"({head_mean / base_mean:.2f}x)"
+                  )
+
+          if regressions:
+              print("benchmark regressions beyond 25% threshold:")
+              print("\n".join(regressions))
+              sys.exit(1)
+          print(f"no regressions beyond 25% across {len(base)} benchmarks")
+          EOF
+
+  # The one check a branch rule needs to require. A job skipped because a
+  # job it needs failed counts as passing to GitHub, so this job always runs
+  # and fails unless every job it lists succeeded -- the benchmark regression
+  # check included. On a push to main the benchmark job is skipped by design,
+  # and skipped is accepted only there.
+  ci-gate:
+    name: CI gate
+    if: always()
+    runs-on: ubuntu-latest
+    needs:
+      - fmt
+      - clippy
+      - test-linux-x86
+      - test-linux-arm
+      - test-macos-arm
+      - test-windows
+      - msrv
+      - no-default-features
+      - binary-size
+      - python-test
+      - cross-check
+      - benchmark-regression
+    steps:
+      - name: Require every job to have passed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          python3 - <<'EOF'
+          import json, os, sys
+
+          failed = []
+          for name, job in json.loads(os.environ["RESULTS"]).items():
+              result = job["result"]
+              if result == "success":
+                  continue
+              if (
+                  result == "skipped"
+                  and name == "benchmark-regression"
+                  and os.environ["EVENT"] != "pull_request"
+              ):
+                  continue
+              failed.append(f"{name}: {result}")
+          if failed:
+              print("required jobs did not pass:")
+              print("\n".join(failed))
+              sys.exit(1)
+          print("every required job passed")
+          EOF
