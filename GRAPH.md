@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS infra.nodes (
   parent_id STRING, component_id STRING, source_file STRING,
   literal_properties JSON,
   organization STRING, project STRING, stack STRING,
+  stack_uri STRING, referenced_stack_uri STRING, resource_uri STRING,
   PRIMARY KEY (id) NOT ENFORCED
 );
 
@@ -66,6 +67,44 @@ bq load --source_format=NEWLINE_DELIMITED_JSON infra.edges graph-export/edges.nd
 
 `--compress gzip` writes `*.ndjson.gz` instead; `bq load` reads gzip NDJSON
 directly (`bq load ... infra.nodes graph-export/nodes.ndjson.gz`).
+
+### Where state lives: stack and resource URIs
+
+Given the backend the stacks live in, the export says where each one's state
+is. Pass it with `--backend-url` (else `PULUMI_BACKEND_URL`, else
+`backend.url` in `Pulumi.yaml`), or `backend_url=` from Python (else
+`backend.url`; `""` turns the fallback off):
+
+```bash
+pulumi-language-yaml graph --stack prod --organization my-org \
+  --backend-url gs://my-state-bucket --format ndjson --out ./graph-export
+```
+
+| Field | On | Pulumi Cloud | Self-managed (`gs://`, `s3://`, `azblob://`, `file://`) |
+|---|---|---|---|
+| `stack_uri` | the stack node, and the graph | `https://app.pulumi.com/{org}/{project}/{stack}` | `{backend}/.pulumi/stacks/{project}/{stack}.json` |
+| `referenced_stack_uri` | each StackReference with a literal name | the same, for the referenced stack | the same, for the referenced stack |
+| `resource_uri` | every resource-like node | `stack_uri` `#` URN | `stack_uri` `#` URN |
+
+- A StackReference resolves on the backend of the stack that declares it, so
+  the referenced stack's location follows from the same URL.
+- `resource_uri` is a locator -- the stack's state plus the resource's URN,
+  percent-encoded, as the fragment -- not a console deep link; Pulumi
+  documents no URL for a single resource.
+- The self-managed path is the project-scoped layout of backends created by
+  Pulumi 3.61 or later. A backend still on the older global layout
+  (`.pulumi/stacks/{stack}.json`) needs `pulumi state upgrade` for the path to
+  match.
+- A query string or fragment on a self-managed URL (`?region=`, `?profile=`)
+  is dropped; a URL with credentials (`user@`), whitespace or control
+  characters is refused. A self-hosted Pulumi Cloud, an unknown scheme, or no
+  backend at all adds no URI fields, and the output is what it always was.
+- Pulumi Cloud URIs are omitted when the organization is not known, since they
+  would name the wrong one.
+
+Tables created before these columns existed take them with
+`bq load --schema_update_option=ALLOW_FIELD_ADDITION`, or an `ALTER TABLE ...
+ADD COLUMN`.
 
 ### Cross-stack identity linking
 

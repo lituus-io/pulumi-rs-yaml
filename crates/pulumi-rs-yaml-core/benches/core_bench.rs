@@ -576,6 +576,7 @@ fn bench_sql_lineage_export(c: &mut Criterion) {
         stack: "dev",
         source_map: None,
         schema_store: None,
+        ..Default::default()
     };
     let (infra, _) = export_resource_graph(template, &graph_opts);
     let infra = Box::leak(Box::new(infra));
@@ -628,6 +629,7 @@ fn bench_sql_lineage_routine_script(c: &mut Criterion) {
         stack: "dev",
         source_map: None,
         schema_store: None,
+        ..Default::default()
     };
     let (infra, _) = export_resource_graph(template, &graph_opts);
     let infra = Box::leak(Box::new(infra));
@@ -690,6 +692,7 @@ fn bench_sql_statement_layer(c: &mut Criterion) {
         stack: "dev",
         source_map: None,
         schema_store: None,
+        ..Default::default()
     };
     let (infra, _) = export_resource_graph(template, &graph_opts);
     let infra = Box::leak(Box::new(infra));
@@ -757,9 +760,26 @@ fn bench_export_resource_graph(c: &mut Criterion) {
                 stack: "dev",
                 source_map: None,
                 schema_store: None,
+                ..Default::default()
             };
             let (graph, _) = export_resource_graph(black_box(template), &opts);
             black_box(graph.edges.len())
+        })
+    });
+
+    // The same graph with a backend: a stack URI, a referenced-stack URI, and
+    // a resource URI formatted for each of the 200 resources.
+    c.bench_function("export_resource_graph_200_nodes_backend_url", |b| {
+        b.iter(|| {
+            let opts = GraphExportOptions {
+                organization: "org",
+                project: "bench",
+                stack: "dev",
+                backend_url: Some("gs://bench-state"),
+                ..Default::default()
+            };
+            let (graph, _) = export_resource_graph(black_box(template), &opts);
+            black_box(graph.nodes.len())
         })
     });
 }
@@ -876,6 +896,7 @@ fn bench_resolve_literal(c: &mut Criterion) {
         stack: "dev",
         source_map: None,
         schema_store: None,
+        ..Default::default()
     };
 
     // A chain of plain variables, each interpolating the previous one, read

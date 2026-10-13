@@ -120,6 +120,7 @@ fn export_one(name: &str) {
         stack: "golden",
         source_map: Some(&source_map),
         schema_store: None,
+        ..Default::default()
     };
     let (graph, diags) = export_resource_graph(&template, &opts);
     let json = graph.to_json().expect("graph json");

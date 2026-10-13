@@ -293,6 +293,8 @@ pub struct ProjectPrepass {
     pub name: String,
     /// `runtime.options.providerTemplatedPackages`, from `Pulumi.yaml`.
     pub provider_templated_packages: Vec<String>,
+    /// `backend.url`, from the main file.
+    pub backend_url: Option<String>,
 }
 
 /// Why [`project_prepass`] could not read the project. Kept apart so each
@@ -326,9 +328,11 @@ pub fn project_prepass(directory: &Path) -> Result<ProjectPrepass, PrepassError>
         .is_some_and(|n| n == "Pulumi.yaml");
     let provider_templated_packages =
         crate::provider_scope::effective_packages(if is_pulumi_yaml { &raw } else { "" });
+    let backend_url = crate::stack_uri::backend_url_from_project_source(&raw);
     Ok(ProjectPrepass {
         name,
         provider_templated_packages,
+        backend_url,
     })
 }
 

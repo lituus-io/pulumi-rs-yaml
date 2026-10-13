@@ -64,6 +64,7 @@ use crate::eval::graph;
 use crate::literal_resolve::{collect_literal_properties, resolve_literal};
 use crate::packages;
 use crate::schema::SchemaStore;
+use crate::stack_uri::{parse_backend, Backend, StackUri};
 
 /// Current export schema version.
 pub const SCHEMA_VERSION: u32 = 1;
@@ -126,6 +127,18 @@ pub struct GraphNode<'src> {
     pub organization: Cow<'src, str>,
     pub project: Cow<'src, str>,
     pub stack: Cow<'src, str>,
+    /// Where this stack's state lives -- on the stack node only. Present when
+    /// a backend is known; see [`crate::stack_uri`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stack_uri: Option<Cow<'src, str>>,
+    /// Where the stack a StackReference names keeps its state -- on
+    /// StackReference nodes whose name is a literal. A StackReference
+    /// resolves on the same backend, so the location follows from it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub referenced_stack_uri: Option<Cow<'src, str>>,
+    /// The resource's locator: its stack's URI with the URN as fragment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_uri: Option<Cow<'src, str>>,
 }
 
 /// One typed edge. Composite key: (source_id, target_id, relationship).
@@ -150,6 +163,9 @@ pub struct ResourceGraph<'src> {
     pub organization: Cow<'src, str>,
     pub project: Cow<'src, str>,
     pub stack: Cow<'src, str>,
+    /// Where the exported stack's state lives, when a backend is known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stack_uri: Option<Cow<'src, str>>,
     pub nodes: Vec<GraphNode<'src>>,
     pub edges: Vec<GraphEdge<'src>>,
 }
@@ -187,6 +203,7 @@ fn serialize_pairs_as_object<S: serde::Serializer>(
 }
 
 /// Options for [`export_resource_graph`].
+#[derive(Default)]
 pub struct GraphExportOptions<'src> {
     /// Pulumi organization; empty uses a documented placeholder in
     /// cross-stack ids (with a warning).
@@ -198,6 +215,11 @@ pub struct GraphExportOptions<'src> {
     /// Optional schema store for authoritative token resolution and
     /// remote-component classification.
     pub schema_store: Option<&'src SchemaStore>,
+    /// The backend the stack's state lives in -- `https://api.pulumi.com`,
+    /// `gs://bucket`, ... -- from which the stack, StackReference and
+    /// resource URIs are derived. `None`, or a backend this crate does not
+    /// recognise, adds none of them, and the output is what it always was.
+    pub backend_url: Option<&'src str>,
 }
 
 /// Exports the static dependency graph of a template.
@@ -250,6 +272,9 @@ pub fn export_resource_graph<'src>(
         organization: Cow::Borrowed(ctx.org),
         project: Cow::Borrowed(opts.project),
         stack: Cow::Borrowed(opts.stack),
+        stack_uri: ctx.own_stack_uri().map(Cow::Owned),
+        referenced_stack_uri: None,
+        resource_uri: None,
     });
 
     // Top-level scope.
@@ -302,6 +327,9 @@ pub fn export_resource_graph<'src>(
             organization: Cow::Borrowed(ctx.org),
             project: Cow::Borrowed(opts.project),
             stack: Cow::Borrowed(opts.stack),
+            stack_uri: None,
+            referenced_stack_uri: None,
+            resource_uri: None,
         });
         targets.clear();
         resolver.targets_of_expr(&output.value, &mut targets);
@@ -473,6 +501,8 @@ struct Ctx<'src, 'o> {
     component_tokens: HashMap<String, &'src ComponentDecl<'src>>,
     /// Component key → verbatim registered token `{pkg}:index:{key}`.
     component_canonical: HashMap<&'src str, String>,
+    /// The recognised backend, when the caller named one.
+    backend: Option<Backend<'src>>,
 }
 
 impl<'src, 'o> Ctx<'src, 'o> {
@@ -500,7 +530,19 @@ impl<'src, 'o> Ctx<'src, 'o> {
             org_placeholder,
             component_tokens,
             component_canonical,
+            backend: opts.backend_url.and_then(parse_backend),
         }
+    }
+
+    /// The URI of stack `project`/`stack` in `organization`, on this backend.
+    fn stack_uri(&self, organization: &str, project: &str, stack: &str) -> Option<String> {
+        let known = organization != ORG_PLACEHOLDER || !self.org_placeholder;
+        StackUri::new(self.backend?, organization, known, project, stack).map(|u| u.to_string())
+    }
+
+    /// The exported stack's own URI.
+    fn own_stack_uri(&self) -> Option<String> {
+        self.stack_uri(self.org, self.opts.project, self.opts.stack)
     }
 
     fn source_file(&self, logical: &str) -> Option<&'src str> {
@@ -941,7 +983,24 @@ fn emit_scope<'src>(
     instantiation_stack: &mut Vec<&'src str>,
     diags: &mut Diagnostics,
 ) {
+    // Resolved once per scope; with no backend nothing below formats a URI.
+    let own_stack = ctx.backend.and_then(|backend| {
+        let known = !ctx.org_placeholder;
+        StackUri::new(backend, ctx.org, known, ctx.opts.project, ctx.opts.stack)
+    });
     for info in &scope.infos {
+        let referenced_stack_uri = match (&info.stack_fq, info.kind) {
+            (Some(fq), NodeKind::StackReference) => {
+                let mut parts = fq.splitn(3, '/');
+                match (parts.next(), parts.next(), parts.next()) {
+                    (Some(org), Some(project), Some(stack)) => {
+                        ctx.stack_uri(org, project, stack).map(Cow::Owned)
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
         nodes.push(GraphNode {
             id: Cow::Owned(info.id.clone()),
             kind: info.kind,
@@ -960,6 +1019,9 @@ fn emit_scope<'src>(
             organization: Cow::Borrowed(ctx.org),
             project: Cow::Borrowed(ctx.opts.project),
             stack: Cow::Borrowed(ctx.opts.stack),
+            stack_uri: None,
+            referenced_stack_uri,
+            resource_uri: own_stack.map(|s| Cow::Owned(s.resource(&info.id).to_string())),
         });
     }
 
@@ -1181,6 +1243,19 @@ fn empty_graph<'src>(opts: &GraphExportOptions<'src>) -> ResourceGraph<'src> {
         organization: Cow::Borrowed(org),
         project: Cow::Borrowed(opts.project),
         stack: Cow::Borrowed(opts.stack),
+        stack_uri: opts
+            .backend_url
+            .and_then(parse_backend)
+            .and_then(|backend| {
+                StackUri::new(
+                    backend,
+                    org,
+                    !opts.organization.is_empty(),
+                    opts.project,
+                    opts.stack,
+                )
+                .map(|u| Cow::Owned(u.to_string()))
+            }),
         nodes: Vec::new(),
         edges: Vec::new(),
     }
@@ -1226,6 +1301,7 @@ fn finalize<'src>(
         organization: Cow::Borrowed(ctx.org),
         project: Cow::Borrowed(opts.project),
         stack: Cow::Borrowed(opts.stack),
+        stack_uri: ctx.own_stack_uri().map(Cow::Owned),
         nodes,
         edges,
     }
@@ -1255,6 +1331,7 @@ mod tests {
             stack,
             source_map: None,
             schema_store: None,
+            ..Default::default()
         };
         export_resource_graph(template, &opts)
     }

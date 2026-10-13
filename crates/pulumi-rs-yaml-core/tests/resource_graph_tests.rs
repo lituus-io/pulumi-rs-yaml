@@ -40,6 +40,7 @@ fn export_project(
         stack: "dev",
         source_map: Some(source_map),
         schema_store: None,
+        ..Default::default()
     };
     export_resource_graph(template, &opts)
 }
@@ -189,6 +190,7 @@ fn cross_stack_contract_through_full_pipeline() {
             stack: "prod",
             source_map: None,
             schema_store: None,
+            ..Default::default()
         },
     );
     let output_id = &producer
@@ -502,4 +504,107 @@ fn a_mistyped_derive_argument_reaches_no_literal() {
         "a mistyped argument must not resolve; literals: {:?}",
         svc.literal_properties
     );
+}
+
+// ---------------------------------------------------------------------------
+// Stack and resource URIs
+// ---------------------------------------------------------------------------
+
+fn export_with_backend(
+    yaml: &str,
+    organization: &'static str,
+    backend_url: Option<&'static str>,
+) -> ResourceGraph<'static> {
+    let (template, diags) = pulumi_rs_yaml_core::ast::parse::parse_template(yaml, None);
+    assert!(!diags.has_errors(), "{diags}");
+    let template: &'static TemplateDecl<'static> = Box::leak(Box::new(template));
+    let opts = GraphExportOptions {
+        organization,
+        project: "consumer",
+        stack: "prod",
+        backend_url,
+        ..Default::default()
+    };
+    export_resource_graph(template, &opts).0
+}
+
+const WITH_REF: &str = "name: consumer\nruntime: yaml\nresources:\n  up:\n    type: pulumi:pulumi:StackReference\n    properties:\n      name: acme/producer/prod\n  local:\n    type: pulumi:pulumi:StackReference\n    properties:\n      name: dev\n  t:\n    type: gcp:bigquery:Table\n    properties:\n      ds: ${up.outputs.datasetId}\n";
+
+fn node_named<'g>(
+    g: &'g ResourceGraph<'static>,
+    logical: &str,
+) -> &'g pulumi_rs_yaml_core::resource_graph::GraphNode<'static> {
+    g.nodes
+        .iter()
+        .find(|n| n.logical_name == logical)
+        .expect("node")
+}
+
+#[test]
+fn no_backend_adds_no_uri_and_no_bytes() {
+    let g = export_with_backend(WITH_REF, "acme", None);
+    assert!(g.stack_uri.is_none());
+    assert!(g.nodes.iter().all(|n| n.stack_uri.is_none()
+        && n.referenced_stack_uri.is_none()
+        && n.resource_uri.is_none()));
+    let json = g.to_json().expect("json");
+    assert!(!json.contains("_uri"), "{json}");
+}
+
+#[test]
+fn a_self_managed_backend_locates_the_stack_its_references_and_its_resources() {
+    let g = export_with_backend(WITH_REF, "acme", Some("gs://state-bucket?region=eu"));
+    let stack_uri = "gs://state-bucket/.pulumi/stacks/consumer/prod.json";
+    assert_eq!(g.stack_uri.as_deref(), Some(stack_uri));
+    assert_eq!(
+        node_named(&g, "stack").stack_uri.as_deref(),
+        Some(stack_uri)
+    );
+    assert_eq!(
+        node_named(&g, "up").referenced_stack_uri.as_deref(),
+        Some("gs://state-bucket/.pulumi/stacks/producer/prod.json")
+    );
+    // A one-part name is a stack of this project.
+    assert_eq!(
+        node_named(&g, "local").referenced_stack_uri.as_deref(),
+        Some("gs://state-bucket/.pulumi/stacks/consumer/dev.json")
+    );
+    let t = node_named(&g, "t");
+    assert_eq!(
+        t.resource_uri.as_deref(),
+        Some("gs://state-bucket/.pulumi/stacks/consumer/prod.json#urn:pulumi:prod::consumer::gcp:bigquery%2Ftable:Table::t")
+    );
+    assert!(t.referenced_stack_uri.is_none());
+}
+
+#[test]
+fn pulumi_cloud_uris_need_the_organization() {
+    let g = export_with_backend(WITH_REF, "acme", Some("https://api.pulumi.com"));
+    assert_eq!(
+        g.stack_uri.as_deref(),
+        Some("https://app.pulumi.com/acme/consumer/prod")
+    );
+    assert_eq!(
+        node_named(&g, "up").referenced_stack_uri.as_deref(),
+        Some("https://app.pulumi.com/acme/producer/prod")
+    );
+
+    // Without an organization the consumer's own URIs would name the wrong
+    // one; a reference that spells its organization out is still known.
+    let g = export_with_backend(WITH_REF, "", Some("https://api.pulumi.com"));
+    assert!(g.stack_uri.is_none());
+    assert!(node_named(&g, "t").resource_uri.is_none());
+    assert!(node_named(&g, "local").referenced_stack_uri.is_none());
+    assert_eq!(
+        node_named(&g, "up").referenced_stack_uri.as_deref(),
+        Some("https://app.pulumi.com/acme/producer/prod")
+    );
+}
+
+#[test]
+fn a_dynamic_stack_reference_name_has_no_referenced_uri() {
+    let yaml = "name: consumer\nruntime: yaml\nconfig:\n  env:\n    type: string\nresources:\n  up:\n    type: pulumi:pulumi:StackReference\n    properties:\n      name: ${env}\n";
+    let g = export_with_backend(yaml, "acme", Some("gs://b"));
+    assert!(node_named(&g, "up").referenced_stack_uri.is_none());
+    assert!(node_named(&g, "up").resource_uri.is_some());
 }

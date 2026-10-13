@@ -3,6 +3,72 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.36
+
+### Where a stack's state lives, and where every resource is
+
+The graph said which stack a node belongs to and never where that stack is.
+Given the backend -- `--backend-url`, else `PULUMI_BACKEND_URL`, else
+`backend.url` in `Pulumi.yaml`; from Python, `backend_url=`, else
+`backend.url` -- the export now says:
+
+- `stack_uri` on the stack node and the graph:
+  `https://app.pulumi.com/{org}/{project}/{stack}` for Pulumi Cloud,
+  `{backend}/.pulumi/stacks/{project}/{stack}.json` for a `gs://`, `s3://`,
+  `azblob://` or `file://` backend.
+- `referenced_stack_uri` on every StackReference whose name is a literal. A
+  StackReference resolves on the backend of the stack that declares it, so
+  the referenced stack's location follows from the same URL -- the one piece
+  of cross-stack information a static export can state as fact rather than
+  infer.
+- `resource_uri` on every resource-like node: the stack's URI with the URN,
+  percent-encoded, as the fragment. It is a LOCATOR, not a console deep link
+  -- Pulumi documents no URL for a single resource, and this does not invent
+  one.
+
+A backend the crate does not recognise -- a self-hosted Pulumi Cloud, an
+unknown scheme -- adds nothing, and neither does no backend: the output is
+byte-identical to 0.5.35. A Pulumi Cloud URI is omitted when the organization
+is not known, because it would name the wrong one. The self-managed path is
+the project-scoped layout of backends created by 3.61 or later; a backend on
+the older global layout needs `pulumi state upgrade` to match it.
+
+A backend URL is caller input that ends up in a shared store, so it is held
+to what a location is. A query or fragment on a self-managed URL is dropped --
+`?profile=`, `?region=` and their kind are settings, and some are secrets. A
+URL carrying userinfo, whitespace or a control character is refused. Every
+author-chosen name -- organization, project, stack, URN, a StackReference's --
+is percent-encoded, so none can add a segment, a query or a fragment, and a
+name that is exactly `.` or `..` has its dots escaped so it cannot become a
+dot-segment a resolver would collapse. Formatting writes straight into the
+output through `fmt::Write`; with no backend nothing is formatted at all.
+
+The fuzzer found the first version's flaw within a minute: the percent
+encoder escaped a multi-byte character byte by byte and sliced the name
+between those bytes -- an empty slice, but one starting inside the character,
+which Rust refuses. Any resource named in Polish or Japanese, or with an em
+dash, aborted an export that had a backend. The encoder now slices only runs
+of plain ASCII, the crash input is a corpus seed, and the case is a security
+test.
+
+### Tests
+
+Seven unit tests on the module: every backend form and what it yields, the
+organization rule, encoding of segments and URNs, multi-byte names, dot
+segments, precedence, and reading `backend.url` from a project file. Four
+graph tests: no backend adds no field, a self-managed backend locating the
+stack, both references and a resource, Pulumi Cloud with and without an
+organization, and a dynamic StackReference name. Five security tests
+(169 -> 174): query credentials never exported, userinfo and control
+characters refused, a hostile name unable to change a URI's shape, a hostile
+StackReference name kept inside its segments, and a multi-byte resource name
+not aborting the export. `fuzz_resource_graph` exports every input with two
+backends and holds every URI under its backend, free of whitespace, control
+characters, queries and dot-segments; no new target (22). One CLI test for the
+flag over the project file, three Python tests for the keyword, the project
+fallback and `""`. One bench, `export_resource_graph_200_nodes_backend_url`:
+5% over the export without a backend.
+
 ## 0.5.35
 
 ### Every SQL statement, with what it reads and what it writes

@@ -973,6 +973,7 @@ mod resource_graph_security {
             stack: "s",
             source_map: None,
             schema_store: None,
+            ..Default::default()
         };
         let (g1, _) = export_resource_graph(template, &opts);
         let (g2, _) = export_resource_graph(template, &opts);
@@ -1032,6 +1033,7 @@ mod sql_lineage_security {
             stack: "s",
             source_map: None,
             schema_store: None,
+            ..Default::default()
         };
         let (infra, _) = export_resource_graph(template, &graph_opts);
         let infra: &'static _ = Box::leak(Box::new(infra));
@@ -1417,6 +1419,7 @@ mod literal_resolve_security {
             stack: "s",
             source_map: None,
             schema_store: None,
+            ..Default::default()
         };
         let (graph, _) = export_resource_graph(template, &opts);
         // The export must still succeed and serialize: an unanswerable name
@@ -3077,6 +3080,7 @@ mod sql_statement_security {
             stack: "s",
             source_map: None,
             schema_store: None,
+            ..Default::default()
         };
         let (infra, _) = export_resource_graph(template, &graph_opts);
         let infra: &'static _ = Box::leak(Box::new(infra));
@@ -3222,6 +3226,7 @@ mod sql_source_store_security {
             stack: "s",
             source_map: None,
             schema_store: None,
+            ..Default::default()
         };
         let (infra, _) = export_resource_graph(&template, &graph_opts);
         let opts = SqlLineageOptions {
@@ -3233,5 +3238,113 @@ mod sql_source_store_security {
         let (lineage, _) = export_sql_lineage(&template, &infra, &opts);
         let json = lineage.to_json().expect("json");
         assert!(!json.contains("sk-live"), "statement text leaked: {json}");
+    }
+}
+
+// ============================================================================
+// stack_uri.rs — backend URLs a caller supplies, carried into exported URIs
+//
+// A backend URL can carry credentials and settings; the URIs derived from it
+// end up in a shared graph store. Nothing that is not location may leak, and
+// no author-controlled name may change a URI's shape.
+// ============================================================================
+
+mod stack_uri_security {
+    use pulumi_rs_yaml_core::ast::parse::parse_template;
+    use pulumi_rs_yaml_core::resource_graph::{export_resource_graph, GraphExportOptions};
+    use pulumi_rs_yaml_core::stack_uri::{parse_backend, StackUri};
+
+    fn uris(yaml: &str, backend: &str) -> Vec<String> {
+        let (template, _) = parse_template(yaml, None);
+        let opts = GraphExportOptions {
+            organization: "acme",
+            project: "p",
+            stack: "prod",
+            backend_url: Some(backend),
+            ..Default::default()
+        };
+        let (g, _) = export_resource_graph(&template, &opts);
+        let mut out: Vec<String> = g.stack_uri.iter().map(|u| u.to_string()).collect();
+        for n in &g.nodes {
+            for u in [&n.stack_uri, &n.referenced_stack_uri, &n.resource_uri]
+                .into_iter()
+                .flatten()
+            {
+                out.push(u.to_string());
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn query_credentials_never_reach_the_export() {
+        let all = uris(
+            "name: p\nruntime: yaml\nresources:\n  b:\n    type: gcp:storage:Bucket\n",
+            "s3://state?profile=prod-admin&awssdk=v2&secret_key=AKIAEXAMPLE",
+        );
+        assert!(!all.is_empty());
+        for u in &all {
+            assert!(
+                !u.contains("AKIA") && !u.contains("profile") && !u.contains('?'),
+                "{u}"
+            );
+        }
+    }
+
+    #[test]
+    fn userinfo_or_control_characters_refuse_the_backend() {
+        for url in [
+            "https://token:x@api.pulumi.com",
+            "gs://user@bucket",
+            "gs://b\r\nX-Injected: 1",
+            "gs://b\u{0}",
+            "gs://b /x",
+        ] {
+            assert!(parse_backend(url).is_none(), "{url:?}");
+        }
+    }
+
+    #[test]
+    fn a_hostile_name_cannot_change_the_shape_of_a_uri() {
+        let backend = parse_backend("gs://b").expect("backend");
+        let hostile = "../../x?y#z \n\t%2F";
+        let s = StackUri::new(backend, hostile, true, hostile, hostile).expect("uri");
+        let text = s.resource(hostile).to_string();
+        let tail = &text["gs://b/.pulumi/stacks/".len()..];
+        assert_eq!(tail.matches('/').count(), 1, "{text}");
+        assert_eq!(text.matches('#').count(), 1, "{text}");
+        assert!(
+            !text.contains('?') && !text.chars().any(char::is_whitespace),
+            "{text}"
+        );
+
+        // A name that IS a dot-segment must not become one.
+        let s = StackUri::new(backend, "o", true, "..", "..").expect("uri");
+        let text = s.to_string();
+        assert!(!text.contains("/../") && !text.contains("/.."), "{text}");
+    }
+
+    #[test]
+    fn a_multibyte_resource_name_does_not_abort_the_export() {
+        // Found by fuzz_resource_graph: the encoder sliced between the bytes
+        // of one escaped character. Under panic = "abort" that takes down any
+        // export with a backend whose program names a resource in, say,
+        // Polish or Japanese, or with an em dash.
+        let yaml = "name: p\nruntime: yaml\nresources:\n  żółw:\n    type: t:m:A—B\n  データ:\n    type: t:m:C\n";
+        let all = uris(yaml, "gs://b");
+        assert!(
+            all.iter().any(|u| u.contains("%C5%BC%C3%B3%C5%82w")),
+            "{all:?}"
+        );
+        assert!(all.iter().all(|u| u.is_ascii()), "{all:?}");
+    }
+
+    #[test]
+    fn a_hostile_stack_reference_name_stays_inside_its_segments() {
+        let yaml = "name: p\nruntime: yaml\nresources:\n  up:\n    type: pulumi:pulumi:StackReference\n    properties:\n      name: \"acme/../../etc/passwd#frag\"\n";
+        for u in uris(yaml, "file:///var/state") {
+            assert!(u.starts_with("file:///var/state/.pulumi/stacks/"), "{u}");
+            assert!(!u.contains("/../"), "{u}");
+        }
     }
 }

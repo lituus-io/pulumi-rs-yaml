@@ -20,6 +20,7 @@ pub mod sha256;
 pub mod source;
 #[cfg(feature = "sql-lineage")]
 pub mod sql_lineage;
+pub mod stack_uri;
 pub mod syntax;
 pub mod type_check;
 

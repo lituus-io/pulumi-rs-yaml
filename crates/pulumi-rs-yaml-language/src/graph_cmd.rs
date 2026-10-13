@@ -8,6 +8,7 @@
 //!                            [--format json|ndjson] [--out <dir>]
 //!                            [--lineage] [--default-bq-project <p>]
 //!                            [--sql-statements] [--compress gzip|none]
+//!                            [--backend-url <url>]
 //! ```
 //!
 //! With `--lineage`, the JSON document gains a `sql_lineage` root key
@@ -18,6 +19,12 @@
 //! statement-level `reads`/`writes` edges -- as `statements` and
 //! `statement_occurrences` in JSON, and as `lineage_statements.ndjson` and
 //! `lineage_statement_occurrences.ndjson`.
+//!
+//! `--backend-url` names where the stack's state lives (Pulumi Cloud or a
+//! `gs://`, `s3://`, `azblob://` or `file://` backend); without it the
+//! `PULUMI_BACKEND_URL` environment variable, then `backend.url` in
+//! `Pulumi.yaml`, are used. A known backend adds `stack_uri`,
+//! `referenced_stack_uri` and `resource_uri` to the graph.
 //!
 //! `json` (default) prints one pretty document to stdout. `ndjson`
 //! writes `nodes.ndjson` and `edges.ndjson` (one flat row per line) to
@@ -36,7 +43,8 @@ use pulumi_rs_yaml_core::sql_lineage::{export_sql_lineage, SqlLineageOptions, Sq
 
 const USAGE: &str = "usage: pulumi-language-yaml graph --stack <stack> \
     [--organization <org>] [--dir <project-dir>] [--format json|ndjson] [--out <dir>] \
-    [--lineage] [--default-bq-project <project>] [--sql-statements] [--compress gzip|none]";
+    [--lineage] [--default-bq-project <project>] [--sql-statements] [--compress gzip|none] \
+    [--backend-url <url>]";
 
 struct GraphArgs {
     stack: String,
@@ -52,6 +60,7 @@ struct GraphArgs {
     #[cfg_attr(not(feature = "sql-lineage"), allow(dead_code))]
     sql_statements: bool,
     compress: Compression,
+    backend_url: Option<String>,
 }
 
 /// How NDJSON tables are written.
@@ -78,6 +87,7 @@ fn parse_args(args: &[String]) -> Result<GraphArgs, String> {
     let mut default_bq_project: Option<String> = None;
     let mut sql_statements = false;
     let mut compress = Compression::None;
+    let mut backend_url: Option<String> = None;
 
     let mut i = 0;
     while i < args.len() {
@@ -128,6 +138,10 @@ fn parse_args(args: &[String]) -> Result<GraphArgs, String> {
                 };
                 i += 2;
             }
+            "--backend-url" => {
+                backend_url = Some(take_value(i)?.clone());
+                i += 2;
+            }
             "--sql-statements" => {
                 sql_statements = true;
                 i += 1;
@@ -169,6 +183,7 @@ fn parse_args(args: &[String]) -> Result<GraphArgs, String> {
         default_bq_project,
         sql_statements,
         compress,
+        backend_url,
     })
 }
 
@@ -196,6 +211,13 @@ pub fn run_graph(args: &[String]) -> i32 {
         }
     };
     let project_name = prepass.name;
+    let environment_backend = std::env::var("PULUMI_BACKEND_URL").ok();
+    let backend_url = pulumi_rs_yaml_core::stack_uri::resolve_backend_url(
+        parsed.backend_url.as_deref(),
+        environment_backend.as_deref(),
+        prepass.backend_url.as_deref(),
+    )
+    .map(str::to_owned);
 
     let dir_str = parsed.dir.to_string_lossy().into_owned();
     let scoped = prepass.provider_templated_packages;
@@ -232,6 +254,7 @@ pub fn run_graph(args: &[String]) -> i32 {
         stack: &parsed.stack,
         source_map: Some(&source_map),
         schema_store: None,
+        backend_url: backend_url.as_deref(),
     };
     let (graph, diags) = export_resource_graph(&template, &opts);
     for diag in diags.iter() {
@@ -678,6 +701,50 @@ mod tests {
     }
 
     #[test]
+    fn backend_url_from_the_flag_and_from_pulumi_yaml() {
+        let dir = tempfile::tempdir().unwrap();
+        write_project(
+            dir.path(),
+            "name: proj\nruntime: yaml\nbackend:\n  url: gs://from-project\nresources:\n  a:\n    type: t:m:A\n",
+        );
+        let export = |extra: &[&str]| -> serde_json::Value {
+            let out = dir.path().join("out");
+            let mut a = vec![
+                "--stack",
+                "dev",
+                "--organization",
+                "acme",
+                "--dir",
+                dir.path().to_str().unwrap(),
+                "--format",
+                "ndjson",
+                "--out",
+                out.to_str().unwrap(),
+            ];
+            a.extend_from_slice(extra);
+            assert_eq!(run_graph(&args(&a)), 0);
+            let nodes = fs::read_to_string(out.join("nodes.ndjson")).unwrap();
+            nodes
+                .lines()
+                .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
+                .find(|n| n["kind"] == "stack")
+                .unwrap()
+        };
+        // The flag wins over the project file. (The environment variable sits
+        // between them; it is not set here, so the test does not race others.)
+        if std::env::var_os("PULUMI_BACKEND_URL").is_none() {
+            assert_eq!(
+                export(&[])["stack_uri"],
+                "gs://from-project/.pulumi/stacks/proj/dev.json"
+            );
+        }
+        assert_eq!(
+            export(&["--backend-url", "https://api.pulumi.com"])["stack_uri"],
+            "https://app.pulumi.com/acme/proj/dev"
+        );
+    }
+
+    #[test]
     fn sql_statements_requires_lineage() {
         assert!(parse_args(&args(&["--stack", "dev", "--sql-statements"])).is_err());
         assert!(parse_args(&args(&["--stack", "dev", "--lineage", "--sql-statements"])).is_ok());
@@ -742,6 +809,7 @@ mod tests {
             stack: "dev",
             source_map: None,
             schema_store: None,
+            ..Default::default()
         };
         let (graph, _) = export_resource_graph(&template, &opts);
         let dir = tempfile::tempdir().unwrap();

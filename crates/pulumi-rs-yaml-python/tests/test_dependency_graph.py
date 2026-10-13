@@ -320,3 +320,45 @@ class TestGilRelease:
         assert top == sorted(top)
         node = graph["nodes"][0]
         assert list(node) == sorted(node)
+
+
+class TestBackendUris:
+    WITH_BACKEND = """\
+name: proj
+runtime: yaml
+backend:
+  url: gs://from-project
+resources:
+  up:
+    type: pulumi:pulumi:StackReference
+    properties:
+      name: acme/producer/prod
+  bucket:
+    type: gcp:storage:Bucket
+"""
+
+    def _node(self, graph, logical):
+        return next(n for n in graph["nodes"] if n["logical_name"] == logical)
+
+    def test_absent_without_a_backend(self, tmp_project):
+        graph = export_dependency_graph(tmp_project(BASIC), "dev", "org")
+        assert "stack_uri" not in graph
+        assert all("resource_uri" not in n for n in graph["nodes"])
+
+    def test_project_backend_is_the_fallback(self, tmp_project):
+        graph = export_dependency_graph(tmp_project(self.WITH_BACKEND), "dev", "acme")
+        assert graph["stack_uri"] == "gs://from-project/.pulumi/stacks/proj/dev.json"
+        assert (
+            self._node(graph, "up")["referenced_stack_uri"]
+            == "gs://from-project/.pulumi/stacks/producer/prod.json"
+        )
+        assert self._node(graph, "bucket")["resource_uri"].startswith(
+            "gs://from-project/.pulumi/stacks/proj/dev.json#urn:pulumi:dev::proj::"
+        )
+
+    def test_the_keyword_wins_and_empty_turns_it_off(self, tmp_project):
+        d = tmp_project(self.WITH_BACKEND)
+        cloud = export_dependency_graph(d, "dev", "acme", backend_url="https://api.pulumi.com")
+        assert cloud["stack_uri"] == "https://app.pulumi.com/acme/proj/dev"
+        off = export_dependency_graph(d, "dev", "acme", backend_url="")
+        assert "stack_uri" not in off

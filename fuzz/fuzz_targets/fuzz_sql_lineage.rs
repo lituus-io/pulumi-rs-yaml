@@ -41,6 +41,7 @@ fuzz_target!(|data: &[u8]| {
         stack: "dev",
         source_map: None,
         schema_store: None,
+        ..Default::default()
     };
     let (infra, _) = export_resource_graph(&template, &graph_opts);
     let opts = SqlLineageOptions {

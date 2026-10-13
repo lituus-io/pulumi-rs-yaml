@@ -45,6 +45,7 @@ fn export_with_dir(
         stack,
         source_map: None,
         schema_store: None,
+        ..Default::default()
     };
     let (infra, _) = export_resource_graph(template, &graph_opts);
     let infra: &'static ResourceGraph<'static> = Box::leak(Box::new(infra));
@@ -456,6 +457,7 @@ fn dag_failure_returns_empty_graph() {
             stack: "dev",
             source_map: None,
             schema_store: None,
+            ..Default::default()
         },
     );
     let infra: &'static ResourceGraph<'static> = Box::leak(Box::new(infra));
@@ -504,6 +506,7 @@ fn multi_file_source_attribution() {
             stack: "dev",
             source_map: Some(source_map),
             schema_store: None,
+            ..Default::default()
         },
     );
     let infra: &'static ResourceGraph<'static> = Box::leak(Box::new(infra));
@@ -938,6 +941,7 @@ fn export_statements(
         stack: "prod",
         source_map: None,
         schema_store: None,
+        ..Default::default()
     };
     let (infra, _) = export_resource_graph(template, &graph_opts);
     let infra: &'static ResourceGraph<'static> = Box::leak(Box::new(infra));

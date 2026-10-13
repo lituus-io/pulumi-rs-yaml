@@ -36,6 +36,7 @@ fn export_and_check(source: &str) {
         stack: "dev",
         source_map: None,
         schema_store: None,
+        ..Default::default()
     };
     let (graph1, _) = export_resource_graph(&template, &opts);
     let (graph2, _) = export_resource_graph(&template, &opts);
@@ -52,6 +53,47 @@ fn export_and_check(source: &str) {
     let mut sorted = ids.clone();
     sorted.sort();
     assert_eq!(ids, sorted, "nodes sorted by id");
+
+    // No backend adds no URI anywhere.
+    assert!(graph1.stack_uri.is_none());
+    assert!(graph1.nodes.iter().all(|n| n.stack_uri.is_none()
+        && n.referenced_stack_uri.is_none()
+        && n.resource_uri.is_none()));
+
+    // With one, every URI stays under the backend, and no author-chosen name
+    // -- a logical name, a StackReference's -- can put whitespace, a control
+    // character, a query, or a dot-segment into it.
+    for backend in ["gs://fuzz-state", "https://api.pulumi.com"] {
+        let with_backend = GraphExportOptions {
+            backend_url: Some(backend),
+            ..GraphExportOptions {
+                organization: "org",
+                project: "fuzz",
+                stack: "dev",
+                ..Default::default()
+            }
+        };
+        let (g, _) = export_resource_graph(&template, &with_backend);
+        let prefix = if backend.starts_with("gs://") {
+            "gs://fuzz-state/.pulumi/stacks/"
+        } else {
+            "https://app.pulumi.com/"
+        };
+        let uris = g.stack_uri.iter().chain(g.nodes.iter().flat_map(|n| {
+            [&n.stack_uri, &n.referenced_stack_uri, &n.resource_uri]
+                .into_iter()
+                .flatten()
+        }));
+        for uri in uris {
+            assert!(uri.starts_with(prefix), "{uri}");
+            assert!(
+                !uri.chars().any(|c| c.is_whitespace() || c.is_control()),
+                "{uri:?}"
+            );
+            assert!(!uri.contains('?') && uri.matches('#').count() <= 1, "{uri}");
+            assert!(!uri.contains("/../") && !uri.contains("/./"), "{uri}");
+        }
+    }
 }
 
 /// A double-quoted YAML scalar carrying arbitrary text.

@@ -1110,7 +1110,7 @@ fn get_resource_schema(
 /// shared graph store; see the core `resource_graph` module docs for
 /// the full ID contract.
 #[pyfunction]
-#[pyo3(signature = (project_dir, stack, organization="", jinja_context=None, schema_dir=None))]
+#[pyo3(signature = (project_dir, stack, organization="", jinja_context=None, schema_dir=None, backend_url=None))]
 fn export_dependency_graph(
     py: Python<'_>,
     project_dir: &str,
@@ -1118,6 +1118,7 @@ fn export_dependency_graph(
     organization: &str,
     jinja_context: Option<&Bound<'_, PyDict>>,
     schema_dir: Option<&str>,
+    backend_url: Option<&str>,
 ) -> PyResult<Py<PyAny>> {
     // The context dictionary is read under the GIL; everything after it --
     // reading and rendering the project, the export, the serialization --
@@ -1129,12 +1130,20 @@ fn export_dependency_graph(
         let schema_store = schema_dir.and_then(|sd| {
             pulumi_rs_yaml_core::schema::SchemaStore::load(std::path::Path::new(sd)).ok()
         });
+        // The caller's backend, else the project's `backend.url`; an empty
+        // string turns the fallback off. The environment is not read: the
+        // export stays a function of its arguments and the project.
+        let backend_url = match backend_url {
+            Some(url) => (!url.is_empty()).then_some(url),
+            None => loaded.backend_url.as_deref(),
+        };
         let opts = pulumi_rs_yaml_core::resource_graph::GraphExportOptions {
             organization: &loaded.organization,
             project: &loaded.project,
             stack: &loaded.stack,
             source_map: Some(&source_map),
             schema_store: schema_store.as_ref(),
+            backend_url,
         };
         let (graph, diags) =
             pulumi_rs_yaml_core::resource_graph::export_resource_graph(&template, &opts);
@@ -1192,6 +1201,7 @@ fn export_sql_lineage(
             stack: &loaded.stack,
             source_map: Some(&source_map),
             schema_store: schema_store.as_ref(),
+            ..Default::default()
         };
         let (infra, infra_diags) =
             pulumi_rs_yaml_core::resource_graph::export_resource_graph(&template, &graph_opts);
@@ -1264,6 +1274,8 @@ struct LoadedGraphProject {
     project: String,
     stack: String,
     organization: String,
+    /// `backend.url` from the main file.
+    backend_url: Option<String>,
 }
 
 /// Shared project-loading preamble for the graph exporters: jinja
@@ -1332,6 +1344,7 @@ fn load_graph_project(
         }
     })?;
     let project_name_owned = prepass.name;
+    let backend_url = prepass.backend_url;
     let scoped = prepass.provider_templated_packages;
     let scoped: Vec<&str> = scoped.iter().map(String::as_str).collect();
 
@@ -1358,6 +1371,7 @@ fn load_graph_project(
         project,
         stack: stack_name,
         organization: organization_name,
+        backend_url,
     })
 }
 
