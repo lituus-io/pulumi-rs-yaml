@@ -59,6 +59,12 @@ pub use ids::TableName;
 pub use registry::{SqlRole, SqlSourceSpec};
 pub use resolve::SqlProvenance;
 
+/// The statement splitter, exposed for the fuzz harness and for callers that
+/// want to point at a statement inside a carrier without copying it. Not a
+/// stable interface.
+#[doc(hidden)]
+pub use sql::{split_statement_spans, split_statements};
+
 /// Lineage export schema version (independent of the infra graph's).
 pub const SCHEMA_VERSION: u32 = 1;
 

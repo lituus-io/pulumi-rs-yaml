@@ -93,6 +93,7 @@ jobs:
           - fuzz_parallel_eval
           - fuzz_resource_graph
           - fuzz_sql_lineage
+          - fuzz_sql_statements
           - fuzz_scope_roundtrip
           - fuzz_scope_oracle
           - fuzz_scope_render_identity

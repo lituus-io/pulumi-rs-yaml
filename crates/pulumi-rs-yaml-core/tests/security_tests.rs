@@ -3045,3 +3045,85 @@ mod derive_string_security {
         );
     }
 }
+
+// ============================================================================
+// sql_lineage/sql.rs — statement splitting and statement facts on author text
+//
+// Routine bodies, job queries and scheduled queries are split into statements
+// before they are parsed. The splitter and the CALL detector sliced author text
+// at byte offsets they had not proven were character boundaries; under
+// `panic = "abort"` a slice inside a character takes the whole host down.
+// ============================================================================
+
+mod sql_statement_security {
+    use pulumi_rs_yaml_core::ast::parse::parse_template;
+    use pulumi_rs_yaml_core::resource_graph::{export_resource_graph, GraphExportOptions};
+    use pulumi_rs_yaml_core::sql_lineage::{export_sql_lineage, SqlLineageOptions};
+
+    /// Exports a routine whose body is `body`; returns the lineage JSON.
+    /// Reaching the return at all is the main assertion.
+    fn export_routine(body: &str) -> String {
+        let yaml = format!(
+            "name: p\nruntime: yaml\nresources:\n  r:\n    type: gcp:bigquery:Routine\n    properties:\n      project: proj\n      datasetId: d\n      routineId: r\n      routineType: PROCEDURE\n      definitionBody: {}\n",
+            serde_json::to_string(body).expect("quote")
+        );
+        let (template, diags) = parse_template(&yaml, None);
+        assert!(!diags.has_errors(), "{diags}");
+        let template: &'static _ = Box::leak(Box::new(template));
+        let graph_opts = GraphExportOptions {
+            organization: "org",
+            project: "p",
+            stack: "s",
+            source_map: None,
+            schema_store: None,
+        };
+        let (infra, _) = export_resource_graph(template, &graph_opts);
+        let infra: &'static _ = Box::leak(Box::new(infra));
+        let opts = SqlLineageOptions {
+            organization: "org",
+            project: "p",
+            stack: "s",
+            project_dir: None,
+            default_bq_project: Some("proj"),
+            source_map: None,
+            extra_sql_sources: &[],
+        };
+        let (lineage, _) = export_sql_lineage(template, infra, &opts);
+        lineage.to_json().expect("serializes")
+    }
+
+    #[test]
+    fn routine_body_unicode_begin_end_does_not_abort() {
+        // `İ` lowercases from two bytes to three; the old splitter sliced the
+        // original text with an offset found in the lowercased copy.
+        export_routine("BEGIN İ END");
+        export_routine("BEGIN SELECT 1; SELECT 'İİİ'; END;");
+    }
+
+    #[test]
+    fn kelvin_sign_in_a_routine_body_does_not_abort() {
+        // The Kelvin sign shrinks from three bytes to one when lowercased.
+        export_routine("BEGIN \u{212A}\u{212A}\u{212A}\u{212A} END;");
+    }
+
+    #[test]
+    fn a_body_whose_fifth_byte_is_inside_a_character_does_not_abort() {
+        export_routine("ąąą");
+        export_routine("żółw SELECT 1");
+    }
+
+    #[test]
+    fn call_detection_on_multibyte_text_never_kills_the_parser_worker() {
+        // CALL detection runs on the parser worker, for statements that parsed
+        // -- and `aąą x` parses. A panic there aborts a release build; in a
+        // test build it kills the worker, and the dead worker is
+        // indistinguishable from a parse error, so the WHOLE script falls back
+        // to the heuristic and the INSERT's write is lost. The write surviving
+        // is the observable proof the worker did.
+        let json = export_routine("aąą x; INSERT INTO `proj.d.t` SELECT a FROM `proj.d.s`");
+        assert!(
+            json.contains("\"writes_to\""),
+            "parser worker died; the INSERT fell back to the heuristic: {json}"
+        );
+    }
+}

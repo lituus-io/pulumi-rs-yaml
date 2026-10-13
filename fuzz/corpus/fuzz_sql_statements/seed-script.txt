@@ -1,0 +1,4 @@
+BEGIN
+INSERT INTO `p.d.a` VALUES ('x;y'); -- c;
+/* b; */ DELETE FROM `p.d.b`;
+END;

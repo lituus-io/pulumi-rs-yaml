@@ -80,6 +80,12 @@ test = false
 doc = false
 
 [[bin]]
+name = "fuzz_sql_statements"
+path = "fuzz_targets/fuzz_sql_statements.rs"
+test = false
+doc = false
+
+[[bin]]
 name = "fuzz_scope_roundtrip"
 path = "fuzz_targets/fuzz_scope_roundtrip.rs"
 doc = false

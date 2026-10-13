@@ -4,8 +4,8 @@
 [![Security](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/security.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/security.yml)
 [![Fuzz](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/fuzz.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/fuzz.yml)
 [![Benchmark](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/benchmark.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/benchmark.yml)
-[![fuzz targets](https://img.shields.io/badge/fuzz%20targets-21-blue)](fuzz/fuzz_targets)
-[![security tests](https://img.shields.io/badge/security%20tests-159-blue)](crates/pulumi-rs-yaml-core/tests/security_tests.rs)
+[![fuzz targets](https://img.shields.io/badge/fuzz%20targets-22-blue)](fuzz/fuzz_targets)
+[![security tests](https://img.shields.io/badge/security%20tests-163-blue)](crates/pulumi-rs-yaml-core/tests/security_tests.rs)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE)
 
 Rust implementation of the [Pulumi](https://www.pulumi.com/) YAML language runtime. Drop-in replacement for the Go-based `pulumi-yaml` with 1:1 compatibility.
@@ -141,7 +141,7 @@ cd fuzz
 cargo +nightly fuzz run fuzz_yaml_parser -- -max_total_time=60
 ```
 
-Core targets: `fuzz_yaml_parser`, `fuzz_interpolation`, `fuzz_jinja`, `fuzz_builtins`, `fuzz_converter`, `fuzz_yaml_bomb`, `fuzz_extra_context`, `fuzz_starlark`, `fuzz_parallel_eval`, `fuzz_resource_graph`, `fuzz_sql_lineage`, `fuzz_native_str`, `fuzz_checkpoint`.
+Core targets: `fuzz_yaml_parser`, `fuzz_interpolation`, `fuzz_jinja`, `fuzz_builtins`, `fuzz_converter`, `fuzz_yaml_bomb`, `fuzz_extra_context`, `fuzz_starlark`, `fuzz_parallel_eval`, `fuzz_resource_graph`, `fuzz_sql_lineage`, `fuzz_sql_statements`, `fuzz_native_str`, `fuzz_checkpoint`.
 
 Provider-scope targets, which check the extent detection above:
 `fuzz_scope_roundtrip` (protect and restore are exact inverses),

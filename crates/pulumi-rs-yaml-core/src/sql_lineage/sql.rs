@@ -6,6 +6,8 @@
 
 use polyglot_sql::guard::ComplexityGuardOptions;
 use polyglot_sql::query_analysis::{analyze_query, AnalyzeQueryOptions};
+use std::ops::Range;
+
 use polyglot_sql::{DialectType, Expression};
 
 /// SQL larger than this is skipped (defense-in-depth under
@@ -291,8 +293,10 @@ fn statement_facts(stmt: &Expression, raw: &str) -> StatementFacts {
     }
 
     // CALL parses dialect-dependently; detect textually.
+    // Compared as bytes: `trimmed[..4]` panicked when byte 4 fell inside a
+    // character. Once the four bytes are ASCII `call`, byte 4 is a boundary.
     let trimmed = raw.trim_start();
-    if trimmed.len() >= 5 && trimmed[..4].eq_ignore_ascii_case("call") {
+    if trimmed.len() >= 5 && trimmed.as_bytes()[..4].eq_ignore_ascii_case(b"call") {
         if let Some(name) = trimmed[4..]
             .trim_start()
             .split(['(', ' ', '\n', ';'])
@@ -316,8 +320,27 @@ fn statement_facts(stmt: &Expression, raw: &str) -> StatementFacts {
 /// Splits a script into top-level statements, respecting quotes,
 /// backticks, and `--` / `/* */` comments. Strips one surrounding
 /// `BEGIN` … `END;` wrapper when present.
-pub(crate) fn split_statements(script: &str) -> Vec<&str> {
-    let body = strip_begin_end(script);
+pub fn split_statements(script: &str) -> Vec<&str> {
+    split_statement_spans(script)
+        .into_iter()
+        .map(|r| &script[r])
+        .collect()
+}
+
+/// [`split_statements`] as byte ranges into `script` itself, so a caller
+/// can hand a statement on -- or point at where it sits -- without copying
+/// it. Every range is non-empty, trimmed, on `char` boundaries, increasing
+/// and non-overlapping.
+///
+/// Boundaries are found by scanning BYTES for ASCII delimiters. An ASCII
+/// byte never occurs inside a multi-byte UTF-8 sequence, so every position
+/// the scan stops at is a `char` boundary by construction, and slicing
+/// there cannot panic -- which matters under `panic = "abort"`, where the
+/// script is author text.
+pub fn split_statement_spans(script: &str) -> Vec<Range<usize>> {
+    let body_span = strip_begin_end_span(script);
+    let base = body_span.start;
+    let body = &script[body_span];
     let bytes = body.as_bytes();
     let mut out = Vec::new();
     let mut start = 0usize;
@@ -350,10 +373,7 @@ pub(crate) fn split_statements(script: &str) -> Vec<&str> {
                     i = (i + 2).min(bytes.len());
                 }
                 b';' => {
-                    let stmt = body[start..i].trim();
-                    if !stmt.is_empty() {
-                        out.push(stmt);
-                    }
+                    push_trimmed(body, base, start..i, &mut out);
                     start = i + 1;
                     i += 1;
                 }
@@ -361,26 +381,67 @@ pub(crate) fn split_statements(script: &str) -> Vec<&str> {
             },
         }
     }
-    let tail = body[start..].trim();
-    if !tail.is_empty() {
-        out.push(tail);
-    }
+    push_trimmed(body, base, start..bytes.len(), &mut out);
     out
 }
 
-fn strip_begin_end(script: &str) -> &str {
-    let trimmed = script.trim();
-    if trimmed.len() >= 5 && trimmed[..5].eq_ignore_ascii_case("begin") {
-        let inner = trimmed[5..].trim_start();
-        let lower = inner.to_lowercase();
-        if let Some(pos) = lower.rfind("end") {
-            let after = inner[pos + 3..].trim();
-            if after.is_empty() || after == ";" {
-                return &inner[..pos];
-            }
-        }
+/// Pushes `body[r]`, trimmed, as a range offset by `base` -- unless it is
+/// empty after trimming.
+fn push_trimmed(body: &str, base: usize, r: Range<usize>, out: &mut Vec<Range<usize>>) {
+    let piece = &body[r.clone()];
+    let lead = piece.len() - piece.trim_start().len();
+    let trimmed_len = piece.trim().len();
+    if trimmed_len > 0 {
+        let s = base + r.start + lead;
+        out.push(s..s + trimmed_len);
     }
-    trimmed
+}
+
+/// The span of `script` inside one surrounding `BEGIN` … `END[;]`, or the
+/// whole trimmed script when there is no such wrapper. Allocates nothing.
+///
+/// This used to lowercase the body and then slice the ORIGINAL with an
+/// offset found in the lowercased copy. Lowercasing changes byte lengths --
+/// `İ` is two bytes and lowercases to three, the Kelvin sign is three and
+/// lowercases to one -- so the offset could land inside a character or past
+/// the end, and `BEGIN İ END` aborted the process. It also sliced
+/// `trimmed[..5]` before knowing byte 5 was a boundary, so any body whose
+/// fifth byte fell inside a character aborted it too. Both comparisons are
+/// on bytes now, against ASCII needles, which no non-ASCII text can match.
+fn strip_begin_end_span(script: &str) -> Range<usize> {
+    let lead = script.len() - script.trim_start().len();
+    let trimmed = script.trim();
+    let whole = lead..lead + trimmed.len();
+    let bytes = trimmed.as_bytes();
+    if bytes.len() < 5 || !bytes[..5].eq_ignore_ascii_case(b"begin") {
+        return whole;
+    }
+    // `begin` is ASCII, so byte 5 is a boundary.
+    let after_begin = &trimmed[5..];
+    let inner_off = 5 + (after_begin.len() - after_begin.trim_start().len());
+    let inner = &trimmed[inner_off..];
+    let Some(pos) = rfind_ascii_ci(inner.as_bytes(), b"end") else {
+        return whole;
+    };
+    // `end` is ASCII, so `pos` and `pos + 3` are boundaries.
+    let after = inner[pos + 3..].trim();
+    if after.is_empty() || after == ";" {
+        let s = lead + inner_off;
+        s..s + pos
+    } else {
+        whole
+    }
+}
+
+/// Last occurrence of an ASCII `needle` in `hay`, compared ASCII
+/// case-insensitively, as a byte offset.
+fn rfind_ascii_ci(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || hay.len() < needle.len() {
+        return None;
+    }
+    (0..=hay.len() - needle.len())
+        .rev()
+        .find(|&i| hay[i..i + needle.len()].eq_ignore_ascii_case(needle))
 }
 
 /// Heuristic fallback when parsing fails: scans comment- and
@@ -650,5 +711,158 @@ mod tests {
         assert!(analyze_select(&deep).is_ok(), "deep nesting must not abort");
         let ok = "SELECT ((((1)))) AS v FROM `p.d.t`";
         assert!(analyze_select(ok).is_ok());
+    }
+
+    /// The splitter as it shipped through 0.5.33, kept as an oracle. It is
+    /// only fed inputs it could not panic on (ASCII), where the new splitter
+    /// must agree with it exactly.
+    fn split_statements_oracle(script: &str) -> Vec<&str> {
+        fn strip(script: &str) -> &str {
+            let trimmed = script.trim();
+            if trimmed.len() >= 5 && trimmed[..5].eq_ignore_ascii_case("begin") {
+                let inner = trimmed[5..].trim_start();
+                let lower = inner.to_lowercase();
+                if let Some(pos) = lower.rfind("end") {
+                    let after = inner[pos + 3..].trim();
+                    if after.is_empty() || after == ";" {
+                        return &inner[..pos];
+                    }
+                }
+            }
+            trimmed
+        }
+        let body = strip(script);
+        let bytes = body.as_bytes();
+        let mut out = Vec::new();
+        let (mut start, mut i, mut quote) = (0usize, 0usize, None::<u8>);
+        while i < bytes.len() {
+            let b = bytes[i];
+            match quote {
+                Some(q) => {
+                    if b == q {
+                        quote = None;
+                    }
+                    i += 1;
+                }
+                None => match b {
+                    b'\'' | b'"' | b'`' => {
+                        quote = Some(b);
+                        i += 1;
+                    }
+                    b'-' if bytes.get(i + 1) == Some(&b'-') => {
+                        while i < bytes.len() && bytes[i] != b'\n' {
+                            i += 1;
+                        }
+                    }
+                    b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                        i += 2;
+                        while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                            i += 1;
+                        }
+                        i = (i + 2).min(bytes.len());
+                    }
+                    b';' => {
+                        let stmt = body[start..i].trim();
+                        if !stmt.is_empty() {
+                            out.push(stmt);
+                        }
+                        start = i + 1;
+                        i += 1;
+                    }
+                    _ => i += 1,
+                },
+            }
+        }
+        let tail = body[start..].trim();
+        if !tail.is_empty() {
+            out.push(tail);
+        }
+        out
+    }
+
+    #[test]
+    fn spans_agree_with_the_shipped_splitter_on_ascii() {
+        let corpus = [
+            "",
+            "   ",
+            ";;;",
+            "SELECT 1",
+            "SELECT 1;",
+            " SELECT 1 ; SELECT 2 ;; ",
+            "BEGIN\nINSERT INTO `p.d.a` VALUES ('x;y'); -- c;\n/* b; */ DELETE FROM `p.d.b`;\nEND;",
+            "begin select 1; select 2 end",
+            "BEGIN select 1; END extra",
+            "BEGIN",
+            "BEGINEND",
+            "BEGIN END;",
+            "SELECT 'it''s; fine'; SELECT \"a;b\"",
+            "SELECT 1 -- no newline; at end",
+            "SELECT 1 /* unterminated ; comment",
+            "SELECT 'unterminated ; quote",
+            "BEGIN\r\n  SELECT 1;\r\n  SELECT 2;\r\nEND;\r\n",
+            "BEGIN SELECT 'end'; END",
+            "BEGIN SELECT legend; END",
+        ];
+        for script in corpus {
+            let spans = split_statement_spans(script);
+            let sliced: Vec<&str> = spans.iter().map(|r| &script[r.clone()]).collect();
+            assert_eq!(sliced, split_statements_oracle(script), "script {script:?}");
+            assert_eq!(split_statements(script), sliced);
+            let mut prev_end = 0;
+            for r in &spans {
+                assert!(r.start >= prev_end && r.start < r.end && r.end <= script.len());
+                prev_end = r.end;
+            }
+        }
+    }
+
+    #[test]
+    fn begin_end_with_dotted_capital_i_does_not_panic() {
+        // SECURITY REGRESSION: `İ` is two bytes and lowercases to three, so an
+        // offset found in the lowercased body sliced the original past its end.
+        let script = "BEGIN İ END";
+        let stmts = split_statements(script);
+        assert_eq!(stmts, vec!["İ"]);
+    }
+
+    #[test]
+    fn kelvin_sign_before_end_does_not_panic() {
+        // The Kelvin sign is three bytes and lowercases to one: the offset
+        // landed before the real `END`, inside the character.
+        let script = "BEGIN SELECT '\u{212A}' FROM t; END";
+        let stmts = split_statements(script);
+        assert_eq!(stmts, vec!["SELECT '\u{212A}' FROM t"]);
+        let script = "BEGIN \u{212A}\u{212A}\u{212A}\u{212A} END;";
+        assert_eq!(
+            split_statements(script),
+            vec!["\u{212A}\u{212A}\u{212A}\u{212A}"]
+        );
+    }
+
+    #[test]
+    fn a_multibyte_fifth_byte_does_not_panic() {
+        // `trimmed[..5]` was sliced before byte 5 was known to be a boundary.
+        for script in ["ąąą", "aąąx SELECT 1", "żółw; SELECT 1", "日本語のテキスト"]
+        {
+            let spans = split_statement_spans(script);
+            for r in spans {
+                assert!(script.is_char_boundary(r.start) && script.is_char_boundary(r.end));
+            }
+        }
+    }
+
+    #[test]
+    fn call_detection_with_a_multibyte_fourth_byte_does_not_panic() {
+        // `trimmed[..4]` panicked when byte 4 fell inside a character.
+        // `aąą x` parses (as an aliased identifier), so it reaches CALL
+        // detection. A panic there killed the worker, and the dead worker was
+        // indistinguishable from a parse error -- the facts were just gone.
+        let facts = statement_facts_for_all(&["aąą x"]);
+        assert_eq!(facts.len(), 1);
+        assert!(
+            facts[0].is_ok(),
+            "worker died: {:?}",
+            facts[0].as_ref().err()
+        );
     }
 }

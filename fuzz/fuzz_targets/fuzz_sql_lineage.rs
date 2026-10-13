@@ -68,4 +68,18 @@ fuzz_target!(|data: &[u8]| {
     let (view_infra, _) = export_resource_graph(&view_template, &graph_opts);
     let (view_lineage, _) = export_sql_lineage(&view_template, &view_infra, &opts);
     let _ = view_lineage.to_json().expect("view lineage serializes");
+
+    // ...and as a routine body, which is SPLIT into statements before it is
+    // parsed: the splitter and CALL detection only see author text this way.
+    // A view's query never reaches either.
+    let routine_yaml = format!(
+        "name: fuzz\nruntime: yaml\nresources:\n  r:\n    type: gcp:bigquery:Routine\n    properties:\n      project: proj\n      datasetId: ds\n      routineId: r\n      routineType: PROCEDURE\n      definitionBody: {}\n",
+        serde_yaml::to_string(&input).unwrap_or_else(|_| "''".to_string())
+    );
+    let (routine_template, _) = pulumi_rs_yaml_core::ast::parse::parse_template(&routine_yaml, None);
+    let (routine_infra, _) = export_resource_graph(&routine_template, &graph_opts);
+    let (r1, _) = export_sql_lineage(&routine_template, &routine_infra, &opts);
+    let (r2, _) = export_sql_lineage(&routine_template, &routine_infra, &opts);
+    assert_eq!(r1, r2, "routine lineage must be deterministic");
+    let _ = r1.to_json().expect("routine lineage serializes");
 });
