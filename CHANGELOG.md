@@ -3,6 +3,101 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.34
+
+### A statement split that sliced author text inside a character
+
+Routine bodies, job queries and scheduled queries are split into statements
+before anything parses them, and the splitter sliced the author's text at byte
+offsets it had not proven were character boundaries. Three ways in, all
+reachable from a `definitionBody`, and under `panic = "abort"` each one took the
+host down:
+
+- `strip_begin_end` lowercased the body and then sliced the ORIGINAL with an
+  offset found in the lowercased copy. Lowercasing changes byte lengths -- `İ`
+  is two bytes and lowercases to three, the Kelvin sign is three and lowercases
+  to one -- so `BEGIN İ END` sliced past the end of the string.
+- The same function sliced `trimmed[..5]` before knowing byte 5 was a
+  boundary, so a body as plain as `ąąą` was enough.
+- CALL detection, on the parser worker, sliced `trimmed[..4]` the same way. A
+  panic there killed the worker, and a dead worker was indistinguishable from a
+  parse error: the whole script fell back to the heuristic scan and every write
+  it made was silently lost.
+
+The fuzzer never reached any of them. `fuzz_sql_lineage` wraps its input as a
+VIEW query, and a view is analysed as one statement -- it never meets the
+splitter. The target now also wraps its input as a routine body.
+
+The splitter scans bytes for ASCII delimiters now, and an ASCII byte never
+occurs inside a multi-byte sequence, so every position it stops at is a
+boundary by construction. It also returns its statements as byte ranges into
+the carrier (`split_statement_spans`) rather than as new strings -- the ground
+the statement-level lineage of the next release is built on. On ASCII input it
+agrees exactly with the splitter it replaces, which is kept as a test oracle.
+
+### Faster without moving a byte
+
+Every acceptance stack is now exported by a golden test -- infrastructure
+graph, lineage graph, the CLI's combined document and the diagnostics -- and
+compared with a stored copy byte for byte. Everything below was held to it.
+
+- `literal_resolve` borrowed nothing: the parser stores every literal as an
+  owned `Cow`, and `s.clone()` copied the whole string -- a view's SQL, a
+  schema -- per resolution and again per memo hit. It is a borrow now.
+- `MergedTemplate::as_template_decl` deep-cloned every expression tree in the
+  program, and every caller dropped the original. `into_parts` moves it.
+  `merge_templates` moves additional files' items instead of cloning them.
+- Every Jinja-rendered file was deserialized twice, once by the validator and
+  once by the parser. The validator now hands its document on.
+- The CLI and both Python exporters parsed the whole program just to read its
+  `name`, then read `Pulumi.yaml` a second time for the provider-templated
+  packages. `project_prepass` does both from one read, with a name reader that
+  never builds the template.
+- Graph edges were keyed by two cloned URN strings per insert. They are keyed
+  by interned ids, the topological walk runs on indices rather than hashed
+  names, evaluation dispatches through one name map and one rayon pool instead
+  of scanning the template per node and building a pool per level, and
+  default providers are found once rather than rescanned per resource.
+- NDJSON rows stream through a buffered writer; `graph` and `exec` no longer
+  start a tokio runtime they never use.
+
+Measured against 0.5.33 on one machine in one session: topological sort of a
+100-node chain -31%, merging ten files -23%, evaluating 200 resources -23%,
+literal resolution across 200 invokes -20%, Jinja render -15%, the graph export
+of 200 resources -10%. Nothing is slower than the benchmark gate allows.
+
+One fix fell out of the reading. An undefined reference's "did you mean"
+suggestion was the closest known name by edit distance, with ties left in
+`HashMap` order -- which is randomised per process, so the same typo could be
+told to mean a different name on each run. Ties now go to the name that sorts
+first.
+
+### The fuzz workspace's lockfile had not moved
+
+The fuzz crate is its own workspace, and its lockfile still resolved
+`polyglot-sql` to 0.6.2 -- the version that does not terminate on a
+ten-character query, which 0.5.33 moved off. Both lockfiles resolve 0.13.1 now.
+
+### Tests
+
+A Jinja changelog regression matrix: forty-seven Rust tests, one module per
+release from 0.4.0 to 0.5.33, each driving `multi_file::load_project` with a
+Jinja context -- the loader path the optimisations above move -- and eighteen
+Python tests driving the same fixes through `export_dependency_graph`. Every
+matrix test was checked to fail with its fix reverted; reverting the escaped
+dollar guard to the one 0.5.30 shipped fails the two tests written for it.
+
+Goldens for all thirty-two acceptance stacks, re-blessed only with
+`PULUMI_RS_YAML_BLESS=1`. Six unit tests on the splitter (the oracle agreement,
+`İ`, the Kelvin sign, a multi-byte fifth byte, CALL on the worker) and four
+security tests through the full export (159 -> 163), each failing against the
+splitter that shipped. A new fuzz target, `fuzz_sql_statements` (21 -> 22),
+holds every range in bounds, on boundaries, trimmed, ordered and agreeing with
+`split_statements`. One unit test each for borrowed literals, the name reader
+against the full parser, and a deterministic suggestion; one for streamed
+NDJSON being byte-identical. Three new benches: `export_resource_graph_200_nodes`,
+`eval_200_resource_wide_level` and `sql_lineage_routine_50_statements`.
+
 ## 0.5.33
 
 ### A derived string the engine can resolve before the deploy
