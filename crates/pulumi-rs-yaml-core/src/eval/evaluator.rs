@@ -104,6 +104,14 @@ impl EvalState {
     }
 }
 
+/// A template node, as evaluation dispatches it.
+#[derive(Clone, Copy)]
+enum NodeRef<'t> {
+    Config(&'t ConfigEntry<'t>),
+    Variable(&'t VariableEntry<'t>),
+    Resource(&'t ResourceEntry<'t>),
+}
+
 /// The main evaluator that walks a template in dependency order
 /// and evaluates expressions, config, variables, and resources.
 ///
@@ -362,6 +370,46 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
         // Compute topological levels for level-aware evaluation
         let levels = topological_levels(&result.order, &result.deps);
 
+        // Every node by name, built once. Dispatch used to scan config, then
+        // variables, then resources linearly for EACH node -- quadratic in the
+        // size of the program. The precedence is the scan's: the first entry
+        // inserted for a name wins, so config beats a variable of the same
+        // name (which may shadow it), which beats a resource.
+        let mut nodes: HashMap<&str, NodeRef<'_>> = HashMap::with_capacity(
+            template.config.len() + template.variables.len() + template.resources.len(),
+        );
+        for entry in &template.config {
+            nodes
+                .entry(entry.key.as_ref())
+                .or_insert(NodeRef::Config(entry));
+        }
+        for entry in &template.variables {
+            nodes
+                .entry(entry.key.as_ref())
+                .or_insert(NodeRef::Variable(entry));
+        }
+        for entry in &template.resources {
+            nodes
+                .entry(entry.logical_name.as_ref())
+                .or_insert(NodeRef::Resource(entry));
+        }
+
+        // One pool for the whole evaluation, sized to the widest level it can
+        // be asked to run. A pool -- and its OS threads -- used to be built and
+        // torn down for every level; a level of `k` nodes still never runs on
+        // more than `k` threads, because it has only `k` tasks.
+        let widest = levels.iter().map(Vec::len).max().unwrap_or(0);
+        let pool = if self.parallel > 1 && widest > 1 {
+            Some(
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads((self.parallel as usize).min(widest))
+                    .build()
+                    .expect("failed to build rayon thread pool"),
+            )
+        } else {
+            None
+        };
+
         // Evaluate nodes level-by-level.
         // Within each level, nodes have no inter-dependencies and can be
         // processed in parallel when self.parallel > 1.
@@ -370,27 +418,24 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
                 break;
             }
 
-            if self.parallel > 1 && level.len() > 1 {
-                // Parallel: all nodes in this level are independent.
-                // Build a scoped thread pool capped at min(parallel, level size).
-                let num_threads = (self.parallel as usize).min(level.len());
-                let pool = rayon::ThreadPoolBuilder::new()
-                    .num_threads(num_threads)
-                    .build()
-                    .expect("failed to build rayon thread pool");
-                pool.install(|| {
-                    use rayon::prelude::*;
-                    level.par_iter().for_each(|node_name| {
-                        self.eval_node(node_name, template, raw_config, secret_keys);
+            match &pool {
+                Some(pool) if level.len() > 1 => {
+                    // Parallel: all nodes in this level are independent.
+                    pool.install(|| {
+                        use rayon::prelude::*;
+                        level.par_iter().for_each(|node_name| {
+                            self.eval_node(node_name, &nodes, raw_config, secret_keys);
+                        });
                     });
-                });
-            } else {
-                // Sequential: default behavior (parallel <= 1 or single-node level).
-                for node_name in level {
-                    if self.has_errors() {
-                        break;
+                }
+                _ => {
+                    // Sequential: default behavior (parallel <= 1 or single-node level).
+                    for node_name in level {
+                        if self.has_errors() {
+                            break;
+                        }
+                        self.eval_node(node_name, &nodes, raw_config, secret_keys);
                     }
-                    self.eval_node(node_name, template, raw_config, secret_keys);
                 }
             }
         }
@@ -409,30 +454,17 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
     fn eval_node<'t>(
         &self,
         node_name: &str,
-        template: &'t TemplateDecl<'t>,
+        nodes: &HashMap<&str, NodeRef<'t>>,
         raw_config: &RawConfig,
         secret_keys: &[String],
     ) {
-        if let Some(entry) = template.config.iter().find(|e| e.key.as_ref() == node_name) {
-            self.eval_config_entry(entry, raw_config, secret_keys);
-            return;
+        match nodes.get(node_name) {
+            Some(NodeRef::Config(entry)) => self.eval_config_entry(entry, raw_config, secret_keys),
+            Some(NodeRef::Variable(entry)) => self.eval_variable(entry),
+            Some(NodeRef::Resource(entry)) => self.eval_resource_entry(entry),
+            // "pulumi" settings node — no-op
+            None => {}
         }
-        if let Some(entry) = template
-            .variables
-            .iter()
-            .find(|e| e.key.as_ref() == node_name)
-        {
-            self.eval_variable(entry);
-            return;
-        }
-        if let Some(entry) = template
-            .resources
-            .iter()
-            .find(|e| e.logical_name.as_ref() == node_name)
-        {
-            self.eval_resource_entry(entry);
-        }
-        // "pulumi" settings node — no-op
     }
 
     fn eval_config_entry<'t>(
@@ -1628,10 +1660,19 @@ impl<C: ResourceCallback> Evaluator<'_, C> {
         // Each lookup acquires and releases its own lock to avoid holding
         // multiple locks simultaneously (which clippy's if_let_mutex forbids).
         let receiver: Value<'static> = {
-            // Try resources first
-            let res = self.state.resources.read().unwrap().get(root_name).cloned();
+            // Try resources first. Converted under the read guard: cloning the
+            // whole `ResourceState` out first, and then cloning its outputs a
+            // second time into the value, paid for every reference twice.
+            // `resource_to_value` takes no lock, so the guard is the only one
+            // held, and it is released before the branches below take theirs.
+            let res = {
+                let guard = self.state.resources.read().unwrap();
+                guard
+                    .get(root_name)
+                    .map(|state| self.resource_to_value(root_name, state))
+            };
             if let Some(val) = res {
-                self.resource_to_value(root_name, &val)
+                val
             } else {
                 // Try config (by exact name, then stripped namespace)
                 let stripped = config::strip_config_namespace(&self.project_name, root_name);

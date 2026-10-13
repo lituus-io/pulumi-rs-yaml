@@ -1,6 +1,6 @@
 [package]
 name = "pulumi-rs-yaml-language"
-version = "0.5.33"
+version = "0.5.37"
 edition = "2021"
 description = "Pulumi YAML language host plugin (Rust implementation)"
 license.workspace = true
@@ -10,11 +10,14 @@ name = "pulumi-language-yaml"
 path = "src/main.rs"
 
 [features]
-default = ["sql-lineage"]
+default = ["sql-lineage", "gzip"]
 # Forwards the core feature: `--no-default-features` builds a language
 # host without the SQL parser (the `graph --lineage` flag is then
 # unavailable) for a substantially smaller binary.
 sql-lineage = ["pulumi-rs-yaml-core/sql-lineage"]
+# `graph --format ndjson --compress gzip`: streams each table through a gzip
+# encoder (pure-Rust backend), the compression BigQuery loads natively.
+gzip = ["dep:flate2"]
 
 [dependencies]
 pulumi-rs-yaml-proto = { path = "../pulumi-rs-yaml-proto" }
@@ -29,6 +32,7 @@ serde_yaml = { workspace = true }
 tokio-stream = "0.1"
 ctrlc = "3"
 base64 = { workspace = true }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"], optional = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

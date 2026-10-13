@@ -1,0 +1,103 @@
+{
+  "edges": [
+    {
+      "organization": "org",
+      "project": "graph-bq-table-stackref",
+      "property_paths": [
+        "datasetId"
+      ],
+      "relationship": "consumes_stack_output",
+      "source_id": "urn:pulumi:golden::graph-bq-table-stackref::gcp:bigquery/table:Table::clicksTable",
+      "stack": "golden",
+      "target_id": "stackoutput::organization/graph-bq-dataset/prod::datasetId"
+    },
+    {
+      "organization": "org",
+      "project": "graph-bq-table-stackref",
+      "property_paths": [
+        "datasetId"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-bq-table-stackref::gcp:bigquery/table:Table::clicksTable",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-bq-table-stackref::pulumi:pulumi:StackReference::upstream"
+    },
+    {
+      "organization": "org",
+      "project": "graph-bq-table-stackref",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-bq-table-stackref::pulumi:pulumi:Stack::graph-bq-table-stackref-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-bq-table-stackref::gcp:bigquery/table:Table::clicksTable"
+    },
+    {
+      "organization": "org",
+      "project": "graph-bq-table-stackref",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-bq-table-stackref::pulumi:pulumi:Stack::graph-bq-table-stackref-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-bq-table-stackref::pulumi:pulumi:StackReference::upstream"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "urn:pulumi:golden::graph-bq-table-stackref::gcp:bigquery/table:Table::clicksTable",
+      "kind": "resource",
+      "literal_properties": {
+        "deletionProtection": "false",
+        "project": "golden-gcp",
+        "schema": "[{\"name\":\"id\",\"type\":\"STRING\"},{\"name\":\"url\",\"type\":\"STRING\"}]",
+        "tableId": "clicks"
+      },
+      "logical_name": "clicksTable",
+      "name": "clicksTable",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-bq-table-stackref",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/table:Table"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-bq-table-stackref::pulumi:pulumi:Stack::graph-bq-table-stackref-golden",
+      "kind": "stack",
+      "literal_properties": {},
+      "logical_name": "stack",
+      "name": "graph-bq-table-stackref-golden",
+      "organization": "org",
+      "package": "pulumi",
+      "project": "graph-bq-table-stackref",
+      "stack": "golden",
+      "type_token": "pulumi:pulumi:Stack"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-bq-table-stackref::pulumi:pulumi:StackReference::upstream",
+      "kind": "stack_reference",
+      "literal_properties": {
+        "name": "organization/graph-bq-dataset/prod"
+      },
+      "logical_name": "upstream",
+      "name": "upstream",
+      "organization": "org",
+      "package": "pulumi",
+      "project": "graph-bq-table-stackref",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "pulumi:pulumi:StackReference"
+    }
+  ],
+  "organization": "org",
+  "project": "graph-bq-table-stackref",
+  "schema_version": 1,
+  "sql_lineage": {
+    "edges": [],
+    "nodes": [],
+    "organization": "org",
+    "project": "graph-bq-table-stackref",
+    "schema_version": 1,
+    "stack": "golden"
+  },
+  "stack": "golden"
+}

@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "graph-bq-table-literal",
+  "stack": "golden",
+  "nodes": [
+    {
+      "id": "bq://golden-gcp",
+      "kind": "project",
+      "name": "golden-gcp",
+      "bq_project": "golden-gcp",
+      "organization": "org",
+      "project": "graph-bq-table-literal",
+      "stack": "golden"
+    },
+    {
+      "id": "bq://golden-gcp/pulumi_rs_graph_test",
+      "kind": "dataset",
+      "name": "pulumi_rs_graph_test",
+      "bq_project": "golden-gcp",
+      "dataset": "pulumi_rs_graph_test",
+      "organization": "org",
+      "project": "graph-bq-table-literal",
+      "stack": "golden"
+    },
+    {
+      "id": "bq://golden-gcp/pulumi_rs_graph_test/events",
+      "kind": "table",
+      "name": "events",
+      "bq_project": "golden-gcp",
+      "dataset": "pulumi_rs_graph_test",
+      "table": "events",
+      "defined_by_urn": "urn:pulumi:golden::graph-bq-table-literal::gcp:bigquery/table:Table::eventsTable",
+      "source_file": "Pulumi.yaml",
+      "organization": "org",
+      "project": "graph-bq-table-literal",
+      "stack": "golden"
+    },
+    {
+      "id": "bq://golden-gcp/pulumi_rs_graph_test/events#id",
+      "kind": "column",
+      "name": "id",
+      "bq_project": "golden-gcp",
+      "dataset": "pulumi_rs_graph_test",
+      "table": "events",
+      "column": "id",
+      "data_type": "STRING",
+      "organization": "org",
+      "project": "graph-bq-table-literal",
+      "stack": "golden"
+    },
+    {
+      "id": "bq://golden-gcp/pulumi_rs_graph_test/events#ts",
+      "kind": "column",
+      "name": "ts",
+      "bq_project": "golden-gcp",
+      "dataset": "pulumi_rs_graph_test",
+      "table": "events",
+      "column": "ts",
+      "data_type": "TIMESTAMP",
+      "organization": "org",
+      "project": "graph-bq-table-literal",
+      "stack": "golden"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "bq://golden-gcp",
+      "target_id": "bq://golden-gcp/pulumi_rs_graph_test",
+      "relationship": "contains",
+      "resolution": "structural",
+      "organization": "org",
+      "project": "graph-bq-table-literal",
+      "stack": "golden"
+    },
+    {
+      "source_id": "bq://golden-gcp/pulumi_rs_graph_test",
+      "target_id": "bq://golden-gcp/pulumi_rs_graph_test/events",
+      "relationship": "contains",
+      "resolution": "structural",
+      "organization": "org",
+      "project": "graph-bq-table-literal",
+      "stack": "golden"
+    },
+    {
+      "source_id": "bq://golden-gcp/pulumi_rs_graph_test/events",
+      "target_id": "bq://golden-gcp/pulumi_rs_graph_test/events#id",
+      "relationship": "contains",
+      "resolution": "structural",
+      "organization": "org",
+      "project": "graph-bq-table-literal",
+      "stack": "golden"
+    },
+    {
+      "source_id": "bq://golden-gcp/pulumi_rs_graph_test/events",
+      "target_id": "bq://golden-gcp/pulumi_rs_graph_test/events#ts",
+      "relationship": "contains",
+      "resolution": "structural",
+      "organization": "org",
+      "project": "graph-bq-table-literal",
+      "stack": "golden"
+    },
+    {
+      "source_id": "bq://golden-gcp/pulumi_rs_graph_test/events",
+      "target_id": "urn:pulumi:golden::graph-bq-table-literal::gcp:bigquery/table:Table::eventsTable",
+      "relationship": "defined_by",
+      "resolution": "structural",
+      "organization": "org",
+      "project": "graph-bq-table-literal",
+      "stack": "golden"
+    }
+  ]
+}

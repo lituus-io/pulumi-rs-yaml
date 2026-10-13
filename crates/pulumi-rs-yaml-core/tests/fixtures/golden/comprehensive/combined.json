@@ -1,0 +1,172 @@
+{
+  "edges": [
+    {
+      "organization": "org",
+      "project": "comprehensive",
+      "property_paths": [
+        "mainBucketName"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/comprehensive/golden::mainBucketName",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::comprehensive::gcp:storage/bucket:Bucket::mainBucket"
+    },
+    {
+      "organization": "org",
+      "project": "comprehensive",
+      "property_paths": [
+        "mainBucketUrl"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/comprehensive/golden::mainBucketUrl",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::comprehensive::gcp:storage/bucket:Bucket::mainBucket"
+    },
+    {
+      "organization": "org",
+      "project": "comprehensive",
+      "property_paths": [
+        "storageBucketUrl"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/comprehensive/golden::storageBucketUrl",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::comprehensive::gcp:storage/bucket:Bucket::storageBucket"
+    },
+    {
+      "organization": "org",
+      "project": "comprehensive",
+      "property_paths": [],
+      "relationship": "depends_on",
+      "source_id": "urn:pulumi:golden::comprehensive::gcp:storage/bucket:Bucket::storageBucket",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::comprehensive::gcp:storage/bucket:Bucket::mainBucket"
+    },
+    {
+      "organization": "org",
+      "project": "comprehensive",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::comprehensive::pulumi:pulumi:Stack::comprehensive-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::comprehensive::gcp:storage/bucket:Bucket::mainBucket"
+    },
+    {
+      "organization": "org",
+      "project": "comprehensive",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::comprehensive::pulumi:pulumi:Stack::comprehensive-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::comprehensive::gcp:storage/bucket:Bucket::storageBucket"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "stackoutput::org/comprehensive/golden::mainBucketName",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "mainBucketName",
+      "name": "mainBucketName",
+      "organization": "org",
+      "project": "comprehensive",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/comprehensive/golden::mainBucketUrl",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "mainBucketUrl",
+      "name": "mainBucketUrl",
+      "organization": "org",
+      "project": "comprehensive",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/comprehensive/golden::storageBucketUrl",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "storageBucketUrl",
+      "name": "storageBucketUrl",
+      "organization": "org",
+      "project": "comprehensive",
+      "source_file": "Pulumi.storage.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/comprehensive/golden::storageNameLen",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "storageNameLen",
+      "name": "storageNameLen",
+      "organization": "org",
+      "project": "comprehensive",
+      "source_file": "Pulumi.storage.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::comprehensive::gcp:storage/bucket:Bucket::mainBucket",
+      "kind": "resource",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "labels.env": "test",
+        "labels.managed-by": "pulumi-rs-yaml",
+        "location": "US",
+        "name": "comprehensive-test-main",
+        "uniformBucketLevelAccess": "true"
+      },
+      "logical_name": "mainBucket",
+      "name": "mainBucket",
+      "organization": "org",
+      "package": "gcp",
+      "project": "comprehensive",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucket:Bucket"
+    },
+    {
+      "id": "urn:pulumi:golden::comprehensive::gcp:storage/bucket:Bucket::storageBucket",
+      "kind": "resource",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "name": "comprehensive-test-storage",
+        "uniformBucketLevelAccess": "true"
+      },
+      "logical_name": "storageBucket",
+      "name": "storageBucket",
+      "organization": "org",
+      "package": "gcp",
+      "project": "comprehensive",
+      "source_file": "Pulumi.storage.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucket:Bucket"
+    },
+    {
+      "id": "urn:pulumi:golden::comprehensive::pulumi:pulumi:Stack::comprehensive-golden",
+      "kind": "stack",
+      "literal_properties": {},
+      "logical_name": "stack",
+      "name": "comprehensive-golden",
+      "organization": "org",
+      "package": "pulumi",
+      "project": "comprehensive",
+      "stack": "golden",
+      "type_token": "pulumi:pulumi:Stack"
+    }
+  ],
+  "organization": "org",
+  "project": "comprehensive",
+  "schema_version": 1,
+  "sql_lineage": {
+    "edges": [],
+    "nodes": [],
+    "organization": "org",
+    "project": "comprehensive",
+    "schema_version": 1,
+    "stack": "golden"
+  },
+  "stack": "golden"
+}

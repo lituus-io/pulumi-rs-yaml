@@ -638,23 +638,18 @@ fn create_execution_plan(
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
 
-    // Extract project name from main file (strip {% %} blocks first so it parses as valid YAML).
-    let project_name_owned = {
-        let files = pulumi_rs_yaml_core::multi_file::discover_project_files(path).map_err(|e| {
+    // Project name and provider-templated packages, from one read of the main
+    // file (strip {% %} blocks first so it parses as valid YAML).
+    let prepass = pulumi_rs_yaml_core::multi_file::project_prepass(path).map_err(|e| match e {
+        pulumi_rs_yaml_core::multi_file::PrepassError::Discover(e) => {
             PyValueError::new_err(format!("Failed to discover project files: {}", e))
-        })?;
-        let raw = std::fs::read_to_string(&files.main_file)
-            .map_err(|e| PyValueError::new_err(format!("Failed to read main file: {}", e)))?;
-        let stripped = pulumi_rs_yaml_core::jinja::strip_jinja_blocks(&raw);
-        let (tmpl, _) = pulumi_rs_yaml_core::ast::parse::parse_template(&stripped, None);
-        tmpl.name
-            .map(|n| n.to_string())
-            .unwrap_or_else(|| "unknown".to_string())
-    };
-
-    let scoped = pulumi_rs_yaml_core::provider_scope::effective_packages(
-        &std::fs::read_to_string(path.join("Pulumi.yaml")).unwrap_or_default(),
-    );
+        }
+        pulumi_rs_yaml_core::multi_file::PrepassError::ReadMain(e) => {
+            PyValueError::new_err(format!("Failed to read main file: {}", e))
+        }
+    })?;
+    let project_name_owned = prepass.name;
+    let scoped = prepass.provider_templated_packages;
     let scoped: Vec<&str> = scoped.iter().map(String::as_str).collect();
 
     let jinja_ctx = pulumi_rs_yaml_core::jinja::JinjaContext {
@@ -1115,7 +1110,7 @@ fn get_resource_schema(
 /// shared graph store; see the core `resource_graph` module docs for
 /// the full ID contract.
 #[pyfunction]
-#[pyo3(signature = (project_dir, stack, organization="", jinja_context=None, schema_dir=None))]
+#[pyo3(signature = (project_dir, stack, organization="", jinja_context=None, schema_dir=None, backend_url=None))]
 fn export_dependency_graph(
     py: Python<'_>,
     project_dir: &str,
@@ -1123,35 +1118,44 @@ fn export_dependency_graph(
     organization: &str,
     jinja_context: Option<&Bound<'_, PyDict>>,
     schema_dir: Option<&str>,
+    backend_url: Option<&str>,
 ) -> PyResult<Py<PyAny>> {
-    let (merged, project_name, stack_name, organization_name) =
-        load_graph_project(project_dir, stack, organization, jinja_context)?;
-    let template = merged.as_template_decl();
-
-    let schema_store = if let Some(sd) = schema_dir {
-        let schema_path = std::path::Path::new(sd);
-        pulumi_rs_yaml_core::schema::SchemaStore::load(schema_path).ok()
-    } else {
-        None
-    };
-
-    let opts = pulumi_rs_yaml_core::resource_graph::GraphExportOptions {
-        organization: &organization_name,
-        project: &project_name,
-        stack: &stack_name,
-        source_map: Some(merged.source_map()),
-        schema_store: schema_store.as_ref(),
-    };
-    let (graph, diags) =
-        pulumi_rs_yaml_core::resource_graph::export_resource_graph(&template, &opts);
-    if diags.has_errors() {
-        return Err(PyValueError::new_err(format!(
-            "Failed to export dependency graph: {}",
-            diags
-        )));
-    }
-
-    graph_value_to_py(py, &graph, &diags)
+    // The context dictionary is read under the GIL; everything after it --
+    // reading and rendering the project, the export, the serialization --
+    // runs with the GIL released, so a caller's other threads keep going.
+    let ctx_map = jinja_context.map(py_dict_to_string_map).transpose()?;
+    let exported = py.detach(|| -> Result<(serde_json::Value, Diagnostics), String> {
+        let loaded = load_graph_project(project_dir, stack, organization, ctx_map)?;
+        let (template, source_map) = loaded.merged.into_parts();
+        let schema_store = schema_dir.and_then(|sd| {
+            pulumi_rs_yaml_core::schema::SchemaStore::load(std::path::Path::new(sd)).ok()
+        });
+        // The caller's backend, else the project's `backend.url`; an empty
+        // string turns the fallback off. The environment is not read: the
+        // export stays a function of its arguments and the project.
+        let backend_url = match backend_url {
+            Some(url) => (!url.is_empty()).then_some(url),
+            None => loaded.backend_url.as_deref(),
+        };
+        let opts = pulumi_rs_yaml_core::resource_graph::GraphExportOptions {
+            organization: &loaded.organization,
+            project: &loaded.project,
+            stack: &loaded.stack,
+            source_map: Some(&source_map),
+            schema_store: schema_store.as_ref(),
+            backend_url,
+        };
+        let (graph, diags) =
+            pulumi_rs_yaml_core::resource_graph::export_resource_graph(&template, &opts);
+        if diags.has_errors() {
+            return Err(format!("Failed to export dependency graph: {}", diags));
+        }
+        let json = serde_json::to_value(&graph)
+            .map_err(|e| format!("Failed to serialize graph: {}", e))?;
+        Ok((json, diags))
+    });
+    let (json, diags) = exported.map_err(PyValueError::new_err)?;
+    graph_json_to_py(py, &json, &diags)
 }
 
 /// Export the stack's SQL lineage graph (data objects layered on the
@@ -1164,9 +1168,19 @@ fn export_dependency_graph(
 /// cloud-scoped (`bq://project/dataset/table#column`) so exports from
 /// independent stacks join automatically; `defined_by` edges reference
 /// the infrastructure graph's URNs.
+///
+/// `include_statements=True` adds `statements` (one row per distinct SQL
+/// statement: `id`, `statement_kind`, `text`, `byte_len`) and
+/// `statement_occurrences` (where each is written: `carrier_id`,
+/// `statement_index`, `byte_offset`, `byte_len`, `sql_role`, `text_origin`,
+/// `carrier_file`, ...), with `has_statement`, `reads` and `writes` edges.
+/// `script_column_lineage=True` adds `column_derives_from` edges through
+/// `INSERT ... (cols) SELECT`, `CREATE TABLE ... AS SELECT` and `CREATE VIEW`
+/// in routines, jobs and scheduled queries.
 #[cfg(feature = "sql-lineage")]
 #[pyfunction]
-#[pyo3(signature = (project_dir, stack, organization="", jinja_context=None, schema_dir=None, default_bq_project=None))]
+#[pyo3(signature = (project_dir, stack, organization="", jinja_context=None, schema_dir=None, default_bq_project=None, include_statements=false, script_column_lineage=false))]
+#[allow(clippy::too_many_arguments)]
 fn export_sql_lineage(
     py: Python<'_>,
     project_dir: &str,
@@ -1175,70 +1189,98 @@ fn export_sql_lineage(
     jinja_context: Option<&Bound<'_, PyDict>>,
     schema_dir: Option<&str>,
     default_bq_project: Option<&str>,
+    include_statements: bool,
+    script_column_lineage: bool,
 ) -> PyResult<Py<PyAny>> {
-    let (merged, project_name, stack_name, organization_name) =
-        load_graph_project(project_dir, stack, organization, jinja_context)?;
-    let template = merged.as_template_decl();
+    let ctx_map = jinja_context.map(py_dict_to_string_map).transpose()?;
+    let exported = py.detach(|| -> Result<(serde_json::Value, Diagnostics), String> {
+        let loaded = load_graph_project(project_dir, stack, organization, ctx_map)?;
+        let (template, source_map) = loaded.merged.into_parts();
+        let schema_store = schema_dir.and_then(|sd| {
+            pulumi_rs_yaml_core::schema::SchemaStore::load(std::path::Path::new(sd)).ok()
+        });
+        let graph_opts = pulumi_rs_yaml_core::resource_graph::GraphExportOptions {
+            organization: &loaded.organization,
+            project: &loaded.project,
+            stack: &loaded.stack,
+            source_map: Some(&source_map),
+            schema_store: schema_store.as_ref(),
+            ..Default::default()
+        };
+        let (infra, infra_diags) =
+            pulumi_rs_yaml_core::resource_graph::export_resource_graph(&template, &graph_opts);
+        if infra_diags.has_errors() {
+            return Err(format!(
+                "Failed to export dependency graph: {}",
+                infra_diags
+            ));
+        }
 
-    let schema_store = if let Some(sd) = schema_dir {
-        let schema_path = std::path::Path::new(sd);
-        pulumi_rs_yaml_core::schema::SchemaStore::load(schema_path).ok()
-    } else {
-        None
-    };
-    let graph_opts = pulumi_rs_yaml_core::resource_graph::GraphExportOptions {
-        organization: &organization_name,
-        project: &project_name,
-        stack: &stack_name,
-        source_map: Some(merged.source_map()),
-        schema_store: schema_store.as_ref(),
-    };
-    let (infra, infra_diags) =
-        pulumi_rs_yaml_core::resource_graph::export_resource_graph(&template, &graph_opts);
-    if infra_diags.has_errors() {
-        return Err(PyValueError::new_err(format!(
-            "Failed to export dependency graph: {}",
-            infra_diags
-        )));
-    }
-
-    let lineage_opts = pulumi_rs_yaml_core::sql_lineage::SqlLineageOptions {
-        organization: &organization_name,
-        project: &project_name,
-        stack: &stack_name,
-        project_dir: Some(std::path::Path::new(project_dir)),
-        default_bq_project,
-        source_map: Some(merged.source_map()),
-        extra_sql_sources: &[],
-    };
-    let (lineage, diags) =
-        pulumi_rs_yaml_core::sql_lineage::export_sql_lineage(&template, &infra, &lineage_opts);
-    if diags.has_errors() {
-        return Err(PyValueError::new_err(format!(
-            "Failed to export SQL lineage: {}",
-            diags
-        )));
-    }
-
-    graph_value_to_py(py, &lineage, &diags)
+        // Every file the program reads SQL from, read once; the lineage graph
+        // borrows its statement text from here rather than copying it.
+        let sql_sources = pulumi_rs_yaml_core::sql_lineage::SqlSourceStore::collect(
+            &template,
+            std::path::Path::new(project_dir),
+        );
+        let lineage_opts = pulumi_rs_yaml_core::sql_lineage::SqlLineageOptions {
+            organization: &loaded.organization,
+            project: &loaded.project,
+            stack: &loaded.stack,
+            project_dir: Some(std::path::Path::new(project_dir)),
+            default_bq_project,
+            source_map: Some(&source_map),
+            extra_sql_sources: &[],
+            sql_sources: Some(&sql_sources),
+            include_statements,
+            script_column_lineage,
+        };
+        let (lineage, diags) =
+            pulumi_rs_yaml_core::sql_lineage::export_sql_lineage(&template, &infra, &lineage_opts);
+        if diags.has_errors() {
+            return Err(format!("Failed to export SQL lineage: {}", diags));
+        }
+        let json = serde_json::to_value(&lineage)
+            .map_err(|e| format!("Failed to serialize graph: {}", e))?;
+        Ok((json, diags))
+    });
+    let (json, diags) = exported.map_err(PyValueError::new_err)?;
+    graph_json_to_py(py, &json, &diags)
 }
 
-/// Serializes an exported graph to native Python dicts and attaches
-/// the diagnostics list.
-fn graph_value_to_py<T: serde::Serialize>(
+/// Converts an exported graph, already serialized, to native Python dicts and
+/// attaches the diagnostics list. The value is a `serde_json::Value`, whose
+/// maps are ordered, so dict keys come out sorted -- as they always have.
+fn graph_json_to_py(
     py: Python<'_>,
-    graph: &T,
+    json: &serde_json::Value,
     diags: &Diagnostics,
 ) -> PyResult<Py<PyAny>> {
-    let json = serde_json::to_value(graph)
-        .map_err(|e| PyValueError::new_err(format!("Failed to serialize graph: {}", e)))?;
-    let result = json_to_py(py, &json)?;
+    let result = json_to_py(py, json)?;
     let dict = result
         .bind(py)
         .cast::<PyDict>()
         .map_err(|e| PyValueError::new_err(format!("graph did not serialize to a dict: {}", e)))?;
     dict.set_item("diagnostics", diags_to_py(py, diags)?)?;
     Ok(result)
+}
+
+// Everything the exporters compute crosses back from a GIL-free closure.
+const _: () = {
+    fn _assert_send<T: Send>() {}
+    fn _check() {
+        _assert_send::<Diagnostics>();
+        _assert_send::<serde_json::Value>();
+    }
+};
+
+/// A loaded project and the identity its graph ids embed.
+struct LoadedGraphProject {
+    merged: pulumi_rs_yaml_core::multi_file::MergedTemplate,
+    project: String,
+    stack: String,
+    organization: String,
+    /// `backend.url` from the main file.
+    backend_url: Option<String>,
 }
 
 /// Shared project-loading preamble for the graph exporters: jinja
@@ -1248,19 +1290,12 @@ fn load_graph_project(
     project_dir: &str,
     stack: &str,
     organization: &str,
-    jinja_context: Option<&Bound<'_, PyDict>>,
-) -> PyResult<(
-    pulumi_rs_yaml_core::multi_file::MergedTemplate,
-    String,
-    String,
-    String,
-)> {
+    ctx_map: Option<HashMap<String, String>>,
+) -> Result<LoadedGraphProject, String> {
+    let has_jinja = ctx_map.is_some();
+    let ctx_map = ctx_map.unwrap_or_default();
     let path = std::path::Path::new(project_dir);
 
-    let ctx_map: HashMap<String, String> = match jinja_context {
-        Some(d) => py_dict_to_string_map(d)?,
-        None => HashMap::new(),
-    };
     // Explicit params win over jinja_context entries.
     let stack_name = if stack.is_empty() {
         ctx_map.get("stack_name").cloned().unwrap_or_default()
@@ -1268,9 +1303,7 @@ fn load_graph_project(
         stack.to_string()
     };
     if stack_name.is_empty() {
-        return Err(PyValueError::new_err(
-            "stack is required: exported node ids embed the stack name",
-        ));
+        return Err("stack is required: exported node ids embed the stack name".to_string());
     }
     let organization_name = if organization.is_empty() {
         ctx_map.get("organization").cloned().unwrap_or_default()
@@ -1305,23 +1338,19 @@ fn load_graph_project(
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
 
-    // Extract project name from the main file (strip {% %} blocks first).
-    let project_name_owned = {
-        let files = pulumi_rs_yaml_core::multi_file::discover_project_files(path).map_err(|e| {
-            PyValueError::new_err(format!("Failed to discover project files: {}", e))
-        })?;
-        let raw = std::fs::read_to_string(&files.main_file)
-            .map_err(|e| PyValueError::new_err(format!("Failed to read main file: {}", e)))?;
-        let stripped = pulumi_rs_yaml_core::jinja::strip_jinja_blocks(&raw);
-        let (tmpl, _) = pulumi_rs_yaml_core::ast::parse::parse_template(&stripped, None);
-        tmpl.name
-            .map(|n| n.to_string())
-            .unwrap_or_else(|| "unknown".to_string())
-    };
-
-    let scoped = pulumi_rs_yaml_core::provider_scope::effective_packages(
-        &std::fs::read_to_string(path.join("Pulumi.yaml")).unwrap_or_default(),
-    );
+    // Project name and provider-templated packages, from one read of the main
+    // file (strip {% %} blocks first so it parses as valid YAML).
+    let prepass = pulumi_rs_yaml_core::multi_file::project_prepass(path).map_err(|e| match e {
+        pulumi_rs_yaml_core::multi_file::PrepassError::Discover(e) => {
+            format!("Failed to discover project files: {}", e)
+        }
+        pulumi_rs_yaml_core::multi_file::PrepassError::ReadMain(e) => {
+            format!("Failed to read main file: {}", e)
+        }
+    })?;
+    let project_name_owned = prepass.name;
+    let backend_url = prepass.backend_url;
+    let scoped = prepass.provider_templated_packages;
     let scoped: Vec<&str> = scoped.iter().map(String::as_str).collect();
 
     let jinja_ctx = pulumi_rs_yaml_core::jinja::JinjaContext {
@@ -1336,20 +1365,19 @@ fn load_graph_project(
         provider_templated_packages: &scoped,
         extra: &extra_map,
     };
-    let jinja_opt = if jinja_context.is_some() {
-        Some(&jinja_ctx)
-    } else {
-        None
-    };
+    let jinja_opt = if has_jinja { Some(&jinja_ctx) } else { None };
     let (merged, load_diags) = pulumi_rs_yaml_core::multi_file::load_project(path, jinja_opt);
     if load_diags.has_errors() {
-        return Err(PyValueError::new_err(format!(
-            "Failed to load project: {}",
-            load_diags
-        )));
+        return Err(format!("Failed to load project: {}", load_diags));
     }
-    let project_name = merged.name().unwrap_or("unknown").to_string();
-    Ok((merged, project_name, stack_name, organization_name))
+    let project = merged.name().unwrap_or("unknown").to_string();
+    Ok(LoadedGraphProject {
+        merged,
+        project,
+        stack: stack_name,
+        organization: organization_name,
+        backend_url,
+    })
 }
 
 /// The native Python module.

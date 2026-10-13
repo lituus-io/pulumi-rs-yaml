@@ -1,0 +1,208 @@
+{
+  "edges": [
+    {
+      "organization": "org",
+      "project": "gcp-mf-jinja-test",
+      "property_paths": [
+        "logBucketName"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-mf-jinja-test/golden::logBucketName",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-mf-jinja-test::gcp:storage/bucket:Bucket::logBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-mf-jinja-test",
+      "property_paths": [
+        "storage0Name"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-mf-jinja-test/golden::storage0Name",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-mf-jinja-test::gcp:storage/bucket:Bucket::storageBucket0"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-mf-jinja-test",
+      "property_paths": [
+        "storage0Url"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-mf-jinja-test/golden::storage0Url",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-mf-jinja-test::gcp:storage/bucket:Bucket::storageBucket0"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-mf-jinja-test",
+      "property_paths": [
+        "storage1Name"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-mf-jinja-test/golden::storage1Name",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-mf-jinja-test::gcp:storage/bucket:Bucket::storageBucket1"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-mf-jinja-test",
+      "property_paths": [],
+      "relationship": "depends_on",
+      "source_id": "urn:pulumi:golden::gcp-mf-jinja-test::gcp:storage/bucket:Bucket::logBucket",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-mf-jinja-test::gcp:storage/bucket:Bucket::storageBucket0"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-mf-jinja-test",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::gcp-mf-jinja-test::pulumi:pulumi:Stack::gcp-mf-jinja-test-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-mf-jinja-test::gcp:storage/bucket:Bucket::logBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-mf-jinja-test",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::gcp-mf-jinja-test::pulumi:pulumi:Stack::gcp-mf-jinja-test-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-mf-jinja-test::gcp:storage/bucket:Bucket::storageBucket0"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-mf-jinja-test",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::gcp-mf-jinja-test::pulumi:pulumi:Stack::gcp-mf-jinja-test-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-mf-jinja-test::gcp:storage/bucket:Bucket::storageBucket1"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-mf-jinja-test/golden::logBucketName",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "logBucketName",
+      "name": "logBucketName",
+      "organization": "org",
+      "project": "gcp-mf-jinja-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-mf-jinja-test/golden::storage0Name",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "storage0Name",
+      "name": "storage0Name",
+      "organization": "org",
+      "project": "gcp-mf-jinja-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-mf-jinja-test/golden::storage0Url",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "storage0Url",
+      "name": "storage0Url",
+      "organization": "org",
+      "project": "gcp-mf-jinja-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-mf-jinja-test/golden::storage1Name",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "storage1Name",
+      "name": "storage1Name",
+      "organization": "org",
+      "project": "gcp-mf-jinja-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-mf-jinja-test::gcp:storage/bucket:Bucket::logBucket",
+      "kind": "resource",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "name": "gcp-multi-file-jinja-golden-logs",
+        "uniformBucketLevelAccess": "true"
+      },
+      "logical_name": "logBucket",
+      "name": "logBucket",
+      "organization": "org",
+      "package": "gcp",
+      "project": "gcp-mf-jinja-test",
+      "source_file": "Pulumi.logging.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucket:Bucket"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-mf-jinja-test::gcp:storage/bucket:Bucket::storageBucket0",
+      "kind": "resource",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "name": "gcp-multi-file-jinja-golden-storage-0",
+        "uniformBucketLevelAccess": "true"
+      },
+      "logical_name": "storageBucket0",
+      "name": "storageBucket0",
+      "organization": "org",
+      "package": "gcp",
+      "project": "gcp-mf-jinja-test",
+      "source_file": "Pulumi.storage.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucket:Bucket"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-mf-jinja-test::gcp:storage/bucket:Bucket::storageBucket1",
+      "kind": "resource",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "name": "gcp-multi-file-jinja-golden-storage-1",
+        "uniformBucketLevelAccess": "true"
+      },
+      "logical_name": "storageBucket1",
+      "name": "storageBucket1",
+      "organization": "org",
+      "package": "gcp",
+      "project": "gcp-mf-jinja-test",
+      "source_file": "Pulumi.storage.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucket:Bucket"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-mf-jinja-test::pulumi:pulumi:Stack::gcp-mf-jinja-test-golden",
+      "kind": "stack",
+      "literal_properties": {},
+      "logical_name": "stack",
+      "name": "gcp-mf-jinja-test-golden",
+      "organization": "org",
+      "package": "pulumi",
+      "project": "gcp-mf-jinja-test",
+      "stack": "golden",
+      "type_token": "pulumi:pulumi:Stack"
+    }
+  ],
+  "organization": "org",
+  "project": "gcp-mf-jinja-test",
+  "schema_version": 1,
+  "sql_lineage": {
+    "edges": [],
+    "nodes": [],
+    "organization": "org",
+    "project": "gcp-mf-jinja-test",
+    "schema_version": 1,
+    "stack": "golden"
+  },
+  "stack": "golden"
+}

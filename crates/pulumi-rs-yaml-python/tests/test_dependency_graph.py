@@ -260,3 +260,105 @@ class TestMarkedProject:
         assert graph["diagnostics"] == []
         bucket = next(n for n in graph["nodes"] if n["logical_name"] == "bucket")
         assert bucket["id"] == "urn:pulumi:dev::proj::gcp:storage/bucket:Bucket::bucket"
+
+
+class TestGilRelease:
+    def test_a_graph_export_releases_the_gil(self, tmp_project):
+        """Another thread keeps running while a large project exports -- the
+        observable form of the GIL being released around the load and the
+        export."""
+        import threading
+        import time
+
+        resources = "".join(
+            f"  r{i}:\n    type: gcp:storage:Bucket\n    properties:\n"
+            f"      name: b-{i}\n      labels:\n        prev: ${{r{max(i - 1, 0)}.id}}\n"
+            for i in range(1, 3000)
+        )
+        project_dir = tmp_project(
+            "name: big\nruntime: yaml\nresources:\n  r0:\n    type: gcp:storage:Bucket\n"
+            + resources
+        )
+        counter = 0
+        stop = threading.Event()
+
+        def spin():
+            nonlocal counter
+            while not stop.is_set():
+                counter += 1
+
+        worker = threading.Thread(target=spin, daemon=True)
+        worker.start()
+        try:
+            time.sleep(0.05)
+            before = counter
+            started = time.perf_counter()
+            graph = export_dependency_graph(project_dir, "dev", "org")
+            elapsed = time.perf_counter() - started
+            during = counter - before
+            # The same length of time with the GIL certainly released.
+            before = counter
+            time.sleep(elapsed)
+            baseline = counter - before
+        finally:
+            stop.set()
+            worker.join(timeout=5)
+        assert len(graph["nodes"]) > 3000
+        assert elapsed > 0.01, "the export was too fast to prove anything"
+        # The spinner also gets switch-interval slices in the Python code on
+        # either side of the call, so `during > 0` proves nothing. Measured:
+        # a GIL-holding export advances it ~8% of the baseline, a releasing
+        # one ~63%.
+        assert during > 0.3 * baseline, (
+            f"the counter advanced {during} during the export against {baseline} "
+            "while sleeping as long: the GIL was held"
+        )
+
+    def test_dict_keys_are_sorted_as_they_always_were(self, tmp_project):
+        graph = export_dependency_graph(tmp_project(BASIC), "dev", "org")
+        top = [k for k in graph if k != "diagnostics"]
+        assert top == sorted(top)
+        node = graph["nodes"][0]
+        assert list(node) == sorted(node)
+
+
+class TestBackendUris:
+    WITH_BACKEND = """\
+name: proj
+runtime: yaml
+backend:
+  url: gs://from-project
+resources:
+  up:
+    type: pulumi:pulumi:StackReference
+    properties:
+      name: acme/producer/prod
+  bucket:
+    type: gcp:storage:Bucket
+"""
+
+    def _node(self, graph, logical):
+        return next(n for n in graph["nodes"] if n["logical_name"] == logical)
+
+    def test_absent_without_a_backend(self, tmp_project):
+        graph = export_dependency_graph(tmp_project(BASIC), "dev", "org")
+        assert "stack_uri" not in graph
+        assert all("resource_uri" not in n for n in graph["nodes"])
+
+    def test_project_backend_is_the_fallback(self, tmp_project):
+        graph = export_dependency_graph(tmp_project(self.WITH_BACKEND), "dev", "acme")
+        assert graph["stack_uri"] == "gs://from-project/.pulumi/stacks/proj/dev.json"
+        assert (
+            self._node(graph, "up")["referenced_stack_uri"]
+            == "gs://from-project/.pulumi/stacks/producer/prod.json"
+        )
+        assert self._node(graph, "bucket")["resource_uri"].startswith(
+            "gs://from-project/.pulumi/stacks/proj/dev.json#urn:pulumi:dev::proj::"
+        )
+
+    def test_the_keyword_wins_and_empty_turns_it_off(self, tmp_project):
+        d = tmp_project(self.WITH_BACKEND)
+        cloud = export_dependency_graph(d, "dev", "acme", backend_url="https://api.pulumi.com")
+        assert cloud["stack_uri"] == "https://app.pulumi.com/acme/proj/dev"
+        off = export_dependency_graph(d, "dev", "acme", backend_url="")
+        assert "stack_uri" not in off

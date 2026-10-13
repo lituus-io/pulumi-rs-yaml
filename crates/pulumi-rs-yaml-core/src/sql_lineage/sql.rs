@@ -6,11 +6,14 @@
 
 use polyglot_sql::guard::ComplexityGuardOptions;
 use polyglot_sql::query_analysis::{analyze_query, AnalyzeQueryOptions};
+use std::collections::HashMap;
+use std::ops::Range;
+
 use polyglot_sql::{DialectType, Expression};
 
 /// SQL larger than this is skipped (defense-in-depth under
 /// `panic = "abort"` — no unwinding safety net exists).
-const MAX_SQL_BYTES: usize = 1024 * 1024;
+pub(crate) const MAX_SQL_BYTES: usize = 1024 * 1024;
 
 /// Stack size for the parser worker thread.
 ///
@@ -26,8 +29,12 @@ const PARSER_STACK_BYTES: usize = 64 * 1024 * 1024;
 /// the work has to cross a channel, and the set of jobs is closed and small.
 /// It also keeps the isolation contract legible -- what crosses is listed here.
 enum Job {
-    /// Each entry is an owned statement, or the reason it was refused.
-    Statements(Vec<Result<String, String>>),
+    /// Each entry is an owned statement, or the reason it was refused;
+    /// `columns` asks for column lineage of the statements that have it.
+    Statements {
+        entries: Vec<Result<String, String>>,
+        columns: bool,
+    },
     Select(String),
 }
 
@@ -67,7 +74,7 @@ impl Parser {
                 // thread goes away.
                 while let Ok(job) = job_rx.recv() {
                     let reply = match job {
-                        Job::Statements(entries) => Reply::Statements(
+                        Job::Statements { entries, columns } => Reply::Statements(
                             entries
                                 .into_iter()
                                 .map(|entry| {
@@ -77,7 +84,14 @@ impl Parser {
                                         .map(|stmts| {
                                             stmts
                                                 .iter()
-                                                .map(|stmt| statement_facts(stmt, &sql))
+                                                .map(|stmt| {
+                                                    let mut facts = statement_facts(stmt, &sql);
+                                                    if columns {
+                                                        facts.columns =
+                                                            column_facts(stmt).unwrap_or_default();
+                                                    }
+                                                    facts
+                                                })
                                                 .collect()
                                         })
                                 })
@@ -142,16 +156,63 @@ fn guard(sql: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// What a statement does, as far as lineage is concerned.
+///
+/// Serialized snake_case. New variants go at the END: the enum's order is not
+/// part of any contract, but appending keeps every existing comparison stable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StatementKind {
+    Select,
+    Insert,
+    Update,
+    Delete,
+    Merge,
+    CreateTable,
+    CreateTableAsSelect,
+    CreateView,
+    CreateMaterializedView,
+    CreateFunction,
+    CreateProcedure,
+    Drop,
+    Truncate,
+    Alter,
+    ExportData,
+    LoadData,
+    Call,
+    /// Procedural scripting: `DECLARE`, `SET`, `IF`, `BEGIN`, loops, ...
+    Scripting,
+    #[default]
+    Other,
+}
+
 /// Table-level facts for one statement.
 #[derive(Debug, Default)]
 pub(crate) struct StatementFacts {
+    /// What the statement does.
+    pub kind: StatementKind,
     /// Raw referenced table names (reads), as written.
     pub reads: Vec<String>,
-    /// Raw write-target table names (INSERT/MERGE/UPDATE/DELETE/CTAS/CREATE VIEW).
+    /// Raw names of tables the statement changes: INSERT/MERGE/UPDATE/DELETE
+    /// targets, CREATE TABLE/VIEW (with or without AS SELECT), and the
+    /// objects of DROP, TRUNCATE and ALTER. Those last three used to fall
+    /// through to the reads, so `DROP TABLE x` was reported as reading `x`.
     pub writes: Vec<String>,
     /// Raw routine names invoked via CALL.
     pub calls: Vec<String>,
+    /// External locations read: the URIs a `LOAD DATA` loads from.
+    pub external_reads: Vec<String>,
+    /// External locations written: the URI an `EXPORT DATA` writes to.
+    pub external_writes: Vec<String>,
+    /// Column lineage of the table the statement writes: (target column,
+    /// [(source table, source column)]). Filled only when asked for, and only
+    /// where the target's columns are known -- see [`column_facts`].
+    pub columns: ColumnLineage,
 }
+
+/// (output column, [(source table as written, source column)]), one entry
+/// per output column.
+pub(crate) type ColumnLineage = Vec<(String, Vec<(String, String)>)>;
 
 /// Column-level facts for a SELECT-shaped statement.
 #[derive(Debug)]
@@ -181,8 +242,18 @@ pub(crate) struct SelectFacts {
 /// Returns one result per input statement, in order, so a caller can still
 /// fall back per statement. The isolation contract is unchanged: parser AST
 /// nodes never leave the worker, only owned `Send` fact structs.
+#[cfg(test)]
 pub(crate) fn statement_facts_for_all(
     statements: &[&str],
+) -> Vec<Result<Vec<StatementFacts>, String>> {
+    statement_facts_with_columns(statements, false)
+}
+
+/// [`statement_facts_for_all`], with column lineage for every statement that
+/// writes a table from a query when `columns` is set.
+pub(crate) fn statement_facts_with_columns(
+    statements: &[&str],
+    columns: bool,
 ) -> Vec<Result<Vec<StatementFacts>, String>> {
     if statements.is_empty() {
         return Vec::new();
@@ -194,7 +265,10 @@ pub(crate) fn statement_facts_for_all(
         .map(|s| guard(s).map(|()| (*s).to_string()))
         .collect();
 
-    match on_parser_thread(Job::Statements(owned)) {
+    match on_parser_thread(Job::Statements {
+        entries: owned,
+        columns,
+    }) {
         Ok(Reply::Statements(out)) => out,
         Ok(Reply::Select(_)) => unreachable!("a Statements job answers Statements"),
         Err(e) => statements.iter().map(|_| Err(e.clone())).collect(),
@@ -259,6 +333,118 @@ fn analyze_select_inner(sql: &str) -> Result<SelectFacts, String> {
     })
 }
 
+/// Every table `expr` names, fully qualified as written.
+///
+/// `polyglot_sql::get_table_names` returns a table's BARE name for an
+/// unquoted qualified reference: `p.raw.events` comes back as `events`, while
+/// the backticked `` `p.raw.events` `` keeps its qualifiers. Every unquoted
+/// read in a routine, job or scheduled query was then resolved against the
+/// default project and dataset -- lineage pointing at a different table, with
+/// nothing to say so. It still decides WHICH tables count (it already leaves
+/// out CTE names, for one); each bare name it returns is expanded here to
+/// every qualified spelling of it the statement contains.
+fn qualified_table_names(expr: &Expression) -> Vec<String> {
+    use polyglot_sql::expressions::TableRef;
+    use polyglot_sql::traversal::ExpressionWalk;
+
+    let bare = polyglot_sql::get_table_names(expr);
+    if bare.is_empty() {
+        return bare;
+    }
+    fn note<'e>(t: &'e TableRef, qualified: &mut HashMap<&'e str, Vec<String>>) {
+        let full = tableref_name(t);
+        let spellings = qualified.entry(t.name.name.as_str()).or_default();
+        if !spellings.contains(&full) {
+            spellings.push(full);
+        }
+    }
+    let mut qualified: HashMap<&str, Vec<String>> = HashMap::new();
+    for node in expr.dfs() {
+        match node {
+            Expression::Table(t) => note(t, &mut qualified),
+            Expression::Insert(i) => note(&i.table, &mut qualified),
+            Expression::Update(u) => {
+                note(&u.table, &mut qualified);
+                for t in &u.extra_tables {
+                    note(t, &mut qualified);
+                }
+            }
+            Expression::Delete(d) => {
+                note(&d.table, &mut qualified);
+                for t in d.using.iter().chain(&d.tables) {
+                    note(t, &mut qualified);
+                }
+            }
+            Expression::CreateTable(c) => note(&c.name, &mut qualified),
+            _ => {}
+        }
+    }
+    let mut out = Vec::with_capacity(bare.len());
+    for name in &bare {
+        match qualified.get(name.as_str()) {
+            Some(spellings) => {
+                for full in spellings {
+                    if !out.contains(full) {
+                        out.push(full.clone());
+                    }
+                }
+            }
+            None => {
+                if !out.contains(name) {
+                    out.push(name.clone());
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Column lineage for a statement that writes a table from a query.
+///
+/// The query is regenerated as SQL and analysed exactly as a view's is --
+/// `analyze_query` takes only a query, not the statement around it.
+///
+/// - `CREATE TABLE ... AS SELECT` and `CREATE VIEW`: the projections ARE the
+///   new object's columns, by name.
+/// - `INSERT INTO t (a, b) SELECT ...`: projections map onto the listed
+///   columns by position, and only when the counts agree.
+///
+/// Anything whose target columns cannot be known statically answers `None`
+/// rather than a guess: an INSERT without a column list (its order is the
+/// table's schema, which is not in the SQL), a `*` projection, or a CTE the
+/// parser keeps outside the query, which the regenerated text would lack.
+fn column_facts(stmt: &Expression) -> Option<ColumnLineage> {
+    let (query, insert_columns) = match stmt {
+        Expression::CreateTable(c) if c.with_cte.is_none() => (c.as_select.as_ref()?, None),
+        Expression::CreateView(v) if v.columns.is_empty() => (&v.query, None),
+        Expression::Insert(i) if i.with.is_none() && !i.columns.is_empty() => {
+            (i.query.as_ref()?, Some(&i.columns))
+        }
+        _ => return None,
+    };
+    let sql = polyglot_sql::generate(query, DialectType::BigQuery).ok()?;
+    guard(&sql).ok()?;
+    let facts = analyze_select_inner(&sql).ok()?;
+    if facts.has_unexpanded_star {
+        return None;
+    }
+    match insert_columns {
+        None => Some(facts.columns),
+        Some(targets) => {
+            if targets.len() != facts.columns.len() {
+                return None;
+            }
+            Some(
+                targets
+                    .iter()
+                    .zip(facts.columns)
+                    .map(|(target, (_, upstream))| (target.name.clone(), upstream))
+                    .collect(),
+            )
+        }
+    }
+}
+
 fn tableref_name(t: &polyglot_sql::expressions::TableRef) -> String {
     let mut parts = Vec::new();
     if let Some(c) = &t.catalog {
@@ -275,24 +461,113 @@ fn tableref_name(t: &polyglot_sql::expressions::TableRef) -> String {
 /// statement's source text (used for CALL detection, which parses as an
 /// opaque command).
 fn statement_facts(stmt: &Expression, raw: &str) -> StatementFacts {
+    use Expression as E;
     let mut facts = StatementFacts::default();
 
-    match stmt {
-        Expression::Insert(insert) => facts.writes.push(tableref_name(&insert.table)),
-        Expression::Update(update) => facts.writes.push(tableref_name(&update.table)),
-        Expression::Delete(delete) => facts.writes.push(tableref_name(&delete.table)),
-        Expression::Merge(merge) => {
-            let targets = polyglot_sql::get_table_names(&merge.this);
-            facts.writes.extend(targets);
+    facts.kind = match stmt {
+        E::Select(_)
+        | E::Union(_)
+        | E::Intersect(_)
+        | E::Except(_)
+        | E::SetOperation(_)
+        | E::With(_)
+        | E::Values(_) => StatementKind::Select,
+        E::Insert(insert) => {
+            facts.writes.push(tableref_name(&insert.table));
+            StatementKind::Insert
         }
-        Expression::CreateTable(create) => facts.writes.push(tableref_name(&create.name)),
-        Expression::CreateView(create) => facts.writes.push(tableref_name(&create.name)),
-        _ => {}
-    }
+        E::Update(update) => {
+            facts.writes.push(tableref_name(&update.table));
+            StatementKind::Update
+        }
+        E::Delete(delete) => {
+            facts.writes.push(tableref_name(&delete.table));
+            StatementKind::Delete
+        }
+        E::Merge(merge) => {
+            facts.writes.extend(qualified_table_names(&merge.this));
+            StatementKind::Merge
+        }
+        E::CreateTable(create) => {
+            facts.writes.push(tableref_name(&create.name));
+            if create.as_select.is_some() {
+                StatementKind::CreateTableAsSelect
+            } else {
+                StatementKind::CreateTable
+            }
+        }
+        E::CreateView(create) => {
+            facts.writes.push(tableref_name(&create.name));
+            if create.materialized {
+                StatementKind::CreateMaterializedView
+            } else {
+                StatementKind::CreateView
+            }
+        }
+        E::DropTable(drop) => {
+            facts.writes.extend(drop.names.iter().map(tableref_name));
+            StatementKind::Drop
+        }
+        E::DropView(drop) => {
+            facts.writes.push(tableref_name(&drop.name));
+            StatementKind::Drop
+        }
+        E::DropFunction(_) | E::DropProcedure(_) | E::DropSchema(_) => StatementKind::Drop,
+        E::Truncate(truncate) => {
+            facts.writes.push(tableref_name(&truncate.table));
+            facts.writes.extend(
+                truncate
+                    .extra_tables
+                    .iter()
+                    .map(|e| tableref_name(&e.table)),
+            );
+            StatementKind::Truncate
+        }
+        E::TruncateTable(truncate) => {
+            for e in &truncate.expressions {
+                facts.writes.extend(qualified_table_names(e));
+            }
+            StatementKind::Truncate
+        }
+        E::AlterTable(alter) => {
+            facts.writes.push(tableref_name(&alter.name));
+            StatementKind::Alter
+        }
+        E::AlterView(alter) => {
+            facts.writes.push(tableref_name(&alter.name));
+            StatementKind::Alter
+        }
+        E::Export(_) => {
+            facts.external_writes = option_strings(raw, b"uri");
+            StatementKind::ExportData
+        }
+        E::LoadData(load) => {
+            facts.writes.extend(qualified_table_names(&load.table));
+            facts.external_reads.push(load.inpath.clone());
+            StatementKind::LoadData
+        }
+        E::CreateFunction(_) => StatementKind::CreateFunction,
+        E::CreateProcedure(_) => StatementKind::CreateProcedure,
+        E::Call(_) => StatementKind::Call,
+        E::Declare(_)
+        | E::DeclareItem(_)
+        | E::Set(_)
+        | E::SetStatement(_)
+        | E::Transaction(_)
+        | E::Commit(_)
+        | E::Rollback(_)
+        | E::ReturnStmt(_) => StatementKind::Scripting,
+        // Commands the dialect keeps opaque -- BigQuery's CALL among them --
+        // and anything else: classified by their leading keywords.
+        E::Command(command) => classify_statement_text(&command.this),
+        _ => classify_statement_text(raw),
+    };
 
     // CALL parses dialect-dependently; detect textually.
+    // Compared as bytes: `trimmed[..4]` panicked when byte 4 fell inside a
+    // character. Once the four bytes are ASCII `call`, byte 4 is a boundary.
     let trimmed = raw.trim_start();
-    if trimmed.len() >= 5 && trimmed[..4].eq_ignore_ascii_case("call") {
+    if trimmed.len() >= 5 && trimmed.as_bytes()[..4].eq_ignore_ascii_case(b"call") {
         if let Some(name) = trimmed[4..]
             .trim_start()
             .split(['(', ' ', '\n', ';'])
@@ -304,7 +579,7 @@ fn statement_facts(stmt: &Expression, raw: &str) -> StatementFacts {
         }
     }
 
-    let all = polyglot_sql::get_table_names(stmt);
+    let all = qualified_table_names(stmt);
     for name in all {
         if !facts.writes.contains(&name) {
             facts.reads.push(name);
@@ -316,8 +591,27 @@ fn statement_facts(stmt: &Expression, raw: &str) -> StatementFacts {
 /// Splits a script into top-level statements, respecting quotes,
 /// backticks, and `--` / `/* */` comments. Strips one surrounding
 /// `BEGIN` … `END;` wrapper when present.
-pub(crate) fn split_statements(script: &str) -> Vec<&str> {
-    let body = strip_begin_end(script);
+pub fn split_statements(script: &str) -> Vec<&str> {
+    split_statement_spans(script)
+        .into_iter()
+        .map(|r| &script[r])
+        .collect()
+}
+
+/// [`split_statements`] as byte ranges into `script` itself, so a caller
+/// can hand a statement on -- or point at where it sits -- without copying
+/// it. Every range is non-empty, trimmed, on `char` boundaries, increasing
+/// and non-overlapping.
+///
+/// Boundaries are found by scanning BYTES for ASCII delimiters. An ASCII
+/// byte never occurs inside a multi-byte UTF-8 sequence, so every position
+/// the scan stops at is a `char` boundary by construction, and slicing
+/// there cannot panic -- which matters under `panic = "abort"`, where the
+/// script is author text.
+pub fn split_statement_spans(script: &str) -> Vec<Range<usize>> {
+    let body_span = strip_begin_end_span(script);
+    let base = body_span.start;
+    let body = &script[body_span];
     let bytes = body.as_bytes();
     let mut out = Vec::new();
     let mut start = 0usize;
@@ -350,10 +644,7 @@ pub(crate) fn split_statements(script: &str) -> Vec<&str> {
                     i = (i + 2).min(bytes.len());
                 }
                 b';' => {
-                    let stmt = body[start..i].trim();
-                    if !stmt.is_empty() {
-                        out.push(stmt);
-                    }
+                    push_trimmed(body, base, start..i, &mut out);
                     start = i + 1;
                     i += 1;
                 }
@@ -361,26 +652,333 @@ pub(crate) fn split_statements(script: &str) -> Vec<&str> {
             },
         }
     }
-    let tail = body[start..].trim();
-    if !tail.is_empty() {
-        out.push(tail);
+    push_trimmed(body, base, start..bytes.len(), &mut out);
+    out
+}
+
+/// Pushes `body[r]`, trimmed, as a range offset by `base` -- unless it is
+/// empty after trimming.
+fn push_trimmed(body: &str, base: usize, r: Range<usize>, out: &mut Vec<Range<usize>>) {
+    let piece = &body[r.clone()];
+    let lead = piece.len() - piece.trim_start().len();
+    let trimmed_len = piece.trim().len();
+    if trimmed_len > 0 {
+        let s = base + r.start + lead;
+        out.push(s..s + trimmed_len);
+    }
+}
+
+/// The span of `script` inside one surrounding `BEGIN` … `END[;]`, or the
+/// whole trimmed script when there is no such wrapper. Allocates nothing.
+///
+/// This used to lowercase the body and then slice the ORIGINAL with an
+/// offset found in the lowercased copy. Lowercasing changes byte lengths --
+/// `İ` is two bytes and lowercases to three, the Kelvin sign is three and
+/// lowercases to one -- so the offset could land inside a character or past
+/// the end, and `BEGIN İ END` aborted the process. It also sliced
+/// `trimmed[..5]` before knowing byte 5 was a boundary, so any body whose
+/// fifth byte fell inside a character aborted it too. Both comparisons are
+/// on bytes now, against ASCII needles, which no non-ASCII text can match.
+fn strip_begin_end_span(script: &str) -> Range<usize> {
+    let lead = script.len() - script.trim_start().len();
+    let trimmed = script.trim();
+    let whole = lead..lead + trimmed.len();
+    let bytes = trimmed.as_bytes();
+    if bytes.len() < 5 || !bytes[..5].eq_ignore_ascii_case(b"begin") {
+        return whole;
+    }
+    // `begin` is ASCII, so byte 5 is a boundary.
+    let after_begin = &trimmed[5..];
+    let inner_off = 5 + (after_begin.len() - after_begin.trim_start().len());
+    let inner = &trimmed[inner_off..];
+    let Some(pos) = rfind_ascii_ci(inner.as_bytes(), b"end") else {
+        return whole;
+    };
+    // `end` is ASCII, so `pos` and `pos + 3` are boundaries.
+    let after = inner[pos + 3..].trim();
+    if after.is_empty() || after == ";" {
+        let s = lead + inner_off;
+        s..s + pos
+    } else {
+        whole
+    }
+}
+
+/// Last occurrence of an ASCII `needle` in `hay`, compared ASCII
+/// case-insensitively, as a byte offset.
+fn rfind_ascii_ci(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || hay.len() < needle.len() {
+        return None;
+    }
+    (0..=hay.len() - needle.len())
+        .rev()
+        .find(|&i| hay[i..i + needle.len()].eq_ignore_ascii_case(needle))
+}
+
+/// The kind of a statement read from its leading keywords alone, for text
+/// the parser kept opaque or could not parse. Skips leading whitespace and
+/// comments; allocates nothing.
+pub fn classify_statement_text(sql: &str) -> StatementKind {
+    let mut words = Keywords::new(sql);
+    let Some(first) = words.next() else {
+        return StatementKind::Other;
+    };
+    let is = |w: &str, k: &str| w.eq_ignore_ascii_case(k);
+    if is(first, "select") || is(first, "with") || first.starts_with('(') {
+        return StatementKind::Select;
+    }
+    for (keyword, kind) in [
+        ("insert", StatementKind::Insert),
+        ("update", StatementKind::Update),
+        ("delete", StatementKind::Delete),
+        ("merge", StatementKind::Merge),
+        ("drop", StatementKind::Drop),
+        ("truncate", StatementKind::Truncate),
+        ("alter", StatementKind::Alter),
+        ("export", StatementKind::ExportData),
+        ("load", StatementKind::LoadData),
+        ("call", StatementKind::Call),
+    ] {
+        if is(first, keyword) {
+            return kind;
+        }
+    }
+    if is(first, "create") {
+        // CREATE [OR REPLACE] [TEMP|TEMPORARY] [MATERIALIZED|TABLE|AGGREGATE]
+        // ... -- the first word that names the object decides.
+        for word in words {
+            if is(word, "table") {
+                return StatementKind::CreateTable;
+            }
+            if is(word, "materialized") {
+                return StatementKind::CreateMaterializedView;
+            }
+            if is(word, "view") {
+                return StatementKind::CreateView;
+            }
+            if is(word, "function") {
+                return StatementKind::CreateFunction;
+            }
+            if is(word, "procedure") {
+                return StatementKind::CreateProcedure;
+            }
+            if !(is(word, "or")
+                || is(word, "replace")
+                || is(word, "temp")
+                || is(word, "temporary")
+                || is(word, "aggregate")
+                || is(word, "if")
+                || is(word, "not")
+                || is(word, "exists"))
+            {
+                break;
+            }
+        }
+        return StatementKind::Other;
+    }
+    const SCRIPTING: &[&str] = &[
+        "declare", "set", "if", "begin", "end", "loop", "while", "repeat", "for", "return",
+        "raise", "execute", "leave", "continue", "iterate", "break", "assert", "commit",
+        "rollback", "case",
+    ];
+    if SCRIPTING.iter().any(|k| is(first, k)) {
+        return StatementKind::Scripting;
+    }
+    StatementKind::Other
+}
+
+/// The leading words of a statement: runs of ASCII alphanumerics and `_`,
+/// or a single `(`, with whitespace and `--` / `/* */` comments skipped. Every
+/// boundary is an ASCII byte, so every word is a valid slice.
+struct Keywords<'a> {
+    rest: &'a str,
+}
+
+impl<'a> Keywords<'a> {
+    fn new(sql: &'a str) -> Self {
+        Self { rest: sql }
+    }
+}
+
+impl<'a> Iterator for Keywords<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<&'a str> {
+        loop {
+            let trimmed = self.rest.trim_start();
+            if let Some(after) = trimmed.strip_prefix("--") {
+                self.rest = after.find('\n').map_or("", |i| &after[i..]);
+                continue;
+            }
+            if let Some(after) = trimmed.strip_prefix("/*") {
+                self.rest = after.find("*/").map_or("", |i| &after[i + 2..]);
+                continue;
+            }
+            self.rest = trimmed;
+            break;
+        }
+        let bytes = self.rest.as_bytes();
+        let first = *bytes.first()?;
+        let len = if first == b'(' {
+            1
+        } else {
+            bytes
+                .iter()
+                .position(|b| !(b.is_ascii_alphanumeric() || *b == b'_'))
+                .unwrap_or(bytes.len())
+        };
+        if len == 0 {
+            return None;
+        }
+        let (word, rest) = self.rest.split_at(len);
+        self.rest = rest;
+        Some(word)
+    }
+}
+
+/// The string values given to `key` in a statement's options, e.g.
+/// `uri = 'gs://b/*.csv'` or `uris = ['gs://a', "gs://b"]`. The key matches
+/// ASCII case-insensitively at a word boundary. Text inside quotes or
+/// comments is never mistaken for a key.
+pub(crate) fn option_strings(sql: &str, key: &[u8]) -> Vec<String> {
+    let bytes = sql.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\'' | b'"' | b'`' => i = skip_quoted(bytes, i),
+            b'-' if bytes.get(i + 1) == Some(&b'-') => {
+                while i < bytes.len() && bytes[i] != b'\n' {
+                    i += 1;
+                }
+            }
+            b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                i += 2;
+                while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                    i += 1;
+                }
+                i = (i + 2).min(bytes.len());
+            }
+            _ => {
+                let boundary_before =
+                    i == 0 || !(bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_');
+                let end = i + key.len();
+                let matches = boundary_before
+                    && end <= bytes.len()
+                    && bytes[i..end].eq_ignore_ascii_case(key)
+                    && bytes
+                        .get(end)
+                        .is_none_or(|b| !(b.is_ascii_alphanumeric() || *b == b'_'));
+                if matches {
+                    let mut j = end;
+                    while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                        j += 1;
+                    }
+                    if bytes.get(j) == Some(&b'=') {
+                        j += 1;
+                        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                            j += 1;
+                        }
+                        i = read_option_values(sql, j, &mut out);
+                        continue;
+                    }
+                }
+                i += 1;
+            }
+        }
     }
     out
 }
 
-fn strip_begin_end(script: &str) -> &str {
-    let trimmed = script.trim();
-    if trimmed.len() >= 5 && trimmed[..5].eq_ignore_ascii_case("begin") {
-        let inner = trimmed[5..].trim_start();
-        let lower = inner.to_lowercase();
-        if let Some(pos) = lower.rfind("end") {
-            let after = inner[pos + 3..].trim();
-            if after.is_empty() || after == ";" {
-                return &inner[..pos];
+/// Reads one quoted string, or a `[...]` list of them, starting at `at`;
+/// returns where reading stopped.
+fn read_option_values(sql: &str, at: usize, out: &mut Vec<String>) -> usize {
+    let bytes = sql.as_bytes();
+    let mut i = at;
+    let list = bytes.get(i) == Some(&b'[');
+    if list {
+        i += 1;
+    }
+    loop {
+        while i < bytes.len() && (bytes[i].is_ascii_whitespace() || bytes[i] == b',') {
+            i += 1;
+        }
+        match bytes.get(i) {
+            Some(&q) if q == b'\'' || q == b'"' => {
+                let end = skip_quoted(bytes, i);
+                // `skip_quoted` stops after the closing quote, or at the end.
+                let close = if end <= bytes.len() && end > i + 1 && bytes[end - 1] == q {
+                    end - 1
+                } else {
+                    end
+                };
+                out.push(sql[i + 1..close.max(i + 1)].to_string());
+                i = end;
+                if !list {
+                    return i;
+                }
             }
+            Some(b']') if list => return i + 1,
+            _ => return i,
         }
     }
-    trimmed
+}
+
+/// Index just past the quoted run starting at `start` (whose byte is the
+/// quote), honouring backslash escapes; the end of input if unterminated.
+fn skip_quoted(bytes: &[u8], start: usize) -> usize {
+    let q = bytes[start];
+    let mut i = start + 1;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => i += 2,
+            b if b == q => return i + 1,
+            _ => i += 1,
+        }
+    }
+    bytes.len()
+}
+
+/// The target of a BigQuery `LOAD DATA {INTO|OVERWRITE} [TEMP TABLE] name`,
+/// which the parser does not accept. `None` when the text is not that shape.
+pub(crate) fn load_data_target(sql: &str) -> Option<String> {
+    let mut words = Keywords::new(sql);
+    let is = |w: Option<&str>, k: &str| w.is_some_and(|w| w.eq_ignore_ascii_case(k));
+    if !is(words.next(), "load") || !is(words.next(), "data") {
+        return None;
+    }
+    let mode = words.next();
+    if !(is(mode, "into") || is(mode, "overwrite")) {
+        return None;
+    }
+    // What follows the mode keyword: an optional TEMP/TEMPORARY TABLE, then
+    // the name -- backticked, or a dotted run of identifier characters.
+    let mut rest = words.rest.trim_start();
+    for _ in 0..2 {
+        let mut probe = Keywords::new(rest);
+        match probe.next() {
+            Some(w)
+                if w.eq_ignore_ascii_case("temp")
+                    || w.eq_ignore_ascii_case("temporary")
+                    || w.eq_ignore_ascii_case("table") =>
+            {
+                rest = probe.rest.trim_start();
+            }
+            _ => break,
+        }
+    }
+    let bytes = rest.as_bytes();
+    let name = if bytes.first() == Some(&b'`') {
+        let end = rest[1..].find('`')? + 1;
+        &rest[1..end]
+    } else {
+        let len = bytes
+            .iter()
+            .position(|b| !(b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-')))
+            .unwrap_or(bytes.len());
+        &rest[..len]
+    };
+    (!name.is_empty()).then(|| name.to_string())
 }
 
 /// Heuristic fallback when parsing fails: scans comment- and
@@ -650,5 +1248,437 @@ mod tests {
         assert!(analyze_select(&deep).is_ok(), "deep nesting must not abort");
         let ok = "SELECT ((((1)))) AS v FROM `p.d.t`";
         assert!(analyze_select(ok).is_ok());
+    }
+
+    /// The splitter as it shipped through 0.5.33, kept as an oracle. It is
+    /// only fed inputs it could not panic on (ASCII), where the new splitter
+    /// must agree with it exactly.
+    fn split_statements_oracle(script: &str) -> Vec<&str> {
+        fn strip(script: &str) -> &str {
+            let trimmed = script.trim();
+            if trimmed.len() >= 5 && trimmed[..5].eq_ignore_ascii_case("begin") {
+                let inner = trimmed[5..].trim_start();
+                let lower = inner.to_lowercase();
+                if let Some(pos) = lower.rfind("end") {
+                    let after = inner[pos + 3..].trim();
+                    if after.is_empty() || after == ";" {
+                        return &inner[..pos];
+                    }
+                }
+            }
+            trimmed
+        }
+        let body = strip(script);
+        let bytes = body.as_bytes();
+        let mut out = Vec::new();
+        let (mut start, mut i, mut quote) = (0usize, 0usize, None::<u8>);
+        while i < bytes.len() {
+            let b = bytes[i];
+            match quote {
+                Some(q) => {
+                    if b == q {
+                        quote = None;
+                    }
+                    i += 1;
+                }
+                None => match b {
+                    b'\'' | b'"' | b'`' => {
+                        quote = Some(b);
+                        i += 1;
+                    }
+                    b'-' if bytes.get(i + 1) == Some(&b'-') => {
+                        while i < bytes.len() && bytes[i] != b'\n' {
+                            i += 1;
+                        }
+                    }
+                    b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                        i += 2;
+                        while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                            i += 1;
+                        }
+                        i = (i + 2).min(bytes.len());
+                    }
+                    b';' => {
+                        let stmt = body[start..i].trim();
+                        if !stmt.is_empty() {
+                            out.push(stmt);
+                        }
+                        start = i + 1;
+                        i += 1;
+                    }
+                    _ => i += 1,
+                },
+            }
+        }
+        let tail = body[start..].trim();
+        if !tail.is_empty() {
+            out.push(tail);
+        }
+        out
+    }
+
+    #[test]
+    fn spans_agree_with_the_shipped_splitter_on_ascii() {
+        let corpus = [
+            "",
+            "   ",
+            ";;;",
+            "SELECT 1",
+            "SELECT 1;",
+            " SELECT 1 ; SELECT 2 ;; ",
+            "BEGIN\nINSERT INTO `p.d.a` VALUES ('x;y'); -- c;\n/* b; */ DELETE FROM `p.d.b`;\nEND;",
+            "begin select 1; select 2 end",
+            "BEGIN select 1; END extra",
+            "BEGIN",
+            "BEGINEND",
+            "BEGIN END;",
+            "SELECT 'it''s; fine'; SELECT \"a;b\"",
+            "SELECT 1 -- no newline; at end",
+            "SELECT 1 /* unterminated ; comment",
+            "SELECT 'unterminated ; quote",
+            "BEGIN\r\n  SELECT 1;\r\n  SELECT 2;\r\nEND;\r\n",
+            "BEGIN SELECT 'end'; END",
+            "BEGIN SELECT legend; END",
+        ];
+        for script in corpus {
+            let spans = split_statement_spans(script);
+            let sliced: Vec<&str> = spans.iter().map(|r| &script[r.clone()]).collect();
+            assert_eq!(sliced, split_statements_oracle(script), "script {script:?}");
+            assert_eq!(split_statements(script), sliced);
+            let mut prev_end = 0;
+            for r in &spans {
+                assert!(r.start >= prev_end && r.start < r.end && r.end <= script.len());
+                prev_end = r.end;
+            }
+        }
+    }
+
+    #[test]
+    fn begin_end_with_dotted_capital_i_does_not_panic() {
+        // SECURITY REGRESSION: `İ` is two bytes and lowercases to three, so an
+        // offset found in the lowercased body sliced the original past its end.
+        let script = "BEGIN İ END";
+        let stmts = split_statements(script);
+        assert_eq!(stmts, vec!["İ"]);
+    }
+
+    #[test]
+    fn kelvin_sign_before_end_does_not_panic() {
+        // The Kelvin sign is three bytes and lowercases to one: the offset
+        // landed before the real `END`, inside the character.
+        let script = "BEGIN SELECT '\u{212A}' FROM t; END";
+        let stmts = split_statements(script);
+        assert_eq!(stmts, vec!["SELECT '\u{212A}' FROM t"]);
+        let script = "BEGIN \u{212A}\u{212A}\u{212A}\u{212A} END;";
+        assert_eq!(
+            split_statements(script),
+            vec!["\u{212A}\u{212A}\u{212A}\u{212A}"]
+        );
+    }
+
+    #[test]
+    fn a_multibyte_fifth_byte_does_not_panic() {
+        // `trimmed[..5]` was sliced before byte 5 was known to be a boundary.
+        for script in ["ąąą", "aąąx SELECT 1", "żółw; SELECT 1", "日本語のテキスト"]
+        {
+            let spans = split_statement_spans(script);
+            for r in spans {
+                assert!(script.is_char_boundary(r.start) && script.is_char_boundary(r.end));
+            }
+        }
+    }
+
+    #[test]
+    fn call_detection_with_a_multibyte_fourth_byte_does_not_panic() {
+        // `trimmed[..4]` panicked when byte 4 fell inside a character.
+        // `aąą x` parses (as an aliased identifier), so it reaches CALL
+        // detection. A panic there killed the worker, and the dead worker was
+        // indistinguishable from a parse error -- the facts were just gone.
+        let facts = statement_facts_for_all(&["aąą x"]);
+        assert_eq!(facts.len(), 1);
+        assert!(
+            facts[0].is_ok(),
+            "worker died: {:?}",
+            facts[0].as_ref().err()
+        );
+    }
+
+    fn facts_of(sql: &str) -> StatementFacts {
+        let mut out = statement_facts_for_all(&[sql]);
+        let mut stmts = out
+            .remove(0)
+            .unwrap_or_else(|e| panic!("{sql:?} did not parse: {e}"));
+        assert_eq!(stmts.len(), 1, "{sql:?}");
+        stmts.remove(0)
+    }
+
+    #[test]
+    fn drop_truncate_alter_change_their_table_and_read_nothing() {
+        for (sql, kind) in [
+            ("DROP TABLE `p.d.t`", StatementKind::Drop),
+            ("DROP VIEW `p.d.t`", StatementKind::Drop),
+            ("TRUNCATE TABLE `p.d.t`", StatementKind::Truncate),
+            (
+                "ALTER TABLE `p.d.t` ADD COLUMN c INT64",
+                StatementKind::Alter,
+            ),
+        ] {
+            let f = facts_of(sql);
+            assert_eq!(f.kind, kind, "{sql}");
+            assert_eq!(f.writes, vec!["p.d.t".to_string()], "{sql}");
+            assert!(f.reads.is_empty(), "{sql} reported reads {:?}", f.reads);
+        }
+    }
+
+    #[test]
+    fn dml_and_ddl_kinds() {
+        for (sql, kind) in [
+            ("SELECT 1", StatementKind::Select),
+            (
+                "WITH a AS (SELECT 1) SELECT * FROM a",
+                StatementKind::Select,
+            ),
+            (
+                "INSERT INTO `p.d.t` SELECT * FROM `p.d.s`",
+                StatementKind::Insert,
+            ),
+            ("UPDATE `p.d.t` SET a = 1 WHERE TRUE", StatementKind::Update),
+            ("DELETE FROM `p.d.t` WHERE TRUE", StatementKind::Delete),
+            (
+                "MERGE `p.d.t` T USING `p.d.s` S ON T.id = S.id WHEN MATCHED THEN DELETE",
+                StatementKind::Merge,
+            ),
+            ("CREATE TABLE `p.d.t` (a INT64)", StatementKind::CreateTable),
+            (
+                "CREATE TABLE `p.d.t` AS SELECT * FROM `p.d.s`",
+                StatementKind::CreateTableAsSelect,
+            ),
+            (
+                "CREATE VIEW `p.d.v` AS SELECT * FROM `p.d.s`",
+                StatementKind::CreateView,
+            ),
+            (
+                "CREATE MATERIALIZED VIEW `p.d.v` AS SELECT * FROM `p.d.s`",
+                StatementKind::CreateMaterializedView,
+            ),
+        ] {
+            assert_eq!(facts_of(sql).kind, kind, "{sql}");
+        }
+    }
+
+    #[test]
+    fn ctas_writes_its_table_and_reads_its_source() {
+        let f = facts_of("CREATE OR REPLACE TABLE `p.d.t` AS SELECT a FROM `p.d.s`");
+        assert_eq!(f.writes, vec!["p.d.t".to_string()]);
+        assert_eq!(f.reads, vec!["p.d.s".to_string()]);
+    }
+
+    #[test]
+    fn export_data_reads_its_query_and_writes_its_uri() {
+        let f = facts_of(
+            "EXPORT DATA OPTIONS (uri = 'gs://bucket/out/*.csv', format = 'CSV') AS SELECT a FROM `p.d.s`",
+        );
+        assert_eq!(f.kind, StatementKind::ExportData);
+        assert_eq!(f.reads, vec!["p.d.s".to_string()]);
+        assert!(f.writes.is_empty());
+        assert_eq!(f.external_writes, vec!["gs://bucket/out/*.csv".to_string()]);
+    }
+
+    #[test]
+    fn bigquery_call_is_a_call() {
+        let f = facts_of("CALL `p.d.proc`(1)");
+        assert_eq!(f.kind, StatementKind::Call);
+        assert_eq!(f.calls, vec!["p.d.proc".to_string()]);
+    }
+
+    #[test]
+    fn classify_statement_text_reads_leading_keywords() {
+        for (sql, kind) in [
+            ("", StatementKind::Other),
+            ("   -- only a comment", StatementKind::Other),
+            ("-- note\n/* block */ select 1", StatementKind::Select),
+            ("(SELECT 1)", StatementKind::Select),
+            (
+                "load data into p.d.t from files (uris = ['gs://b/x'])",
+                StatementKind::LoadData,
+            ),
+            (
+                "CREATE OR REPLACE TEMP TABLE t AS SELECT 1",
+                StatementKind::CreateTable,
+            ),
+            (
+                "create materialized view v as select 1",
+                StatementKind::CreateMaterializedView,
+            ),
+            (
+                "CREATE AGGREGATE FUNCTION f()",
+                StatementKind::CreateFunction,
+            ),
+            (
+                "CREATE PROCEDURE p() BEGIN END",
+                StatementKind::CreateProcedure,
+            ),
+            ("CREATE SCHEMA s", StatementKind::Other),
+            ("DECLARE x INT64", StatementKind::Scripting),
+            ("IF x THEN SELECT 1; END IF", StatementKind::Scripting),
+            (
+                "EXPORT DATA OPTIONS(uri='gs://x') AS SELECT 1",
+                StatementKind::ExportData,
+            ),
+            ("ąąą", StatementKind::Other),
+        ] {
+            assert_eq!(classify_statement_text(sql), kind, "{sql:?}");
+        }
+    }
+
+    #[test]
+    fn option_strings_reads_values_and_skips_quotes_and_comments() {
+        assert_eq!(
+            option_strings("OPTIONS (URI = 'gs://a/*', format='CSV')", b"uri"),
+            vec!["gs://a/*".to_string()]
+        );
+        assert_eq!(
+            option_strings(
+                "FROM FILES (format = 'CSV', uris = ['gs://a/1', \"gs://a/2\"])",
+                b"uris"
+            ),
+            vec!["gs://a/1".to_string(), "gs://a/2".to_string()]
+        );
+        // `uri` inside a string or a comment, or as part of a longer word, is
+        // not the option.
+        assert!(option_strings("SELECT 'uri = x' -- uri = 'y'\n", b"uri").is_empty());
+        assert!(option_strings("myuri = 'z'", b"uri").is_empty());
+        // Unterminated input ends the scan rather than reading past it.
+        assert_eq!(
+            option_strings("uri = 'gs://open", b"uri"),
+            vec!["gs://open".to_string()]
+        );
+    }
+
+    #[test]
+    fn load_data_target_reads_the_bigquery_shapes() {
+        for (sql, want) in [
+            (
+                "LOAD DATA INTO p.d.t FROM FILES (uris=['gs://b/x'])",
+                Some("p.d.t"),
+            ),
+            (
+                "load data overwrite `p.d.t` from files(uris=['x'])",
+                Some("p.d.t"),
+            ),
+            (
+                "LOAD DATA INTO TEMP TABLE t FROM FILES (uris=['x'])",
+                Some("t"),
+            ),
+            ("LOAD DATA LOCAL INPATH 'x' INTO TABLE t", None),
+            ("SELECT 1", None),
+        ] {
+            assert_eq!(load_data_target(sql).as_deref(), want, "{sql}");
+        }
+    }
+
+    #[test]
+    fn unquoted_qualified_names_keep_their_qualifiers() {
+        // `get_table_names` answers `events` for an unquoted `p.raw.events`;
+        // the reads must not lose the project and dataset.
+        let f = facts_of("SELECT id FROM p.raw.events JOIN raw.users USING (id)");
+        assert_eq!(
+            f.reads,
+            vec!["p.raw.events".to_string(), "raw.users".to_string()]
+        );
+        let f = facts_of("INSERT INTO marts.t SELECT * FROM raw.s");
+        assert_eq!(f.writes, vec!["marts.t".to_string()]);
+        assert_eq!(f.reads, vec!["raw.s".to_string()]);
+        let f = facts_of("MERGE marts.t T USING raw.s S ON T.id = S.id WHEN MATCHED THEN DELETE");
+        assert_eq!(f.writes, vec!["marts.t".to_string()]);
+        assert_eq!(f.reads, vec!["raw.s".to_string()]);
+    }
+
+    #[test]
+    fn two_tables_sharing_a_bare_name_are_both_read() {
+        let f = facts_of("SELECT * FROM a.d.t JOIN b.d.t USING (id)");
+        assert_eq!(f.reads, vec!["a.d.t".to_string(), "b.d.t".to_string()]);
+    }
+
+    #[test]
+    fn a_cte_is_not_a_table() {
+        let f = facts_of("WITH x AS (SELECT * FROM p.raw.s) SELECT * FROM x");
+        assert_eq!(f.reads, vec!["p.raw.s".to_string()]);
+    }
+
+    fn columns_of(sql: &str) -> ColumnLineage {
+        let mut out = statement_facts_with_columns(&[sql], true);
+        let mut stmts = out.remove(0).unwrap_or_else(|e| panic!("{sql:?}: {e}"));
+        stmts.remove(0).columns
+    }
+
+    fn sources(cols: &ColumnLineage, col: &str) -> Vec<(String, String)> {
+        cols.iter()
+            .find(|(c, _)| c == col)
+            .map(|(_, s)| s.clone())
+            .unwrap_or_else(|| panic!("no column {col}; have {cols:?}"))
+    }
+
+    #[test]
+    fn ctas_columns_are_its_projections() {
+        let cols = columns_of(
+            "CREATE TABLE `p.m.t` AS SELECT a.id, b.v AS value FROM `p.r.a` a JOIN `p.r.b` b ON a.id = b.id",
+        );
+        assert_eq!(
+            sources(&cols, "id"),
+            vec![("p.r.a".to_string(), "id".to_string())]
+        );
+        assert_eq!(
+            sources(&cols, "value"),
+            vec![("p.r.b".to_string(), "v".to_string())]
+        );
+    }
+
+    #[test]
+    fn insert_with_a_column_list_maps_by_position() {
+        let cols = columns_of("INSERT INTO `p.m.t` (k, total) SELECT id, amount FROM `p.r.s`");
+        assert_eq!(
+            sources(&cols, "k"),
+            vec![("p.r.s".to_string(), "id".to_string())]
+        );
+        assert_eq!(
+            sources(&cols, "total"),
+            vec![("p.r.s".to_string(), "amount".to_string())]
+        );
+    }
+
+    #[test]
+    fn create_view_in_a_script_has_column_lineage() {
+        let cols = columns_of("CREATE VIEW `p.m.v` AS SELECT id FROM `p.r.s`");
+        assert_eq!(
+            sources(&cols, "id"),
+            vec![("p.r.s".to_string(), "id".to_string())]
+        );
+    }
+
+    #[test]
+    fn unknowable_targets_answer_nothing_rather_than_a_guess() {
+        for sql in [
+            // No column list: the target order is the table's schema.
+            "INSERT INTO `p.m.t` SELECT id, amount FROM `p.r.s`",
+            // A star cannot be expanded without a schema.
+            "CREATE TABLE `p.m.t` AS SELECT * FROM `p.r.s`",
+            // Counts disagree.
+            "INSERT INTO `p.m.t` (a, b, c) SELECT id, amount FROM `p.r.s`",
+            // Not a query-backed write at all.
+            "DELETE FROM `p.m.t` WHERE TRUE",
+            "UPDATE `p.m.t` SET a = 1 WHERE TRUE",
+        ] {
+            assert!(columns_of(sql).is_empty(), "{sql}");
+        }
+    }
+
+    #[test]
+    fn columns_are_only_computed_when_asked_for() {
+        let mut out = statement_facts_with_columns(
+            &["CREATE TABLE `p.m.t` AS SELECT id FROM `p.r.s`"],
+            false,
+        );
+        assert!(out.remove(0).expect("parsed")[0].columns.is_empty());
     }
 }

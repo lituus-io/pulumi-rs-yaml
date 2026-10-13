@@ -1,0 +1,9 @@
+error: 'name' is only allowed in Pulumi.yaml, found in Pulumi.phase2.yaml
+error: 'description' is only allowed in Pulumi.yaml, found in Pulumi.phase2.yaml
+error: 'config' is only allowed in Pulumi.yaml, found in Pulumi.phase2.yaml
+error: resource 'knownBucket' defined in both Pulumi.yaml and Pulumi.phase2.yaml
+error: variable 'projectInfo' defined in both Pulumi.yaml and Pulumi.phase2.yaml
+error: variable 'projectNumber' defined in both Pulumi.yaml and Pulumi.phase2.yaml
+error: output 'knownBucketName' defined in both Pulumi.yaml and Pulumi.phase2.yaml
+error: output 'projectId' defined in both Pulumi.yaml and Pulumi.phase2.yaml
+error: output 'projectNumber' defined in both Pulumi.yaml and Pulumi.phase2.yaml

@@ -1,0 +1,221 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "lineage-bq-producer",
+  "stack": "golden",
+  "nodes": [
+    {
+      "id": "stackoutput::org/lineage-bq-producer/golden::datasetId",
+      "kind": "output",
+      "logical_name": "datasetId",
+      "name": "datasetId",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "lineage-bq-producer",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::lineage-bq-producer::gcp:bigquery/dataset:Dataset::dataset",
+      "kind": "resource",
+      "logical_name": "dataset",
+      "name": "dataset",
+      "type_token": "gcp:bigquery/dataset:Dataset",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "datasetId": "pulumi_rs_lineage_test",
+        "deleteContentsOnDestroy": "true",
+        "location": "US",
+        "project": "golden-gcp"
+      },
+      "organization": "org",
+      "project": "lineage-bq-producer",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::lineage-bq-producer::gcp:bigquery/routine:Routine::refreshRoutine",
+      "kind": "resource",
+      "logical_name": "refreshRoutine",
+      "name": "refreshRoutine",
+      "type_token": "gcp:bigquery/routine:Routine",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "datasetId": "pulumi_rs_lineage_test",
+        "definitionBody": "INSERT INTO `golden-gcp.pulumi_rs_lineage_test.summary` SELECT order_id, amount_cents FROM `golden-gcp.pulumi_rs_lineage_test.orders`",
+        "language": "SQL",
+        "project": "golden-gcp",
+        "routineId": "refresh_summary",
+        "routineType": "PROCEDURE"
+      },
+      "organization": "org",
+      "project": "lineage-bq-producer",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::lineage-bq-producer::gcp:bigquery/table:Table::orders",
+      "kind": "resource",
+      "logical_name": "orders",
+      "name": "orders",
+      "type_token": "gcp:bigquery/table:Table",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "datasetId": "pulumi_rs_lineage_test",
+        "deletionProtection": "false",
+        "project": "golden-gcp",
+        "schema": "[{\"name\":\"order_id\",\"type\":\"STRING\",\"description\":\"Order key\"},{\"name\":\"amount_cents\",\"type\":\"INTEGER\",\"description\":\"Amount in cents\"}]",
+        "tableId": "orders"
+      },
+      "organization": "org",
+      "project": "lineage-bq-producer",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::lineage-bq-producer::gcp:bigquery/table:Table::revenueView",
+      "kind": "resource",
+      "logical_name": "revenueView",
+      "name": "revenueView",
+      "type_token": "gcp:bigquery/table:Table",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "datasetId": "pulumi_rs_lineage_test",
+        "deletionProtection": "false",
+        "project": "golden-gcp",
+        "tableId": "revenue_view",
+        "view.query": "SELECT o.order_id, o.amount_cents / 100 AS revenue, o.amount_cents AS cents_raw FROM `golden-gcp.pulumi_rs_lineage_test.orders` o",
+        "view.useLegacySql": "false"
+      },
+      "organization": "org",
+      "project": "lineage-bq-producer",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::lineage-bq-producer::gcp:bigquery/table:Table::summary",
+      "kind": "resource",
+      "logical_name": "summary",
+      "name": "summary",
+      "type_token": "gcp:bigquery/table:Table",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "datasetId": "pulumi_rs_lineage_test",
+        "deletionProtection": "false",
+        "project": "golden-gcp",
+        "schema": "[{\"name\":\"order_id\",\"type\":\"STRING\"},{\"name\":\"amount_cents\",\"type\":\"INTEGER\"}]",
+        "tableId": "summary"
+      },
+      "organization": "org",
+      "project": "lineage-bq-producer",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::lineage-bq-producer::pulumi:pulumi:Stack::lineage-bq-producer-golden",
+      "kind": "stack",
+      "logical_name": "stack",
+      "name": "lineage-bq-producer-golden",
+      "type_token": "pulumi:pulumi:Stack",
+      "package": "pulumi",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "lineage-bq-producer",
+      "stack": "golden"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "stackoutput::org/lineage-bq-producer/golden::datasetId",
+      "target_id": "urn:pulumi:golden::lineage-bq-producer::gcp:bigquery/dataset:Dataset::dataset",
+      "relationship": "exports",
+      "property_paths": [
+        "datasetId"
+      ],
+      "organization": "org",
+      "project": "lineage-bq-producer",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::lineage-bq-producer::gcp:bigquery/routine:Routine::refreshRoutine",
+      "target_id": "urn:pulumi:golden::lineage-bq-producer::gcp:bigquery/table:Table::summary",
+      "relationship": "depends_on",
+      "property_paths": [],
+      "organization": "org",
+      "project": "lineage-bq-producer",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::lineage-bq-producer::gcp:bigquery/table:Table::orders",
+      "target_id": "urn:pulumi:golden::lineage-bq-producer::gcp:bigquery/dataset:Dataset::dataset",
+      "relationship": "depends_on",
+      "property_paths": [],
+      "organization": "org",
+      "project": "lineage-bq-producer",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::lineage-bq-producer::gcp:bigquery/table:Table::revenueView",
+      "target_id": "urn:pulumi:golden::lineage-bq-producer::gcp:bigquery/table:Table::orders",
+      "relationship": "depends_on",
+      "property_paths": [],
+      "organization": "org",
+      "project": "lineage-bq-producer",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::lineage-bq-producer::gcp:bigquery/table:Table::summary",
+      "target_id": "urn:pulumi:golden::lineage-bq-producer::gcp:bigquery/dataset:Dataset::dataset",
+      "relationship": "depends_on",
+      "property_paths": [],
+      "organization": "org",
+      "project": "lineage-bq-producer",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::lineage-bq-producer::pulumi:pulumi:Stack::lineage-bq-producer-golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-producer::gcp:bigquery/dataset:Dataset::dataset",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "lineage-bq-producer",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::lineage-bq-producer::pulumi:pulumi:Stack::lineage-bq-producer-golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-producer::gcp:bigquery/routine:Routine::refreshRoutine",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "lineage-bq-producer",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::lineage-bq-producer::pulumi:pulumi:Stack::lineage-bq-producer-golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-producer::gcp:bigquery/table:Table::orders",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "lineage-bq-producer",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::lineage-bq-producer::pulumi:pulumi:Stack::lineage-bq-producer-golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-producer::gcp:bigquery/table:Table::revenueView",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "lineage-bq-producer",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::lineage-bq-producer::pulumi:pulumi:Stack::lineage-bq-producer-golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-producer::gcp:bigquery/table:Table::summary",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "lineage-bq-producer",
+      "stack": "golden"
+    }
+  ]
+}

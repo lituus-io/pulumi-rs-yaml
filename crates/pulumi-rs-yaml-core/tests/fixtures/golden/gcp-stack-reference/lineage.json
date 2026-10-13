@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "gcp-stack-reference",
+  "stack": "golden",
+  "nodes": [],
+  "edges": []
+}

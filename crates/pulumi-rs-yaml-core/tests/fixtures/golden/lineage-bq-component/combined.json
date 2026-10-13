@@ -1,0 +1,227 @@
+{
+  "edges": [
+    {
+      "organization": "org",
+      "project": "lineage-bq-component",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::lineage-bq-component::lineage-bq-component:index:AuditView::wrapper",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-component::lineage-bq-component:index:AuditView$gcp:bigquery/table:Table::audit"
+    },
+    {
+      "organization": "org",
+      "project": "lineage-bq-component",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::lineage-bq-component::pulumi:pulumi:Stack::lineage-bq-component-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-component::lineage-bq-component:index:AuditView::wrapper"
+    }
+  ],
+  "nodes": [
+    {
+      "component_id": "urn:pulumi:golden::lineage-bq-component::lineage-bq-component:index:AuditView::wrapper",
+      "id": "urn:pulumi:golden::lineage-bq-component::lineage-bq-component:index:AuditView$gcp:bigquery/table:Table::audit",
+      "kind": "component_child",
+      "literal_properties": {
+        "datasetId": "pulumi_rs_lineage_test",
+        "deletionProtection": "false",
+        "project": "golden-gcp",
+        "tableId": "audit_view",
+        "view.query": "SELECT order_id FROM `golden-gcp.pulumi_rs_lineage_test.orders`",
+        "view.useLegacySql": "false"
+      },
+      "logical_name": "wrapper.audit",
+      "name": "audit",
+      "organization": "org",
+      "package": "gcp",
+      "parent_id": "urn:pulumi:golden::lineage-bq-component::lineage-bq-component:index:AuditView::wrapper",
+      "project": "lineage-bq-component",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/table:Table"
+    },
+    {
+      "id": "urn:pulumi:golden::lineage-bq-component::lineage-bq-component:index:AuditView::wrapper",
+      "kind": "component",
+      "literal_properties": {
+        "suffix": "prod"
+      },
+      "logical_name": "wrapper",
+      "name": "wrapper",
+      "organization": "org",
+      "package": "lineage-bq-component",
+      "project": "lineage-bq-component",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "lineage-bq-component:index:AuditView"
+    },
+    {
+      "id": "urn:pulumi:golden::lineage-bq-component::pulumi:pulumi:Stack::lineage-bq-component-golden",
+      "kind": "stack",
+      "literal_properties": {},
+      "logical_name": "stack",
+      "name": "lineage-bq-component-golden",
+      "organization": "org",
+      "package": "pulumi",
+      "project": "lineage-bq-component",
+      "stack": "golden",
+      "type_token": "pulumi:pulumi:Stack"
+    }
+  ],
+  "organization": "org",
+  "project": "lineage-bq-component",
+  "schema_version": 1,
+  "sql_lineage": {
+    "edges": [
+      {
+        "organization": "org",
+        "project": "lineage-bq-component",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_test"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-component",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_test",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_test/audit_view"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-component",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_test",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_test/orders"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-component",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_test/audit_view",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_test/audit_view#order_id"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-component",
+        "relationship": "derives_from",
+        "resolution": "declared",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_test/audit_view",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_test/orders"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-component",
+        "relationship": "defined_by",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_test/audit_view",
+        "stack": "golden",
+        "target_id": "urn:pulumi:golden::lineage-bq-component::lineage-bq-component:index:AuditView$gcp:bigquery/table:Table::audit"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-component",
+        "relationship": "column_derives_from",
+        "resolution": "parsed",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_test/audit_view#order_id",
+        "sql_provenance": "inline",
+        "sql_role": "view",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_test/orders#order_id"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-component",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_test/orders",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_test/orders#order_id"
+      }
+    ],
+    "nodes": [
+      {
+        "bq_project": "golden-gcp",
+        "id": "bq://golden-gcp",
+        "kind": "project",
+        "name": "golden-gcp",
+        "organization": "org",
+        "project": "lineage-bq-component",
+        "stack": "golden"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "dataset": "pulumi_rs_lineage_test",
+        "id": "bq://golden-gcp/pulumi_rs_lineage_test",
+        "kind": "dataset",
+        "name": "pulumi_rs_lineage_test",
+        "organization": "org",
+        "project": "lineage-bq-component",
+        "stack": "golden"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "dataset": "pulumi_rs_lineage_test",
+        "defined_by_urn": "urn:pulumi:golden::lineage-bq-component::lineage-bq-component:index:AuditView$gcp:bigquery/table:Table::audit",
+        "id": "bq://golden-gcp/pulumi_rs_lineage_test/audit_view",
+        "kind": "view",
+        "name": "audit_view",
+        "organization": "org",
+        "project": "lineage-bq-component",
+        "stack": "golden",
+        "table": "audit_view"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "column": "order_id",
+        "dataset": "pulumi_rs_lineage_test",
+        "id": "bq://golden-gcp/pulumi_rs_lineage_test/audit_view#order_id",
+        "kind": "column",
+        "name": "order_id",
+        "organization": "org",
+        "project": "lineage-bq-component",
+        "stack": "golden",
+        "table": "audit_view"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "dataset": "pulumi_rs_lineage_test",
+        "id": "bq://golden-gcp/pulumi_rs_lineage_test/orders",
+        "kind": "table",
+        "name": "orders",
+        "organization": "org",
+        "project": "lineage-bq-component",
+        "stack": "golden",
+        "table": "orders"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "column": "order_id",
+        "dataset": "pulumi_rs_lineage_test",
+        "id": "bq://golden-gcp/pulumi_rs_lineage_test/orders#order_id",
+        "kind": "column",
+        "name": "order_id",
+        "organization": "org",
+        "project": "lineage-bq-component",
+        "stack": "golden",
+        "table": "orders"
+      }
+    ],
+    "organization": "org",
+    "project": "lineage-bq-component",
+    "schema_version": 1,
+    "stack": "golden"
+  },
+  "stack": "golden"
+}

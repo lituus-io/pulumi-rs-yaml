@@ -973,6 +973,7 @@ mod resource_graph_security {
             stack: "s",
             source_map: None,
             schema_store: None,
+            ..Default::default()
         };
         let (g1, _) = export_resource_graph(template, &opts);
         let (g2, _) = export_resource_graph(template, &opts);
@@ -1032,6 +1033,7 @@ mod sql_lineage_security {
             stack: "s",
             source_map: None,
             schema_store: None,
+            ..Default::default()
         };
         let (infra, _) = export_resource_graph(template, &graph_opts);
         let infra: &'static _ = Box::leak(Box::new(infra));
@@ -1043,6 +1045,7 @@ mod sql_lineage_security {
             default_bq_project: Some("proj"),
             source_map: None,
             extra_sql_sources: &[],
+            ..Default::default()
         };
         let (lineage, diags) = export_sql_lineage(template, infra, &opts);
         let json = lineage.to_json().expect("serializes");
@@ -1416,6 +1419,7 @@ mod literal_resolve_security {
             stack: "s",
             source_map: None,
             schema_store: None,
+            ..Default::default()
         };
         let (graph, _) = export_resource_graph(template, &opts);
         // The export must still succeed and serialize: an unanswerable name
@@ -3043,5 +3047,304 @@ mod derive_string_security {
             Some("eyls".to_string()),
             "the same value the literal seed produces"
         );
+    }
+}
+
+// ============================================================================
+// sql_lineage/sql.rs — statement splitting and statement facts on author text
+//
+// Routine bodies, job queries and scheduled queries are split into statements
+// before they are parsed. The splitter and the CALL detector sliced author text
+// at byte offsets they had not proven were character boundaries; under
+// `panic = "abort"` a slice inside a character takes the whole host down.
+// ============================================================================
+
+mod sql_statement_security {
+    use pulumi_rs_yaml_core::ast::parse::parse_template;
+    use pulumi_rs_yaml_core::resource_graph::{export_resource_graph, GraphExportOptions};
+    use pulumi_rs_yaml_core::sql_lineage::{export_sql_lineage, SqlLineageOptions};
+
+    /// Exports a routine whose body is `body`; returns the lineage JSON.
+    /// Reaching the return at all is the main assertion.
+    fn export_routine(body: &str) -> String {
+        let yaml = format!(
+            "name: p\nruntime: yaml\nresources:\n  r:\n    type: gcp:bigquery:Routine\n    properties:\n      project: proj\n      datasetId: d\n      routineId: r\n      routineType: PROCEDURE\n      definitionBody: {}\n",
+            serde_json::to_string(body).expect("quote")
+        );
+        let (template, diags) = parse_template(&yaml, None);
+        assert!(!diags.has_errors(), "{diags}");
+        let template: &'static _ = Box::leak(Box::new(template));
+        let graph_opts = GraphExportOptions {
+            organization: "org",
+            project: "p",
+            stack: "s",
+            source_map: None,
+            schema_store: None,
+            ..Default::default()
+        };
+        let (infra, _) = export_resource_graph(template, &graph_opts);
+        let infra: &'static _ = Box::leak(Box::new(infra));
+        let opts = SqlLineageOptions {
+            organization: "org",
+            project: "p",
+            stack: "s",
+            project_dir: None,
+            default_bq_project: Some("proj"),
+            source_map: None,
+            extra_sql_sources: &[],
+            ..Default::default()
+        };
+        let (lineage, _) = export_sql_lineage(template, infra, &opts);
+        lineage.to_json().expect("serializes")
+    }
+
+    #[test]
+    fn routine_body_unicode_begin_end_does_not_abort() {
+        // `İ` lowercases from two bytes to three; the old splitter sliced the
+        // original text with an offset found in the lowercased copy.
+        export_routine("BEGIN İ END");
+        export_routine("BEGIN SELECT 1; SELECT 'İİİ'; END;");
+    }
+
+    #[test]
+    fn kelvin_sign_in_a_routine_body_does_not_abort() {
+        // The Kelvin sign shrinks from three bytes to one when lowercased.
+        export_routine("BEGIN \u{212A}\u{212A}\u{212A}\u{212A} END;");
+    }
+
+    #[test]
+    fn a_body_whose_fifth_byte_is_inside_a_character_does_not_abort() {
+        export_routine("ąąą");
+        export_routine("żółw SELECT 1");
+    }
+
+    #[test]
+    fn call_detection_on_multibyte_text_never_kills_the_parser_worker() {
+        // CALL detection runs on the parser worker, for statements that parsed
+        // -- and `aąą x` parses. A panic there aborts a release build; in a
+        // test build it kills the worker, and the dead worker is
+        // indistinguishable from a parse error, so the WHOLE script falls back
+        // to the heuristic and the INSERT's write is lost. The write surviving
+        // is the observable proof the worker did.
+        let json = export_routine("aąą x; INSERT INTO `proj.d.t` SELECT a FROM `proj.d.s`");
+        assert!(
+            json.contains("\"writes_to\""),
+            "parser worker died; the INSERT fell back to the heuristic: {json}"
+        );
+    }
+}
+
+// ============================================================================
+// sql_lineage/source_store.rs — files read up front for zero-copy lineage
+//
+// The store reads files before the export runs, so it must apply the same
+// containment the exporter does, and must never read what it is not allowed
+// to hold. Statement text can carry secrets, so it must never appear in the
+// default output.
+// ============================================================================
+
+mod sql_source_store_security {
+    use pulumi_rs_yaml_core::ast::parse::parse_template;
+    use pulumi_rs_yaml_core::resource_graph::{export_resource_graph, GraphExportOptions};
+    use pulumi_rs_yaml_core::sql_lineage::{
+        export_sql_lineage, SqlLineageOptions, SqlSourceStore, MAX_SQL_FILE_BYTES,
+    };
+
+    fn view_reading(path: &str) -> String {
+        format!(
+            "name: p\nruntime: yaml\nresources:\n  v:\n    type: gcp:bigquery:Table\n    properties:\n      project: p\n      datasetId: d\n      tableId: v\n      view:\n        query:\n          fn::readFile: {path}\n"
+        )
+    }
+
+    fn store_for(yaml: &str, dir: &std::path::Path) -> SqlSourceStore {
+        let (template, _) = parse_template(yaml, None);
+        SqlSourceStore::collect(&template, dir)
+    }
+
+    #[test]
+    fn a_traversal_out_of_the_project_is_never_read() {
+        let outer = tempfile::tempdir().expect("outer");
+        std::fs::write(outer.path().join("secret.sql"), "SELECT 'TOPSECRET'").expect("write");
+        let project = outer.path().join("project");
+        std::fs::create_dir(&project).expect("mkdir");
+        let store = store_for(&view_reading("../secret.sql"), &project);
+        assert!(store.is_empty(), "escaped file was read");
+        assert!(store.get("../secret.sql").is_none());
+    }
+
+    #[test]
+    fn an_absolute_path_is_never_read() {
+        let dir = tempfile::tempdir().expect("dir");
+        std::fs::write(dir.path().join("q.sql"), "SELECT 1").expect("write");
+        let abs = dir.path().join("q.sql");
+        let store = store_for(&view_reading(&abs.to_string_lossy()), dir.path());
+        assert!(store.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_out_of_the_project_is_never_read() {
+        let outer = tempfile::tempdir().expect("outer");
+        std::fs::write(outer.path().join("t.sql"), "SELECT 'OUTSIDE'").expect("write");
+        let dir = tempfile::tempdir().expect("dir");
+        std::os::unix::fs::symlink(outer.path().join("t.sql"), dir.path().join("link.sql"))
+            .expect("symlink");
+        let store = store_for(&view_reading("link.sql"), dir.path());
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn a_file_over_the_cap_is_left_unread() {
+        // Sparse: the size is decided from metadata, so this costs a stat.
+        let dir = tempfile::tempdir().expect("dir");
+        let f = std::fs::File::create(dir.path().join("big.sql")).expect("create");
+        f.set_len(MAX_SQL_FILE_BYTES + 1).expect("set_len");
+        let store = store_for(&view_reading("big.sql"), dir.path());
+        assert!(store.is_empty());
+        assert_eq!(store.total_bytes(), 0);
+    }
+
+    #[test]
+    fn a_non_utf8_file_is_left_to_the_exporter() {
+        let dir = tempfile::tempdir().expect("dir");
+        std::fs::write(dir.path().join("bin.sql"), [0xFFu8, 0xFE, 0x00]).expect("write");
+        let store = store_for(&view_reading("bin.sql"), dir.path());
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn statement_text_never_appears_in_the_default_output() {
+        let secret = "SELECT 'sk-live-0123456789' AS key FROM `p.d.s`";
+        let yaml = format!(
+            "name: p\nruntime: yaml\nresources:\n  v:\n    type: gcp:bigquery:Table\n    properties:\n      project: p\n      datasetId: d\n      tableId: v\n      view:\n        query: \"{}\"\n",
+            secret.replace('"', "\\\"")
+        );
+        let (template, _) = parse_template(&yaml, None);
+        let graph_opts = GraphExportOptions {
+            organization: "org",
+            project: "p",
+            stack: "s",
+            source_map: None,
+            schema_store: None,
+            ..Default::default()
+        };
+        let (infra, _) = export_resource_graph(&template, &graph_opts);
+        let opts = SqlLineageOptions {
+            organization: "org",
+            project: "p",
+            stack: "s",
+            ..Default::default()
+        };
+        let (lineage, _) = export_sql_lineage(&template, &infra, &opts);
+        let json = lineage.to_json().expect("json");
+        assert!(!json.contains("sk-live"), "statement text leaked: {json}");
+    }
+}
+
+// ============================================================================
+// stack_uri.rs — backend URLs a caller supplies, carried into exported URIs
+//
+// A backend URL can carry credentials and settings; the URIs derived from it
+// end up in a shared graph store. Nothing that is not location may leak, and
+// no author-controlled name may change a URI's shape.
+// ============================================================================
+
+mod stack_uri_security {
+    use pulumi_rs_yaml_core::ast::parse::parse_template;
+    use pulumi_rs_yaml_core::resource_graph::{export_resource_graph, GraphExportOptions};
+    use pulumi_rs_yaml_core::stack_uri::{parse_backend, StackUri};
+
+    fn uris(yaml: &str, backend: &str) -> Vec<String> {
+        let (template, _) = parse_template(yaml, None);
+        let opts = GraphExportOptions {
+            organization: "acme",
+            project: "p",
+            stack: "prod",
+            backend_url: Some(backend),
+            ..Default::default()
+        };
+        let (g, _) = export_resource_graph(&template, &opts);
+        let mut out: Vec<String> = g.stack_uri.iter().map(|u| u.to_string()).collect();
+        for n in &g.nodes {
+            for u in [&n.stack_uri, &n.referenced_stack_uri, &n.resource_uri]
+                .into_iter()
+                .flatten()
+            {
+                out.push(u.to_string());
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn query_credentials_never_reach_the_export() {
+        let all = uris(
+            "name: p\nruntime: yaml\nresources:\n  b:\n    type: gcp:storage:Bucket\n",
+            "s3://state?profile=prod-admin&awssdk=v2&secret_key=AKIAEXAMPLE",
+        );
+        assert!(!all.is_empty());
+        for u in &all {
+            assert!(
+                !u.contains("AKIA") && !u.contains("profile") && !u.contains('?'),
+                "{u}"
+            );
+        }
+    }
+
+    #[test]
+    fn userinfo_or_control_characters_refuse_the_backend() {
+        for url in [
+            "https://token:x@api.pulumi.com",
+            "gs://user@bucket",
+            "gs://b\r\nX-Injected: 1",
+            "gs://b\u{0}",
+            "gs://b /x",
+        ] {
+            assert!(parse_backend(url).is_none(), "{url:?}");
+        }
+    }
+
+    #[test]
+    fn a_hostile_name_cannot_change_the_shape_of_a_uri() {
+        let backend = parse_backend("gs://b").expect("backend");
+        let hostile = "../../x?y#z \n\t%2F";
+        let s = StackUri::new(backend, hostile, true, hostile, hostile).expect("uri");
+        let text = s.resource(hostile).to_string();
+        let tail = &text["gs://b/.pulumi/stacks/".len()..];
+        assert_eq!(tail.matches('/').count(), 1, "{text}");
+        assert_eq!(text.matches('#').count(), 1, "{text}");
+        assert!(
+            !text.contains('?') && !text.chars().any(char::is_whitespace),
+            "{text}"
+        );
+
+        // A name that IS a dot-segment must not become one.
+        let s = StackUri::new(backend, "o", true, "..", "..").expect("uri");
+        let text = s.to_string();
+        assert!(!text.contains("/../") && !text.contains("/.."), "{text}");
+    }
+
+    #[test]
+    fn a_multibyte_resource_name_does_not_abort_the_export() {
+        // Found by fuzz_resource_graph: the encoder sliced between the bytes
+        // of one escaped character. Under panic = "abort" that takes down any
+        // export with a backend whose program names a resource in, say,
+        // Polish or Japanese, or with an em dash.
+        let yaml = "name: p\nruntime: yaml\nresources:\n  żółw:\n    type: t:m:A—B\n  データ:\n    type: t:m:C\n";
+        let all = uris(yaml, "gs://b");
+        assert!(
+            all.iter().any(|u| u.contains("%C5%BC%C3%B3%C5%82w")),
+            "{all:?}"
+        );
+        assert!(all.iter().all(|u| u.is_ascii()), "{all:?}");
+    }
+
+    #[test]
+    fn a_hostile_stack_reference_name_stays_inside_its_segments() {
+        let yaml = "name: p\nruntime: yaml\nresources:\n  up:\n    type: pulumi:pulumi:StackReference\n    properties:\n      name: \"acme/../../etc/passwd#frag\"\n";
+        for u in uris(yaml, "file:///var/state") {
+            assert!(u.starts_with("file:///var/state/.pulumi/stacks/"), "{u}");
+            assert!(!u.contains("/../"), "{u}");
+        }
     }
 }

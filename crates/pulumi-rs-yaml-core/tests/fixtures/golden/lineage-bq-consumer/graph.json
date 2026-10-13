@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "lineage-bq-consumer",
+  "stack": "golden",
+  "nodes": [
+    {
+      "id": "urn:pulumi:golden::lineage-bq-consumer::gcp:bigquery/table:Table::boostedView",
+      "kind": "resource",
+      "logical_name": "boostedView",
+      "name": "boostedView",
+      "type_token": "gcp:bigquery/table:Table",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "datasetId": "pulumi_rs_lineage_test",
+        "deletionProtection": "false",
+        "project": "golden-gcp",
+        "tableId": "boosted_view",
+        "view.query": "SELECT r.order_id, r.revenue * 2 AS boosted FROM `golden-gcp.pulumi_rs_lineage_test.revenue_view` r",
+        "view.useLegacySql": "false"
+      },
+      "organization": "org",
+      "project": "lineage-bq-consumer",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::lineage-bq-consumer::pulumi:pulumi:Stack::lineage-bq-consumer-golden",
+      "kind": "stack",
+      "logical_name": "stack",
+      "name": "lineage-bq-consumer-golden",
+      "type_token": "pulumi:pulumi:Stack",
+      "package": "pulumi",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "lineage-bq-consumer",
+      "stack": "golden"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "urn:pulumi:golden::lineage-bq-consumer::pulumi:pulumi:Stack::lineage-bq-consumer-golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-consumer::gcp:bigquery/table:Table::boostedView",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "lineage-bq-consumer",
+      "stack": "golden"
+    }
+  ]
+}

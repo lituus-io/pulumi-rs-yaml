@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "gcp-jinja-single-line",
+  "stack": "golden",
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-jinja-single-line/golden::bucketName",
+      "kind": "output",
+      "logical_name": "bucketName",
+      "name": "bucketName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-jinja-single-line",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-jinja-single-line::gcp:storage/bucket:Bucket::singleLineBucket",
+      "kind": "resource",
+      "logical_name": "singleLineBucket",
+      "name": "singleLineBucket",
+      "type_token": "gcp:storage/bucket:Bucket",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "name": "jinja-single-line-test",
+        "uniformBucketLevelAccess": "true"
+      },
+      "organization": "org",
+      "project": "gcp-jinja-single-line",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-jinja-single-line::pulumi:pulumi:Stack::gcp-jinja-single-line-golden",
+      "kind": "stack",
+      "logical_name": "stack",
+      "name": "gcp-jinja-single-line-golden",
+      "type_token": "pulumi:pulumi:Stack",
+      "package": "pulumi",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-jinja-single-line",
+      "stack": "golden"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "stackoutput::org/gcp-jinja-single-line/golden::bucketName",
+      "target_id": "urn:pulumi:golden::gcp-jinja-single-line::gcp:storage/bucket:Bucket::singleLineBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "bucketName"
+      ],
+      "organization": "org",
+      "project": "gcp-jinja-single-line",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-jinja-single-line::pulumi:pulumi:Stack::gcp-jinja-single-line-golden",
+      "target_id": "urn:pulumi:golden::gcp-jinja-single-line::gcp:storage/bucket:Bucket::singleLineBucket",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-jinja-single-line",
+      "stack": "golden"
+    }
+  ]
+}

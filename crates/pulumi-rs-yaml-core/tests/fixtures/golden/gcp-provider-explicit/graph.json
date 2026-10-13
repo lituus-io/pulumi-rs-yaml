@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "gcp-provider-explicit",
+  "stack": "golden",
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-provider-explicit/golden::bucketName",
+      "kind": "output",
+      "logical_name": "bucketName",
+      "name": "bucketName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-provider-explicit",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-provider-explicit::gcp:storage/bucket:Bucket::providerBucket",
+      "kind": "resource",
+      "logical_name": "providerBucket",
+      "name": "providerBucket",
+      "type_token": "gcp:storage/bucket:Bucket",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "name": "explicit-provider-test-bucket",
+        "uniformBucketLevelAccess": "true"
+      },
+      "organization": "org",
+      "project": "gcp-provider-explicit",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-provider-explicit::pulumi:providers:gcp::myGcp",
+      "kind": "provider",
+      "logical_name": "myGcp",
+      "name": "myGcp",
+      "type_token": "pulumi:providers:gcp",
+      "package": "pulumi",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "project": "spacy-muffin-lab-5a292e",
+        "region": "us-central1"
+      },
+      "organization": "org",
+      "project": "gcp-provider-explicit",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-provider-explicit::pulumi:pulumi:Stack::gcp-provider-explicit-golden",
+      "kind": "stack",
+      "logical_name": "stack",
+      "name": "gcp-provider-explicit-golden",
+      "type_token": "pulumi:pulumi:Stack",
+      "package": "pulumi",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-provider-explicit",
+      "stack": "golden"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "stackoutput::org/gcp-provider-explicit/golden::bucketName",
+      "target_id": "urn:pulumi:golden::gcp-provider-explicit::gcp:storage/bucket:Bucket::providerBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "bucketName"
+      ],
+      "organization": "org",
+      "project": "gcp-provider-explicit",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-provider-explicit::gcp:storage/bucket:Bucket::providerBucket",
+      "target_id": "urn:pulumi:golden::gcp-provider-explicit::pulumi:providers:gcp::myGcp",
+      "relationship": "provider",
+      "property_paths": [
+        "options.provider"
+      ],
+      "organization": "org",
+      "project": "gcp-provider-explicit",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-provider-explicit::pulumi:pulumi:Stack::gcp-provider-explicit-golden",
+      "target_id": "urn:pulumi:golden::gcp-provider-explicit::gcp:storage/bucket:Bucket::providerBucket",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-provider-explicit",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-provider-explicit::pulumi:pulumi:Stack::gcp-provider-explicit-golden",
+      "target_id": "urn:pulumi:golden::gcp-provider-explicit::pulumi:providers:gcp::myGcp",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-provider-explicit",
+      "stack": "golden"
+    }
+  ]
+}

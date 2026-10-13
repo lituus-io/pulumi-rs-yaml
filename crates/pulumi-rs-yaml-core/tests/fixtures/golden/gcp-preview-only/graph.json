@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "gcp-preview-only",
+  "stack": "golden",
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-preview-only/golden::bucketName",
+      "kind": "output",
+      "logical_name": "bucketName",
+      "name": "bucketName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-preview-only",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-preview-only::gcp:storage/bucket:Bucket::previewBucket",
+      "kind": "resource",
+      "logical_name": "previewBucket",
+      "name": "previewBucket",
+      "type_token": "gcp:storage/bucket:Bucket",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "labels.env": "preview",
+        "location": "US",
+        "name": "preview-only-test-bucket",
+        "uniformBucketLevelAccess": "true"
+      },
+      "organization": "org",
+      "project": "gcp-preview-only",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-preview-only::pulumi:pulumi:Stack::gcp-preview-only-golden",
+      "kind": "stack",
+      "logical_name": "stack",
+      "name": "gcp-preview-only-golden",
+      "type_token": "pulumi:pulumi:Stack",
+      "package": "pulumi",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-preview-only",
+      "stack": "golden"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "stackoutput::org/gcp-preview-only/golden::bucketName",
+      "target_id": "urn:pulumi:golden::gcp-preview-only::gcp:storage/bucket:Bucket::previewBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "bucketName"
+      ],
+      "organization": "org",
+      "project": "gcp-preview-only",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-preview-only::pulumi:pulumi:Stack::gcp-preview-only-golden",
+      "target_id": "urn:pulumi:golden::gcp-preview-only::gcp:storage/bucket:Bucket::previewBucket",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-preview-only",
+      "stack": "golden"
+    }
+  ]
+}

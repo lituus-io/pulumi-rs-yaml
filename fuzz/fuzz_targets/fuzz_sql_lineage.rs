@@ -41,6 +41,7 @@ fuzz_target!(|data: &[u8]| {
         stack: "dev",
         source_map: None,
         schema_store: None,
+        ..Default::default()
     };
     let (infra, _) = export_resource_graph(&template, &graph_opts);
     let opts = SqlLineageOptions {
@@ -51,9 +52,11 @@ fuzz_target!(|data: &[u8]| {
         default_bq_project: Some("proj"),
         source_map: None,
         extra_sql_sources: &[],
+        ..Default::default()
     };
-    let (lineage1, _) = export_sql_lineage(&template, &infra, &opts);
-    let (lineage2, _) = export_sql_lineage(&template, &infra, &opts);
+    let opts = &opts;
+    let (lineage1, _) = export_sql_lineage(&template, &infra, opts);
+    let (lineage2, _) = export_sql_lineage(&template, &infra, opts);
     assert_eq!(lineage1, lineage2, "lineage export must be deterministic");
     let json = lineage1.to_json().expect("lineage serializes");
     let _: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
@@ -66,6 +69,64 @@ fuzz_target!(|data: &[u8]| {
     );
     let (view_template, _) = pulumi_rs_yaml_core::ast::parse::parse_template(&view_yaml, None);
     let (view_infra, _) = export_resource_graph(&view_template, &graph_opts);
-    let (view_lineage, _) = export_sql_lineage(&view_template, &view_infra, &opts);
+    let (view_lineage, _) = export_sql_lineage(&view_template, &view_infra, opts);
     let _ = view_lineage.to_json().expect("view lineage serializes");
+
+    // ...and as a routine body, which is SPLIT into statements before it is
+    // parsed: the splitter and CALL detection only see author text this way.
+    // A view's query never reaches either.
+    let routine_yaml = format!(
+        "name: fuzz\nruntime: yaml\nresources:\n  r:\n    type: gcp:bigquery:Routine\n    properties:\n      project: proj\n      datasetId: ds\n      routineId: r\n      routineType: PROCEDURE\n      definitionBody: {}\n",
+        serde_yaml::to_string(&input).unwrap_or_else(|_| "''".to_string())
+    );
+    let (routine_template, _) = pulumi_rs_yaml_core::ast::parse::parse_template(&routine_yaml, None);
+    let (routine_infra, _) = export_resource_graph(&routine_template, &graph_opts);
+    let (r1, _) = export_sql_lineage(&routine_template, &routine_infra, opts);
+    let (r2, _) = export_sql_lineage(&routine_template, &routine_infra, opts);
+    assert_eq!(r1, r2, "routine lineage must be deterministic");
+    let _ = r1.to_json().expect("routine lineage serializes");
+
+    // ...and with the statement layer on: deterministic, every id the hash
+    // of its own text, every occurrence slicing exactly that text out of the
+    // input, and every statement edge starting at a statement that exists.
+    // Column lineage through scripts rides along: it regenerates SQL from the
+    // parsed statement and analyses it again, on fuzzer-shaped statements.
+    let with_statements = SqlLineageOptions {
+        include_statements: true,
+        script_column_lineage: true,
+        organization: opts.organization,
+        project: opts.project,
+        stack: opts.stack,
+        default_bq_project: opts.default_bq_project,
+        ..Default::default()
+    };
+    let (s1, _) = export_sql_lineage(&routine_template, &routine_infra, &with_statements);
+    let (s2, _) = export_sql_lineage(&routine_template, &routine_infra, &with_statements);
+    assert_eq!(s1, s2, "statement layer must be deterministic");
+    for st in &s1.statements {
+        if let Some(text) = &st.text {
+            let digest = pulumi_rs_yaml_core::sha256::digest(text.as_bytes());
+            assert_eq!(st.id, format!("sql:{}", pulumi_rs_yaml_core::sha256::hex(&digest)));
+            assert_eq!(st.byte_len, text.len());
+        }
+    }
+    for occ in &s1.statement_occurrences {
+        let st = s1
+            .statements
+            .iter()
+            .find(|s| s.id == occ.statement_id)
+            .expect("an occurrence names a statement row");
+        if let Some(text) = &st.text {
+            assert_eq!(occ.byte_len, text.len());
+        }
+    }
+    for edge in &s1.edges {
+        if edge.source_id.starts_with("sql:") {
+            assert!(
+                s1.statements.iter().any(|s| s.id == edge.source_id),
+                "edge from a statement with no row"
+            );
+        }
+    }
+    let _ = s1.to_json().expect("statement layer serializes");
 });

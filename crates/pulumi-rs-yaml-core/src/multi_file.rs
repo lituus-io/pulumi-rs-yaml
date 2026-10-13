@@ -30,10 +30,12 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::ast::parse::parse_template;
+use crate::ast::parse::{parse_template, parse_template_value};
 use crate::ast::template::*;
 use crate::diag::Diagnostics;
-use crate::jinja::{validate_rendered_yaml, JinjaContext, JinjaPreprocessor, TemplatePreprocessor};
+use crate::jinja::{
+    validate_rendered_yaml_value, JinjaContext, JinjaPreprocessor, TemplatePreprocessor,
+};
 
 /// The set of project files discovered in a directory.
 #[derive(Debug, Clone)]
@@ -99,6 +101,33 @@ impl MergedTemplate {
             components: self.components.clone(),
             starlark_functions: self.starlark_functions.clone(),
         }
+    }
+
+    /// Consumes the merged template into the `TemplateDecl` every exporter and
+    /// evaluator takes, plus the source map.
+    ///
+    /// [`as_template_decl`](Self::as_template_decl) deep-clones every
+    /// expression tree and every string in the program -- each view's SQL,
+    /// each schema -- and every caller then drops the original. This moves
+    /// them instead. The source map comes back as the `Arc` it already is,
+    /// because callers borrow from it for as long as the template lives.
+    pub fn into_parts(self) -> (TemplateDecl<'static>, Arc<HashMap<String, String>>) {
+        (
+            TemplateDecl {
+                meta: crate::syntax::ExprMeta::no_span(),
+                name: self.main_name,
+                namespace: self.main_namespace,
+                description: self.main_description,
+                pulumi: self.main_pulumi,
+                config: self.config,
+                variables: self.variables,
+                resources: self.resources,
+                outputs: self.outputs,
+                components: self.components,
+                starlark_functions: self.starlark_functions,
+            },
+            self.source_map,
+        )
     }
 
     /// Returns the project name from the main file.
@@ -256,9 +285,64 @@ pub fn discover_project_files(directory: &Path) -> Result<ProjectFiles, String> 
     })
 }
 
+/// What an exporter needs to know about a project before it can build the
+/// Jinja context the real load renders with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectPrepass {
+    /// The main file's `name`, or `"unknown"`.
+    pub name: String,
+    /// `runtime.options.providerTemplatedPackages`, from `Pulumi.yaml`.
+    pub provider_templated_packages: Vec<String>,
+    /// `backend.url`, from the main file.
+    pub backend_url: Option<String>,
+}
+
+/// Why [`project_prepass`] could not read the project. Kept apart so each
+/// caller can keep the wording it has always reported.
+#[derive(Debug)]
+pub enum PrepassError {
+    /// No main file, or the directory could not be listed.
+    Discover(String),
+    /// The main file exists but could not be read.
+    ReadMain(std::io::Error),
+}
+
+/// Reads the main file once and answers the two questions the exporters ask
+/// before loading: the project name and the provider-templated packages.
+///
+/// The CLI and both Python exporters each read the main file, parsed the
+/// WHOLE program out of it just to take its name, and then read `Pulumi.yaml`
+/// a second time for the package list. One read now serves both, and the name
+/// comes from [`template_name`](crate::ast::parse::template_name), which does
+/// not build the template. When the main file is `Pulumi.yml`, `Pulumi.yaml`
+/// does not exist -- discovery prefers it -- so the package list is read from
+/// empty text, exactly as the failed read used to give.
+pub fn project_prepass(directory: &Path) -> Result<ProjectPrepass, PrepassError> {
+    let files = discover_project_files(directory).map_err(PrepassError::Discover)?;
+    let raw = std::fs::read_to_string(&files.main_file).map_err(PrepassError::ReadMain)?;
+    let stripped = crate::jinja::strip_jinja_blocks(&raw);
+    let name = crate::ast::parse::template_name(&stripped).unwrap_or_else(|| "unknown".to_string());
+    let is_pulumi_yaml = files
+        .main_file
+        .file_name()
+        .is_some_and(|n| n == "Pulumi.yaml");
+    let provider_templated_packages =
+        crate::provider_scope::effective_packages(if is_pulumi_yaml { &raw } else { "" });
+    let backend_url = crate::stack_uri::backend_url_from_project_source(&raw);
+    Ok(ProjectPrepass {
+        name,
+        provider_templated_packages,
+        backend_url,
+    })
+}
+
 /// Merge items from an additional file into the target collection, detecting name collisions.
+///
+/// Items are MOVED: the additional file's template is owned and dropped after
+/// the merge, so cloning each resource -- every expression tree and string in
+/// it -- bought nothing.
 fn merge_section<T, F>(
-    items: &[T],
+    items: Vec<T>,
     filename: &str,
     kind: &str,
     name_fn: F,
@@ -266,11 +350,10 @@ fn merge_section<T, F>(
     target: &mut Vec<T>,
     diags: &mut Diagnostics,
 ) where
-    T: Clone,
     F: Fn(&T) -> &str,
 {
     for item in items {
-        let name = name_fn(item).to_string();
+        let name = name_fn(&item).to_string();
         if let Some(existing_file) = source_map.get(&name) {
             diags.error(
                 None,
@@ -282,7 +365,7 @@ fn merge_section<T, F>(
             );
         } else {
             source_map.insert(name, filename.to_string());
-            target.push(item.clone());
+            target.push(item);
         }
     }
 }
@@ -331,7 +414,8 @@ pub fn merge_templates(
     }
 
     // Merge each additional file
-    for (filename, template) in &additional {
+    for (filename, template) in additional {
+        let filename = filename.as_str();
         // Detect Pulumi stack config files (e.g., Pulumi.dev.yaml).
         // These are created by the Pulumi CLI and only contain `config:`
         // (and optionally name/description). Skip them silently.
@@ -388,7 +472,7 @@ pub fn merge_templates(
 
         // Merge all sections with collision detection
         merge_section(
-            &template.resources,
+            template.resources,
             filename,
             "resource",
             |r| r.logical_name.as_ref(),
@@ -397,7 +481,7 @@ pub fn merge_templates(
             &mut diags,
         );
         merge_section(
-            &template.variables,
+            template.variables,
             filename,
             "variable",
             |v| v.key.as_ref(),
@@ -406,7 +490,7 @@ pub fn merge_templates(
             &mut diags,
         );
         merge_section(
-            &template.outputs,
+            template.outputs,
             filename,
             "output",
             |o| o.key.as_ref(),
@@ -415,7 +499,7 @@ pub fn merge_templates(
             &mut diags,
         );
         merge_section(
-            &template.components,
+            template.components,
             filename,
             "component",
             |c| c.key.as_ref(),
@@ -578,13 +662,13 @@ fn load_and_parse_file(
     let source = std::fs::read_to_string(path)
         .map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
 
-    let mut diags = Diagnostics::new();
-
-    // Apply Jinja preprocessing if context is available
-    let effective_source = if let Some(ctx) = jinja_ctx {
+    // Apply Jinja preprocessing if context is available. The render result
+    // stays a `Cow`: a file with no Jinja syntax comes back borrowed, and
+    // copying it only to parse it bought nothing.
+    let (template, parse_diags) = if let Some(ctx) = jinja_ctx {
         let preprocessor = JinjaPreprocessor::new(ctx);
         let rendered = match preprocessor.preprocess(&source, filename) {
-            Ok(cow) => cow.into_owned(),
+            Ok(cow) => cow,
             Err(diag) => {
                 return Err(format!(
                     "Jinja preprocessing failed for {}: {}",
@@ -594,25 +678,24 @@ fn load_and_parse_file(
             }
         };
 
-        // Validate rendered YAML (only when Jinja was applied)
-        if let Err(diag) = validate_rendered_yaml(&rendered, &source, filename) {
-            return Err(format!(
-                "YAML validation failed for {}: {}",
-                filename,
-                diag.format_rich(filename)
-            ));
-        }
-
-        rendered
+        // Validate rendered YAML (only when Jinja was applied), keeping the
+        // document so it is deserialized once rather than twice.
+        let yaml = match validate_rendered_yaml_value(&rendered, &source, filename) {
+            Ok(yaml) => yaml,
+            Err(diag) => {
+                return Err(format!(
+                    "YAML validation failed for {}: {}",
+                    filename,
+                    diag.format_rich(filename)
+                ));
+            }
+        };
+        parse_template_value(&yaml, None)
     } else {
-        source
+        parse_template(&source, None)
     };
 
-    // Parse
-    let (template, parse_diags) = parse_template(&effective_source, None);
-    diags.extend(parse_diags);
-
-    Ok((template, diags))
+    Ok((template, parse_diags))
 }
 
 /// Loads just the raw file contents for all project files.

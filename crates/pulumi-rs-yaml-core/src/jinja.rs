@@ -973,38 +973,52 @@ fn locate_expression<'src>(
 /// Validates rendered YAML is parseable. Returns rich diagnostic on failure.
 pub fn validate_rendered_yaml<'src>(
     rendered: &'src str,
-    _original: &'src str,
+    original: &'src str,
     filename: &str,
 ) -> Result<(), RenderDiagnostic<'src>> {
+    validate_rendered_yaml_value(rendered, original, filename).map(|_| ())
+}
+
+/// [`validate_rendered_yaml`], keeping the document it had to deserialize.
+///
+/// The loader hands the value to `parse_template_value` instead of parsing the
+/// same text again -- every Jinja-path file used to be deserialized twice.
+pub fn validate_rendered_yaml_value<'src>(
+    rendered: &'src str,
+    _original: &'src str,
+    filename: &str,
+) -> Result<serde_yaml::Value, RenderDiagnostic<'src>> {
     // This gate runs before `parse_template` on every Jinja path, so it has to
     // accept what the parser accepts. Shadowing rather than stripping inline
     // keeps `source_line` and the reported column measured against the same
     // text the deserializer read.
     let rendered = crate::encoding::strip_bom(rendered);
-    if let Err(e) = serde_yaml::from_str::<serde_yaml::Value>(rendered) {
-        let line = e.location().map(|l| l.line()).unwrap_or(0) as u32;
-        let col = e.location().map(|l| l.column()).unwrap_or(0) as u32;
-        let rendered_line = rendered
-            .lines()
-            .nth(line.saturating_sub(1) as usize)
-            .unwrap_or("");
-        let (kind, suggestion) = classify_yaml_error(&e.to_string(), rendered_line);
+    match serde_yaml::from_str::<serde_yaml::Value>(rendered) {
+        Ok(value) => Ok(value),
+        Err(e) => {
+            let line = e.location().map(|l| l.line()).unwrap_or(0) as u32;
+            let col = e.location().map(|l| l.column()).unwrap_or(0) as u32;
+            let rendered_line = rendered
+                .lines()
+                .nth(line.saturating_sub(1) as usize)
+                .unwrap_or("");
+            let (kind, suggestion) = classify_yaml_error(&e.to_string(), rendered_line);
 
-        return Err(RenderDiagnostic {
-            kind,
-            line,
-            column: col,
-            end_column: 0,
-            source_line: rendered_line,
-            expression: "",
-            message: format!(
-                "YAML parse error after Jinja rendering at {}:{}:{}: {}",
-                filename, line, col, e
-            ),
-            suggestion,
-        });
+            Err(RenderDiagnostic {
+                kind,
+                line,
+                column: col,
+                end_column: 0,
+                source_line: rendered_line,
+                expression: "",
+                message: format!(
+                    "YAML parse error after Jinja rendering at {}:{}:{}: {}",
+                    filename, line, col, e
+                ),
+                suggestion,
+            })
+        }
     }
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------

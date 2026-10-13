@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "gcp-jinja-single-line",
+  "stack": "golden",
+  "nodes": [],
+  "edges": []
+}

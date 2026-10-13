@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "gcp-advanced-options-test",
+  "stack": "golden",
+  "nodes": [],
+  "edges": []
+}

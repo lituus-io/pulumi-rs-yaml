@@ -1,0 +1,280 @@
+{
+  "edges": [
+    {
+      "organization": "org",
+      "project": "gcp-advanced-options-test",
+      "property_paths": [
+        "aliasBucketName"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-advanced-options-test/golden::aliasBucketName",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-advanced-options-test::gcp:storage/bucket:Bucket::aliasBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-advanced-options-test",
+      "property_paths": [
+        "replaceBucketName"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-advanced-options-test/golden::replaceBucketName",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-advanced-options-test::gcp:storage/bucket:Bucket::replaceBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-advanced-options-test",
+      "property_paths": [
+        "replaceOnChangeBucketName"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-advanced-options-test/golden::replaceOnChangeBucketName",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-advanced-options-test::gcp:storage/bucket:Bucket::replaceOnChangeBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-advanced-options-test",
+      "property_paths": [
+        "secretOutputBucketName"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-advanced-options-test/golden::secretOutputBucketName",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-advanced-options-test::gcp:storage/bucket:Bucket::secretOutputBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-advanced-options-test",
+      "property_paths": [
+        "timeoutBucketName"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-advanced-options-test/golden::timeoutBucketName",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-advanced-options-test::gcp:storage/bucket:Bucket::timeoutBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-advanced-options-test",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::gcp-advanced-options-test::pulumi:pulumi:Stack::gcp-advanced-options-test-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-advanced-options-test::gcp:storage/bucket:Bucket::aliasBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-advanced-options-test",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::gcp-advanced-options-test::pulumi:pulumi:Stack::gcp-advanced-options-test-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-advanced-options-test::gcp:storage/bucket:Bucket::replaceBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-advanced-options-test",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::gcp-advanced-options-test::pulumi:pulumi:Stack::gcp-advanced-options-test-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-advanced-options-test::gcp:storage/bucket:Bucket::replaceOnChangeBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-advanced-options-test",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::gcp-advanced-options-test::pulumi:pulumi:Stack::gcp-advanced-options-test-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-advanced-options-test::gcp:storage/bucket:Bucket::secretOutputBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-advanced-options-test",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::gcp-advanced-options-test::pulumi:pulumi:Stack::gcp-advanced-options-test-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-advanced-options-test::gcp:storage/bucket:Bucket::timeoutBucket"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-advanced-options-test/golden::aliasBucketName",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "aliasBucketName",
+      "name": "aliasBucketName",
+      "organization": "org",
+      "project": "gcp-advanced-options-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-advanced-options-test/golden::replaceBucketName",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "replaceBucketName",
+      "name": "replaceBucketName",
+      "organization": "org",
+      "project": "gcp-advanced-options-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-advanced-options-test/golden::replaceOnChangeBucketName",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "replaceOnChangeBucketName",
+      "name": "replaceOnChangeBucketName",
+      "organization": "org",
+      "project": "gcp-advanced-options-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-advanced-options-test/golden::secretOutputBucketName",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "secretOutputBucketName",
+      "name": "secretOutputBucketName",
+      "organization": "org",
+      "project": "gcp-advanced-options-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-advanced-options-test/golden::timeoutBucketName",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "timeoutBucketName",
+      "name": "timeoutBucketName",
+      "organization": "org",
+      "project": "gcp-advanced-options-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-advanced-options-test::gcp:storage/bucket:Bucket::aliasBucket",
+      "kind": "resource",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "labels.test": "aliases",
+        "location": "US",
+        "name": "adv-opts-alias",
+        "uniformBucketLevelAccess": "true"
+      },
+      "logical_name": "aliasBucket",
+      "name": "aliasBucket",
+      "organization": "org",
+      "package": "gcp",
+      "project": "gcp-advanced-options-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucket:Bucket"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-advanced-options-test::gcp:storage/bucket:Bucket::replaceBucket",
+      "kind": "resource",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "labels.test": "delete-before-replace",
+        "location": "US",
+        "name": "adv-opts-replace",
+        "uniformBucketLevelAccess": "true"
+      },
+      "logical_name": "replaceBucket",
+      "name": "replaceBucket",
+      "organization": "org",
+      "package": "gcp",
+      "project": "gcp-advanced-options-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucket:Bucket"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-advanced-options-test::gcp:storage/bucket:Bucket::replaceOnChangeBucket",
+      "kind": "resource",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "labels.test": "replace-on-changes",
+        "location": "US",
+        "name": "adv-opts-replace-on-change",
+        "uniformBucketLevelAccess": "true"
+      },
+      "logical_name": "replaceOnChangeBucket",
+      "name": "replaceOnChangeBucket",
+      "organization": "org",
+      "package": "gcp",
+      "project": "gcp-advanced-options-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucket:Bucket"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-advanced-options-test::gcp:storage/bucket:Bucket::secretOutputBucket",
+      "kind": "resource",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "labels.test": "additional-secret-outputs",
+        "location": "US",
+        "name": "adv-opts-secret-output",
+        "uniformBucketLevelAccess": "true"
+      },
+      "logical_name": "secretOutputBucket",
+      "name": "secretOutputBucket",
+      "organization": "org",
+      "package": "gcp",
+      "project": "gcp-advanced-options-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucket:Bucket"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-advanced-options-test::gcp:storage/bucket:Bucket::timeoutBucket",
+      "kind": "resource",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "labels.test": "custom-timeouts",
+        "location": "US",
+        "name": "adv-opts-timeout",
+        "uniformBucketLevelAccess": "true"
+      },
+      "logical_name": "timeoutBucket",
+      "name": "timeoutBucket",
+      "organization": "org",
+      "package": "gcp",
+      "project": "gcp-advanced-options-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucket:Bucket"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-advanced-options-test::pulumi:pulumi:Stack::gcp-advanced-options-test-golden",
+      "kind": "stack",
+      "literal_properties": {},
+      "logical_name": "stack",
+      "name": "gcp-advanced-options-test-golden",
+      "organization": "org",
+      "package": "pulumi",
+      "project": "gcp-advanced-options-test",
+      "stack": "golden",
+      "type_token": "pulumi:pulumi:Stack"
+    }
+  ],
+  "organization": "org",
+  "project": "gcp-advanced-options-test",
+  "schema_version": 1,
+  "sql_lineage": {
+    "edges": [],
+    "nodes": [],
+    "organization": "org",
+    "project": "gcp-advanced-options-test",
+    "schema_version": 1,
+    "stack": "golden"
+  },
+  "stack": "golden"
+}

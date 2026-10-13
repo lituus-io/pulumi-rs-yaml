@@ -1,0 +1,173 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "gcp-multi-resource-deps",
+  "stack": "golden",
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-multi-resource-deps/golden::combined",
+      "kind": "output",
+      "logical_name": "combined",
+      "name": "combined",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-multi-resource-deps/golden::depBucketName",
+      "kind": "output",
+      "logical_name": "depBucketName",
+      "name": "depBucketName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-multi-resource-deps/golden::mainBucketName",
+      "kind": "output",
+      "logical_name": "mainBucketName",
+      "name": "mainBucketName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::depBucket",
+      "kind": "resource",
+      "logical_name": "depBucket",
+      "name": "depBucket",
+      "type_token": "gcp:storage/bucket:Bucket",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "name": "multi-dep-child-bucket",
+        "uniformBucketLevelAccess": "true"
+      },
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::mainBucket",
+      "kind": "resource",
+      "logical_name": "mainBucket",
+      "name": "mainBucket",
+      "type_token": "gcp:storage/bucket:Bucket",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "name": "multi-dep-main-bucket",
+        "uniformBucketLevelAccess": "true"
+      },
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-multi-resource-deps::pulumi:pulumi:Stack::gcp-multi-resource-deps-golden",
+      "kind": "stack",
+      "logical_name": "stack",
+      "name": "gcp-multi-resource-deps-golden",
+      "type_token": "pulumi:pulumi:Stack",
+      "package": "pulumi",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "stack": "golden"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "stackoutput::org/gcp-multi-resource-deps/golden::combined",
+      "target_id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::depBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "combined"
+      ],
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "stack": "golden"
+    },
+    {
+      "source_id": "stackoutput::org/gcp-multi-resource-deps/golden::combined",
+      "target_id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::mainBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "combined"
+      ],
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "stack": "golden"
+    },
+    {
+      "source_id": "stackoutput::org/gcp-multi-resource-deps/golden::depBucketName",
+      "target_id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::depBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "depBucketName"
+      ],
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "stack": "golden"
+    },
+    {
+      "source_id": "stackoutput::org/gcp-multi-resource-deps/golden::mainBucketName",
+      "target_id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::mainBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "mainBucketName"
+      ],
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::depBucket",
+      "target_id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::mainBucket",
+      "relationship": "references",
+      "property_paths": [
+        "labels"
+      ],
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::depBucket",
+      "target_id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::mainBucket",
+      "relationship": "depends_on",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-multi-resource-deps::pulumi:pulumi:Stack::gcp-multi-resource-deps-golden",
+      "target_id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::depBucket",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-multi-resource-deps::pulumi:pulumi:Stack::gcp-multi-resource-deps-golden",
+      "target_id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::mainBucket",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "stack": "golden"
+    }
+  ]
+}

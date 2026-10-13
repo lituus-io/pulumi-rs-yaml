@@ -1,0 +1,216 @@
+{
+  "edges": [
+    {
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "property_paths": [
+        "childObjectName"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-parent-resource-test/golden::childObjectName",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::childObject"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "property_paths": [
+        "parentBucketName"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-parent-resource-test/golden::parentBucketName",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket::parentBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "property_paths": [
+        "siblingObjectName"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-parent-resource-test/golden::siblingObjectName",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::siblingObject"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "property_paths": [
+        "bucket"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::childObject",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket::parentBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "property_paths": [],
+      "relationship": "depends_on",
+      "source_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::childObject",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket::parentBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "property_paths": [],
+      "relationship": "parent",
+      "source_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::childObject",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket::parentBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "property_paths": [
+        "bucket"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::siblingObject",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket::parentBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "property_paths": [],
+      "relationship": "depends_on",
+      "source_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::siblingObject",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket::parentBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "property_paths": [],
+      "relationship": "parent",
+      "source_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::siblingObject",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket::parentBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::gcp-parent-resource-test::pulumi:pulumi:Stack::gcp-parent-resource-test-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket::parentBucket"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-parent-resource-test/golden::childObjectName",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "childObjectName",
+      "name": "childObjectName",
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-parent-resource-test/golden::parentBucketName",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "parentBucketName",
+      "name": "parentBucketName",
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-parent-resource-test/golden::siblingObjectName",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "siblingObjectName",
+      "name": "siblingObjectName",
+      "organization": "org",
+      "project": "gcp-parent-resource-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::childObject",
+      "kind": "resource",
+      "literal_properties": {
+        "content": "I am a child of parentBucket",
+        "name": "child-object.txt"
+      },
+      "logical_name": "childObject",
+      "name": "childObject",
+      "organization": "org",
+      "package": "gcp",
+      "parent_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket::parentBucket",
+      "project": "gcp-parent-resource-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucketObject:BucketObject"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket$gcp:storage/bucketObject:BucketObject::siblingObject",
+      "kind": "resource",
+      "literal_properties": {
+        "content": "I am a sibling under the same parent",
+        "name": "sibling-object.txt"
+      },
+      "logical_name": "siblingObject",
+      "name": "siblingObject",
+      "organization": "org",
+      "package": "gcp",
+      "parent_id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket::parentBucket",
+      "project": "gcp-parent-resource-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucketObject:BucketObject"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-parent-resource-test::gcp:storage/bucket:Bucket::parentBucket",
+      "kind": "resource",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "labels.role": "parent",
+        "location": "US",
+        "name": "parent-resource-test-parent",
+        "uniformBucketLevelAccess": "true"
+      },
+      "logical_name": "parentBucket",
+      "name": "parentBucket",
+      "organization": "org",
+      "package": "gcp",
+      "project": "gcp-parent-resource-test",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucket:Bucket"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-parent-resource-test::pulumi:pulumi:Stack::gcp-parent-resource-test-golden",
+      "kind": "stack",
+      "literal_properties": {},
+      "logical_name": "stack",
+      "name": "gcp-parent-resource-test-golden",
+      "organization": "org",
+      "package": "pulumi",
+      "project": "gcp-parent-resource-test",
+      "stack": "golden",
+      "type_token": "pulumi:pulumi:Stack"
+    }
+  ],
+  "organization": "org",
+  "project": "gcp-parent-resource-test",
+  "schema_version": 1,
+  "sql_lineage": {
+    "edges": [],
+    "nodes": [],
+    "organization": "org",
+    "project": "gcp-parent-resource-test",
+    "schema_version": 1,
+    "stack": "golden"
+  },
+  "stack": "golden"
+}

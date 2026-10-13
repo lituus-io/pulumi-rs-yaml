@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "gcp-stack-reference",
+  "stack": "golden",
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-stack-reference/golden::bucketName",
+      "kind": "output",
+      "logical_name": "bucketName",
+      "name": "bucketName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-stack-reference",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-stack-reference/golden::bucketUrl",
+      "kind": "output",
+      "logical_name": "bucketUrl",
+      "name": "bucketUrl",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-stack-reference",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-stack-reference::gcp:storage/bucket:Bucket::refBucket",
+      "kind": "resource",
+      "logical_name": "refBucket",
+      "name": "refBucket",
+      "type_token": "gcp:storage/bucket:Bucket",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "name": "stack-ref-test-bucket",
+        "uniformBucketLevelAccess": "true"
+      },
+      "organization": "org",
+      "project": "gcp-stack-reference",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-stack-reference::pulumi:pulumi:Stack::gcp-stack-reference-golden",
+      "kind": "stack",
+      "logical_name": "stack",
+      "name": "gcp-stack-reference-golden",
+      "type_token": "pulumi:pulumi:Stack",
+      "package": "pulumi",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-stack-reference",
+      "stack": "golden"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "stackoutput::org/gcp-stack-reference/golden::bucketName",
+      "target_id": "urn:pulumi:golden::gcp-stack-reference::gcp:storage/bucket:Bucket::refBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "bucketName"
+      ],
+      "organization": "org",
+      "project": "gcp-stack-reference",
+      "stack": "golden"
+    },
+    {
+      "source_id": "stackoutput::org/gcp-stack-reference/golden::bucketUrl",
+      "target_id": "urn:pulumi:golden::gcp-stack-reference::gcp:storage/bucket:Bucket::refBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "bucketUrl"
+      ],
+      "organization": "org",
+      "project": "gcp-stack-reference",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-stack-reference::pulumi:pulumi:Stack::gcp-stack-reference-golden",
+      "target_id": "urn:pulumi:golden::gcp-stack-reference::gcp:storage/bucket:Bucket::refBucket",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-stack-reference",
+      "stack": "golden"
+    }
+  ]
+}

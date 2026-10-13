@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "gcp-interpolation",
+  "stack": "golden",
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-interpolation/golden::bucketName",
+      "kind": "output",
+      "logical_name": "bucketName",
+      "name": "bucketName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-interpolation",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-interpolation/golden::fullPrefix",
+      "kind": "output",
+      "logical_name": "fullPrefix",
+      "name": "fullPrefix",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-interpolation",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-interpolation::gcp:storage/bucket:Bucket::interpBucket",
+      "kind": "resource",
+      "logical_name": "interpBucket",
+      "name": "interpBucket",
+      "type_token": "gcp:storage/bucket:Bucket",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "uniformBucketLevelAccess": "true"
+      },
+      "organization": "org",
+      "project": "gcp-interpolation",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-interpolation::pulumi:pulumi:Stack::gcp-interpolation-golden",
+      "kind": "stack",
+      "logical_name": "stack",
+      "name": "gcp-interpolation-golden",
+      "type_token": "pulumi:pulumi:Stack",
+      "package": "pulumi",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-interpolation",
+      "stack": "golden"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "stackoutput::org/gcp-interpolation/golden::bucketName",
+      "target_id": "urn:pulumi:golden::gcp-interpolation::gcp:storage/bucket:Bucket::interpBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "bucketName"
+      ],
+      "organization": "org",
+      "project": "gcp-interpolation",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-interpolation::pulumi:pulumi:Stack::gcp-interpolation-golden",
+      "target_id": "urn:pulumi:golden::gcp-interpolation::gcp:storage/bucket:Bucket::interpBucket",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-interpolation",
+      "stack": "golden"
+    }
+  ]
+}

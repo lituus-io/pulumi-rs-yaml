@@ -97,7 +97,11 @@ pub(crate) fn resolve_literal<'src>(
     visiting: &mut HashSet<&'src str>,
 ) -> Option<Cow<'src, str>> {
     match expr {
-        Expr::String(_, s) => Some(s.clone()),
+        // Borrowed, never cloned: the parser stores every literal as an owned
+        // `Cow`, so `s.clone()` copied the whole string -- a view's SQL, a
+        // schema -- once per resolution and again per memo hit. `expr` lives
+        // for `'src`, so a borrow of its text does too.
+        Expr::String(_, s) => Some(Cow::Borrowed(s.as_ref())),
         Expr::Bool(_, b) => Some(Cow::Borrowed(if *b { "true" } else { "false" })),
         Expr::Number(_, n) => format_literal_number(*n).map(Cow::Owned),
         Expr::Symbol(_, access) => resolve_access_literal(access, variables, memo, visiting),
@@ -453,6 +457,35 @@ mod tests {
             "name: proj\nruntime: yaml\nvariables:\n{}resources:\n  r:\n    type: gcp:storage:Bucket\n    properties:\n      name: {}\n",
             variables, expr
         )
+    }
+
+    #[test]
+    fn a_string_literal_is_borrowed_from_the_template() {
+        let yaml = template("  unused: x\n", "a-literal-bucket-name");
+        let (tpl, diags) = parse_template(&yaml, None);
+        assert!(!diags.has_errors(), "{diags}");
+        let tpl: &'static TemplateDecl<'static> = Box::leak(Box::new(tpl));
+        let entry = tpl.resources.first().expect("resource");
+        let crate::ast::template::ResourceProperties::Map(props) = &entry.resource.properties
+        else {
+            panic!("map properties");
+        };
+        let prop = props.iter().find(|p| p.key == "name").expect("name");
+        let Expr::String(_, source) = &prop.value else {
+            panic!("string literal");
+        };
+        let mut memo = HashMap::new();
+        let mut visiting = HashSet::new();
+        let got = resolve_literal(&prop.value, &HashMap::new(), &mut memo, &mut visiting)
+            .expect("literal");
+        assert!(
+            matches!(got, Cow::Borrowed(_)),
+            "a literal must not be copied"
+        );
+        assert!(
+            std::ptr::eq(got.as_ptr(), source.as_ptr()),
+            "borrowed from the AST"
+        );
     }
 
     // ---------------------------------------------------------------

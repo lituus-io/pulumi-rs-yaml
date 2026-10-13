@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "gcp-readfile-bigquery-test",
+  "stack": "golden",
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-readfile-bigquery-test/golden::datasetId",
+      "kind": "output",
+      "logical_name": "datasetId",
+      "name": "datasetId",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-readfile-bigquery-test",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-readfile-bigquery-test/golden::tableId",
+      "kind": "output",
+      "logical_name": "tableId",
+      "name": "tableId",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-readfile-bigquery-test",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-readfile-bigquery-test::gcp:bigquery/dataset:Dataset::dataset",
+      "kind": "resource",
+      "logical_name": "dataset",
+      "name": "dataset",
+      "type_token": "gcp:bigquery/dataset:Dataset",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "datasetId": "readfile_test_dataset",
+        "deleteContentsOnDestroy": "true",
+        "friendlyName": "readFile Test Dataset",
+        "location": "US"
+      },
+      "organization": "org",
+      "project": "gcp-readfile-bigquery-test",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-readfile-bigquery-test::gcp:bigquery/table:Table::usersTable",
+      "kind": "resource",
+      "logical_name": "usersTable",
+      "name": "usersTable",
+      "type_token": "gcp:bigquery/table:Table",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "deletionProtection": "false",
+        "schema": "[\n  {\n    \"name\": \"id\",\n    \"type\": \"INTEGER\",\n    \"mode\": \"REQUIRED\",\n    \"description\": \"Unique identifier\"\n  },\n  {\n    \"name\": \"name\",\n    \"type\": \"STRING\",\n    \"mode\": \"REQUIRED\",\n    \"description\": \"Display name\"\n  },\n  {\n    \"name\": \"email\",\n    \"type\": \"STRING\",\n    \"mode\": \"NULLABLE\",\n    \"description\": \"Email address\"\n  },\n  {\n    \"name\": \"created_at\",\n    \"type\": \"TIMESTAMP\",\n    \"mode\": \"REQUIRED\",\n    \"description\": \"Creation timestamp\"\n  }\n]\n",
+        "tableId": "users"
+      },
+      "organization": "org",
+      "project": "gcp-readfile-bigquery-test",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-readfile-bigquery-test::pulumi:pulumi:Stack::gcp-readfile-bigquery-test-golden",
+      "kind": "stack",
+      "logical_name": "stack",
+      "name": "gcp-readfile-bigquery-test-golden",
+      "type_token": "pulumi:pulumi:Stack",
+      "package": "pulumi",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-readfile-bigquery-test",
+      "stack": "golden"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "stackoutput::org/gcp-readfile-bigquery-test/golden::datasetId",
+      "target_id": "urn:pulumi:golden::gcp-readfile-bigquery-test::gcp:bigquery/dataset:Dataset::dataset",
+      "relationship": "exports",
+      "property_paths": [
+        "datasetId"
+      ],
+      "organization": "org",
+      "project": "gcp-readfile-bigquery-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "stackoutput::org/gcp-readfile-bigquery-test/golden::tableId",
+      "target_id": "urn:pulumi:golden::gcp-readfile-bigquery-test::gcp:bigquery/table:Table::usersTable",
+      "relationship": "exports",
+      "property_paths": [
+        "tableId"
+      ],
+      "organization": "org",
+      "project": "gcp-readfile-bigquery-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-readfile-bigquery-test::gcp:bigquery/table:Table::usersTable",
+      "target_id": "urn:pulumi:golden::gcp-readfile-bigquery-test::gcp:bigquery/dataset:Dataset::dataset",
+      "relationship": "references",
+      "property_paths": [
+        "datasetId"
+      ],
+      "organization": "org",
+      "project": "gcp-readfile-bigquery-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-readfile-bigquery-test::pulumi:pulumi:Stack::gcp-readfile-bigquery-test-golden",
+      "target_id": "urn:pulumi:golden::gcp-readfile-bigquery-test::gcp:bigquery/dataset:Dataset::dataset",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-readfile-bigquery-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-readfile-bigquery-test::pulumi:pulumi:Stack::gcp-readfile-bigquery-test-golden",
+      "target_id": "urn:pulumi:golden::gcp-readfile-bigquery-test::gcp:bigquery/table:Table::usersTable",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-readfile-bigquery-test",
+      "stack": "golden"
+    }
+  ]
+}

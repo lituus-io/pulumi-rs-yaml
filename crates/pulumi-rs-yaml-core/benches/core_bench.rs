@@ -576,6 +576,7 @@ fn bench_sql_lineage_export(c: &mut Criterion) {
         stack: "dev",
         source_map: None,
         schema_store: None,
+        ..Default::default()
     };
     let (infra, _) = export_resource_graph(template, &graph_opts);
     let infra = Box::leak(Box::new(infra));
@@ -590,6 +591,7 @@ fn bench_sql_lineage_export(c: &mut Criterion) {
                 default_bq_project: None,
                 source_map: None,
                 extra_sql_sources: &[],
+                ..Default::default()
             };
             let (lineage, _) = export_sql_lineage(template, infra, &opts);
             std::hint::black_box(lineage.edges.len())
@@ -599,6 +601,231 @@ fn bench_sql_lineage_export(c: &mut Criterion) {
 
 #[cfg(not(feature = "sql-lineage"))]
 fn bench_sql_lineage_export(_c: &mut Criterion) {}
+
+/// A procedure body of fifty statements inside BEGIN ... END: the splitter,
+/// one batched parser job, and the per-statement facts. View SQL never takes
+/// this path, so `sql_lineage_20_views` does not measure it.
+#[cfg(feature = "sql-lineage")]
+fn bench_sql_lineage_routine_script(c: &mut Criterion) {
+    use pulumi_rs_yaml_core::resource_graph::{export_resource_graph, GraphExportOptions};
+    use pulumi_rs_yaml_core::sql_lineage::{export_sql_lineage, SqlLineageOptions};
+
+    let mut body = String::from("BEGIN\n");
+    for i in 0..50 {
+        body.push_str(&format!(
+            "  INSERT INTO `bench-proj.marts.t{i}` (id, v) SELECT a.id, b.v FROM `bench-proj.raw.a{i}` a JOIN `bench-proj.raw.b{i}` b ON a.id = b.id;\n"
+        ));
+    }
+    body.push_str("END;\n");
+    let yaml = format!(
+        "name: bench\nruntime: yaml\nresources:\n  r:\n    type: gcp:bigquery:Routine\n    properties:\n      project: bench-proj\n      datasetId: marts\n      routineId: load_all\n      routineType: PROCEDURE\n      definitionBody: {}\n",
+        serde_json::to_string(&body).expect("quote")
+    );
+    let (template, _) = parse_template(&yaml, None);
+    let template = Box::leak(Box::new(template));
+    let graph_opts = GraphExportOptions {
+        organization: "org",
+        project: "bench",
+        stack: "dev",
+        source_map: None,
+        schema_store: None,
+        ..Default::default()
+    };
+    let (infra, _) = export_resource_graph(template, &graph_opts);
+    let infra = Box::leak(Box::new(infra));
+
+    c.bench_function("sql_lineage_routine_50_statements", |b| {
+        b.iter(|| {
+            let opts = SqlLineageOptions {
+                organization: "org",
+                project: "bench",
+                stack: "dev",
+                project_dir: None,
+                default_bq_project: None,
+                source_map: None,
+                extra_sql_sources: &[],
+                ..Default::default()
+            };
+            let (lineage, _) = export_sql_lineage(template, infra, &opts);
+            std::hint::black_box(lineage.edges.len())
+        })
+    });
+
+    // The same routine with column lineage through its INSERTs: each
+    // statement's query is regenerated and analysed on the parser worker.
+    c.bench_function("sql_lineage_routine_50_statements_columns", |b| {
+        b.iter(|| {
+            let opts = SqlLineageOptions {
+                organization: "org",
+                project: "bench",
+                stack: "dev",
+                script_column_lineage: true,
+                ..Default::default()
+            };
+            let (lineage, _) = export_sql_lineage(template, infra, &opts);
+            std::hint::black_box(lineage.edges.len())
+        })
+    });
+}
+
+#[cfg(not(feature = "sql-lineage"))]
+fn bench_sql_lineage_routine_script(_c: &mut Criterion) {}
+
+/// The statement layer on top of `sql_lineage_20_views` and the 50-statement
+/// routine: hashing, rows and statement edges. The text is borrowed from the
+/// template, so the difference from the plain export is the layer itself.
+#[cfg(feature = "sql-lineage")]
+fn bench_sql_statement_layer(c: &mut Criterion) {
+    use pulumi_rs_yaml_core::resource_graph::{export_resource_graph, GraphExportOptions};
+    use pulumi_rs_yaml_core::sql_lineage::{
+        export_sql_lineage, split_statement_spans, SqlLineageOptions,
+    };
+
+    let mut yaml = String::from(
+        "name: bench\nruntime: yaml\nconfig:\n  gcp:project:\n    value: bench-proj\nresources:\n",
+    );
+    for i in 0..20 {
+        yaml.push_str(&format!(
+            "  view{i}:\n    type: gcp:bigquery:Table\n    properties:\n      datasetId: marts\n      tableId: view_{i}\n      view:\n        query: \"SELECT a.id, b.value AS v FROM `bench-proj.raw.t{i}` a JOIN `bench-proj.raw.u{i}` b ON a.id = b.id\"\n",
+        ));
+    }
+    let mut body = String::from("BEGIN\n");
+    for i in 0..50 {
+        body.push_str(&format!(
+            "  INSERT INTO `bench-proj.marts.t{i}` (id, v) SELECT a.id, b.v FROM `bench-proj.raw.a{i}` a JOIN `bench-proj.raw.b{i}` b ON a.id = b.id;\n"
+        ));
+    }
+    body.push_str("END;\n");
+    yaml.push_str(&format!(
+        "  r:\n    type: gcp:bigquery:Routine\n    properties:\n      project: bench-proj\n      datasetId: marts\n      routineId: load_all\n      routineType: PROCEDURE\n      definitionBody: {}\n",
+        serde_json::to_string(&body).expect("quote")
+    ));
+    let (template, _) = parse_template(&yaml, None);
+    let template = Box::leak(Box::new(template));
+    let graph_opts = GraphExportOptions {
+        organization: "org",
+        project: "bench",
+        stack: "dev",
+        source_map: None,
+        schema_store: None,
+        ..Default::default()
+    };
+    let (infra, _) = export_resource_graph(template, &graph_opts);
+    let infra = Box::leak(Box::new(infra));
+
+    for (name, include_statements) in [
+        ("sql_lineage_70_statements_layer_off", false),
+        ("sql_lineage_70_statements_layer_on", true),
+    ] {
+        c.bench_function(name, |b| {
+            b.iter(|| {
+                let opts = SqlLineageOptions {
+                    organization: "org",
+                    project: "bench",
+                    stack: "dev",
+                    include_statements,
+                    ..Default::default()
+                };
+                let (lineage, _) = export_sql_lineage(template, infra, &opts);
+                std::hint::black_box((lineage.edges.len(), lineage.statements.len()))
+            })
+        });
+    }
+
+    // The splitter at the size the parser accepts: 1 MiB of statements.
+    let mut script = String::with_capacity(1024 * 1024);
+    while script.len() < 1024 * 1024 - 64 {
+        script.push_str("SELECT a, 'x;y' FROM `p.d.t` -- c;\n;");
+    }
+    c.bench_function("split_statement_spans_1mib", |b| {
+        b.iter(|| std::hint::black_box(split_statement_spans(black_box(&script)).len()))
+    });
+}
+
+#[cfg(not(feature = "sql-lineage"))]
+fn bench_sql_statement_layer(_c: &mut Criterion) {}
+
+/// The infrastructure graph of a 200-resource program: a chain of
+/// references, a default provider every resource picks up, a StackReference
+/// read through a variable, and outputs. Edge insertion is the hot path.
+fn bench_export_resource_graph(c: &mut Criterion) {
+    use pulumi_rs_yaml_core::resource_graph::{export_resource_graph, GraphExportOptions};
+
+    let mut yaml = String::from(
+        "name: bench\nruntime: yaml\nvariables:\n  upstreamDs: ${up.outputs.datasetId}\nresources:\n  up:\n    type: pulumi:pulumi:StackReference\n    properties:\n      name: org/producer/prod\n  prov:\n    type: pulumi:providers:gcp\n    defaultProvider: true\n    properties:\n      project: bench\n",
+    );
+    for i in 0..200 {
+        let prev = if i == 0 {
+            "prov".to_string()
+        } else {
+            format!("r{}", i - 1)
+        };
+        yaml.push_str(&format!(
+            "  r{i}:\n    type: gcp:storage:Bucket\n    properties:\n      name: bucket-{i}\n      location: EU\n      labels:\n        prev: ${{{prev}.id}}\n        again: ${{{prev}.name}}\n        ds: ${{upstreamDs}}\n"
+        ));
+    }
+    yaml.push_str("outputs:\n  last: ${r199.id}\n  first: ${r0.id}\n");
+    let (template, _) = parse_template(&yaml, None);
+    let template = Box::leak(Box::new(template));
+
+    c.bench_function("export_resource_graph_200_nodes", |b| {
+        b.iter(|| {
+            let opts = GraphExportOptions {
+                organization: "org",
+                project: "bench",
+                stack: "dev",
+                source_map: None,
+                schema_store: None,
+                ..Default::default()
+            };
+            let (graph, _) = export_resource_graph(black_box(template), &opts);
+            black_box(graph.edges.len())
+        })
+    });
+
+    // The same graph with a backend: a stack URI, a referenced-stack URI, and
+    // a resource URI formatted for each of the 200 resources.
+    c.bench_function("export_resource_graph_200_nodes_backend_url", |b| {
+        b.iter(|| {
+            let opts = GraphExportOptions {
+                organization: "org",
+                project: "bench",
+                stack: "dev",
+                backend_url: Some("gs://bench-state"),
+                ..Default::default()
+            };
+            let (graph, _) = export_resource_graph(black_box(template), &opts);
+            black_box(graph.nodes.len())
+        })
+    });
+}
+
+/// Two hundred independent resources: one topological level, evaluated
+/// sequentially. Node dispatch used to scan the whole template per node.
+fn bench_eval_wide_level(c: &mut Criterion) {
+    let mut yaml = String::from("name: bench\nruntime: yaml\nresources:\n");
+    for i in 0..200 {
+        yaml.push_str(&format!(
+            "  r{i}:\n    type: test:index:R\n    properties:\n      name: r-{i}\n"
+        ));
+    }
+    let (template, _) = parse_template(&yaml, None);
+    let template: &'static _ = Box::leak(Box::new(template));
+
+    c.bench_function("eval_200_resource_wide_level", |b| {
+        b.iter(|| {
+            let eval = Evaluator::with_callback(
+                "bench".to_string(),
+                "dev".to_string(),
+                ".".to_string(),
+                false,
+                MockCallback::new(),
+            );
+            eval.evaluate_template(template, &HashMap::new(), &[]);
+            black_box(eval.has_errors())
+        })
+    });
+}
 
 /// The `str` regexp functions, answered in process.
 ///
@@ -685,6 +912,7 @@ fn bench_resolve_literal(c: &mut Criterion) {
         stack: "dev",
         source_map: None,
         schema_store: None,
+        ..Default::default()
     };
 
     // A chain of plain variables, each interpolating the previous one, read
@@ -1049,6 +1277,10 @@ criterion_group!(
     bench_discover_project_files,
     bench_jinja_preprocess_multi_file,
     bench_sql_lineage_export,
+    bench_sql_lineage_routine_script,
+    bench_sql_statement_layer,
+    bench_export_resource_graph,
+    bench_eval_wide_level,
     bench_native_str_regexp,
     bench_resolve_literal,
     bench_checkpoint,

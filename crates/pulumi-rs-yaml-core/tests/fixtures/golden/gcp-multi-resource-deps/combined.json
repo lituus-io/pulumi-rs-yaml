@@ -1,0 +1,181 @@
+{
+  "edges": [
+    {
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "property_paths": [
+        "combined"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-multi-resource-deps/golden::combined",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::depBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "property_paths": [
+        "combined"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-multi-resource-deps/golden::combined",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::mainBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "property_paths": [
+        "depBucketName"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-multi-resource-deps/golden::depBucketName",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::depBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "property_paths": [
+        "mainBucketName"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/gcp-multi-resource-deps/golden::mainBucketName",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::mainBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "property_paths": [
+        "labels"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::depBucket",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::mainBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "property_paths": [],
+      "relationship": "depends_on",
+      "source_id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::depBucket",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::mainBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::gcp-multi-resource-deps::pulumi:pulumi:Stack::gcp-multi-resource-deps-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::depBucket"
+    },
+    {
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::gcp-multi-resource-deps::pulumi:pulumi:Stack::gcp-multi-resource-deps-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::mainBucket"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-multi-resource-deps/golden::combined",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "combined",
+      "name": "combined",
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-multi-resource-deps/golden::depBucketName",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "depBucketName",
+      "name": "depBucketName",
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-multi-resource-deps/golden::mainBucketName",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "mainBucketName",
+      "name": "mainBucketName",
+      "organization": "org",
+      "project": "gcp-multi-resource-deps",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::depBucket",
+      "kind": "resource",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "name": "multi-dep-child-bucket",
+        "uniformBucketLevelAccess": "true"
+      },
+      "logical_name": "depBucket",
+      "name": "depBucket",
+      "organization": "org",
+      "package": "gcp",
+      "project": "gcp-multi-resource-deps",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucket:Bucket"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-multi-resource-deps::gcp:storage/bucket:Bucket::mainBucket",
+      "kind": "resource",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "location": "US",
+        "name": "multi-dep-main-bucket",
+        "uniformBucketLevelAccess": "true"
+      },
+      "logical_name": "mainBucket",
+      "name": "mainBucket",
+      "organization": "org",
+      "package": "gcp",
+      "project": "gcp-multi-resource-deps",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucket:Bucket"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-multi-resource-deps::pulumi:pulumi:Stack::gcp-multi-resource-deps-golden",
+      "kind": "stack",
+      "literal_properties": {},
+      "logical_name": "stack",
+      "name": "gcp-multi-resource-deps-golden",
+      "organization": "org",
+      "package": "pulumi",
+      "project": "gcp-multi-resource-deps",
+      "stack": "golden",
+      "type_token": "pulumi:pulumi:Stack"
+    }
+  ],
+  "organization": "org",
+  "project": "gcp-multi-resource-deps",
+  "schema_version": 1,
+  "sql_lineage": {
+    "edges": [],
+    "nodes": [],
+    "organization": "org",
+    "project": "gcp-multi-resource-deps",
+    "schema_version": 1,
+    "stack": "golden"
+  },
+  "stack": "golden"
+}

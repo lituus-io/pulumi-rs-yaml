@@ -20,15 +20,51 @@ pub fn parse_template(source: &str, span: Option<Span>) -> (TemplateDecl<'static
     // here, so a legal leading byte order mark is removed here too rather than
     // at each read. See `crate::encoding`.
     let source = strip_bom(source);
-    let mut diags = Diagnostics::new();
 
     let yaml: serde_yaml::Value = match serde_yaml::from_str(source) {
         Ok(v) => v,
         Err(e) => {
+            let mut diags = Diagnostics::new();
             diags.error(span, format!("failed to parse YAML: {}", e), "");
             return (TemplateDecl::new(), diags);
         }
     };
+    parse_template_value(&yaml, span)
+}
+
+/// The project `name` a template declares, without building the template.
+///
+/// The same answer `parse_template(source).0.name` gives -- the LAST top-level
+/// key that is `name` in any casing and carries a string -- for the cost of
+/// the deserialize alone: the program's resources, variables and their
+/// interpolations are never walked. Exporters need the name before the real
+/// load, to put it in the Jinja context, and used to parse the whole program
+/// to get it.
+pub fn template_name(source: &str) -> Option<String> {
+    let yaml: serde_yaml::Value = serde_yaml::from_str(strip_bom(source)).ok()?;
+    let mut name = None;
+    for (key, value) in yaml.as_mapping()? {
+        if key.as_str().is_some_and(|k| k.eq_ignore_ascii_case("name")) {
+            if let Some(s) = value.as_str() {
+                name = Some(s);
+            }
+        }
+    }
+    name.map(str::to_owned)
+}
+
+/// [`parse_template`] from a document already deserialized.
+///
+/// A Jinja-rendered file is checked by `jinja::validate_rendered_yaml_value`,
+/// which has to deserialize it to say whether it is YAML at all. Handing that
+/// value on here, rather than the text, is what keeps the file from being
+/// deserialized a second time; the two paths share the deserializer and its
+/// input, so success and failure are the same either way.
+pub fn parse_template_value(
+    yaml: &serde_yaml::Value,
+    span: Option<Span>,
+) -> (TemplateDecl<'static>, Diagnostics) {
+    let mut diags = Diagnostics::new();
 
     let mapping = match yaml.as_mapping() {
         Some(m) => m,
@@ -1293,6 +1329,36 @@ fn parse_string_list_owned(value: &serde_yaml::Value) -> Option<Vec<Cow<'static,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `template_name` must give the answer the full parser gives, on every
+    /// shape a name can take -- it replaced a full parse in the exporters.
+    #[test]
+    fn template_name_agrees_with_parse_template() {
+        let corpus = [
+            "name: plain\nruntime: yaml\n",
+            "Name: cased\n",
+            "NAME: upper\nname: lower-wins-by-position\n",
+            "name: first\nName: second\n",
+            "name: 42\n",
+            "name: [a, b]\n",
+            "name: good\nName: 7\n",
+            "runtime: yaml\n",
+            "\u{feff}name: bom\nruntime: yaml\n",
+            "- not\n- a mapping\n",
+            "name: [unterminated\n",
+            "",
+            "name: ''\n",
+            "name: \"quoted: colon\"\n",
+        ];
+        for source in corpus {
+            let (full, _) = parse_template(source, None);
+            assert_eq!(
+                template_name(source),
+                full.name.map(|n| n.into_owned()),
+                "source {source:?}"
+            );
+        }
+    }
 
     /// `parse_interpolation` collapsed `$$` from the day it was written, and
     /// the guard in front of it turned those strings away. Each test below

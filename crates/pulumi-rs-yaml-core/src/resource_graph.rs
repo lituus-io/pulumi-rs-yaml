@@ -64,6 +64,7 @@ use crate::eval::graph;
 use crate::literal_resolve::{collect_literal_properties, resolve_literal};
 use crate::packages;
 use crate::schema::SchemaStore;
+use crate::stack_uri::{parse_backend, Backend, StackUri};
 
 /// Current export schema version.
 pub const SCHEMA_VERSION: u32 = 1;
@@ -90,7 +91,7 @@ pub enum NodeKind {
 }
 
 /// Edge relationships. Serialized snake_case.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EdgeKind {
     References,
@@ -126,6 +127,18 @@ pub struct GraphNode<'src> {
     pub organization: Cow<'src, str>,
     pub project: Cow<'src, str>,
     pub stack: Cow<'src, str>,
+    /// Where this stack's state lives -- on the stack node only. Present when
+    /// a backend is known; see [`crate::stack_uri`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stack_uri: Option<Cow<'src, str>>,
+    /// Where the stack a StackReference names keeps its state -- on
+    /// StackReference nodes whose name is a literal. A StackReference
+    /// resolves on the same backend, so the location follows from it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub referenced_stack_uri: Option<Cow<'src, str>>,
+    /// The resource's locator: its stack's URI with the URN as fragment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_uri: Option<Cow<'src, str>>,
 }
 
 /// One typed edge. Composite key: (source_id, target_id, relationship).
@@ -150,6 +163,9 @@ pub struct ResourceGraph<'src> {
     pub organization: Cow<'src, str>,
     pub project: Cow<'src, str>,
     pub stack: Cow<'src, str>,
+    /// Where the exported stack's state lives, when a backend is known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stack_uri: Option<Cow<'src, str>>,
     pub nodes: Vec<GraphNode<'src>>,
     pub edges: Vec<GraphEdge<'src>>,
 }
@@ -187,6 +203,7 @@ fn serialize_pairs_as_object<S: serde::Serializer>(
 }
 
 /// Options for [`export_resource_graph`].
+#[derive(Default)]
 pub struct GraphExportOptions<'src> {
     /// Pulumi organization; empty uses a documented placeholder in
     /// cross-stack ids (with a warning).
@@ -198,6 +215,11 @@ pub struct GraphExportOptions<'src> {
     /// Optional schema store for authoritative token resolution and
     /// remote-component classification.
     pub schema_store: Option<&'src SchemaStore>,
+    /// The backend the stack's state lives in -- `https://api.pulumi.com`,
+    /// `gs://bucket`, ... -- from which the stack, StackReference and
+    /// resource URIs are derived. `None`, or a backend this crate does not
+    /// recognise, adds none of them, and the output is what it always was.
+    pub backend_url: Option<&'src str>,
 }
 
 /// Exports the static dependency graph of a template.
@@ -229,7 +251,7 @@ pub fn export_resource_graph<'src>(
     }
 
     let mut nodes: Vec<GraphNode<'src>> = Vec::new();
-    let mut edges: EdgeMap<'src> = BTreeMap::new();
+    let mut edges = EdgeMap::new();
 
     // Root stack node — the anchor for deployment/status enrichment.
     let stack_id = format!(
@@ -250,6 +272,9 @@ pub fn export_resource_graph<'src>(
         organization: Cow::Borrowed(ctx.org),
         project: Cow::Borrowed(opts.project),
         stack: Cow::Borrowed(opts.stack),
+        stack_uri: ctx.own_stack_uri().map(Cow::Owned),
+        referenced_stack_uri: None,
+        resource_uri: None,
     });
 
     // Top-level scope.
@@ -264,13 +289,7 @@ pub fn export_resource_graph<'src>(
     // Stack contains its unparented top-level resources.
     for info in &scope.infos {
         if info.parent_logical.is_none() {
-            add_edge(
-                &mut edges,
-                stack_id.clone(),
-                info.id.clone(),
-                EdgeKind::Contains,
-                None,
-            );
+            edges.add(&stack_id, &info.id, EdgeKind::Contains, None);
         }
     }
 
@@ -284,7 +303,11 @@ pub fn export_resource_graph<'src>(
         &mut diags,
     );
 
-    // Stack outputs.
+    // Stack outputs. One resolver for all of them: its variable memo is a
+    // pure function of the scope.
+    let mut resolver = ScopeResolver::new(&scope);
+    let mut targets = Vec::new();
+    let scope_ids = edges.intern_scope(&scope);
     for output in &template.outputs {
         let out_id = format!(
             "stackoutput::{}/{}/{}::{}",
@@ -304,26 +327,23 @@ pub fn export_resource_graph<'src>(
             organization: Cow::Borrowed(ctx.org),
             project: Cow::Borrowed(opts.project),
             stack: Cow::Borrowed(opts.stack),
+            stack_uri: None,
+            referenced_stack_uri: None,
+            resource_uri: None,
         });
-        let mut resolver = ScopeResolver::new(&scope);
-        let targets = resolver.targets_of_expr(&output.value);
-        for target in targets {
-            match target {
-                Target::Node(idx) => add_edge(
-                    &mut edges,
-                    out_id.clone(),
-                    scope.infos[idx].id.clone(),
-                    EdgeKind::Exports,
-                    Some(Cow::Borrowed(output.key.as_ref())),
-                ),
-                Target::StackOutput { id } => add_edge(
-                    &mut edges,
-                    out_id.clone(),
-                    id,
-                    EdgeKind::ConsumesStackOutput,
-                    Some(Cow::Borrowed(output.key.as_ref())),
-                ),
-            }
+        targets.clear();
+        resolver.targets_of_expr(&output.value, &mut targets);
+        let out_idx = edges.intern(&out_id);
+        for &target in &targets {
+            edges.add_target(
+                &scope,
+                &scope_ids,
+                out_idx,
+                target,
+                None,
+                EdgeKind::Exports,
+                Some(Cow::Borrowed(output.key.as_ref())),
+            );
         }
     }
 
@@ -333,18 +353,142 @@ pub fn export_resource_graph<'src>(
 
 // ---------- internal machinery ----------
 
-type EdgeMap<'src> = BTreeMap<(String, String, EdgeKind), BTreeSet<Cow<'src, str>>>;
+/// One edge as [`EdgeMap::into_sorted`] hands it out: endpoints owned,
+/// property paths deduplicated and ordered.
+type SortedEdge<'src> = ((String, String, EdgeKind), BTreeSet<Cow<'src, str>>);
 
-fn add_edge<'src>(
-    edges: &mut EdgeMap<'src>,
-    source: String,
-    target: String,
-    relationship: EdgeKind,
-    path: Option<Cow<'src, str>>,
-) {
-    let paths = edges.entry((source, target, relationship)).or_default();
-    if let Some(p) = path {
-        paths.insert(p);
+/// Typed edges, keyed by interned node ids.
+///
+/// Edges used to be keyed `(String, String, EdgeKind)` in a `BTreeMap`, so
+/// every insert cloned both URNs -- even for an edge already present, which is
+/// the common case: a resource referenced from N properties is N inserts of
+/// one key, and every resource without an explicit provider gets one insert
+/// per default provider. Each id is now copied once, when first seen, and an
+/// edge is three integers. The output order is unchanged: [`into_sorted`]
+/// sorts by the id STRINGS, exactly the order the `BTreeMap` iterated in, and
+/// interning is injective so no two distinct ids can compare equal.
+///
+/// [`into_sorted`]: EdgeMap::into_sorted
+struct EdgeMap<'src> {
+    index: HashMap<String, usize>,
+    /// Ordered by integer key: no hashing per edge, and the comparisons are
+    /// three integers rather than two URNs.
+    edges: BTreeMap<(usize, usize, EdgeKind), BTreeSet<Cow<'src, str>>>,
+    /// Reused for `stackoutput::` ids, which are formatted per reference.
+    scratch: String,
+}
+
+impl<'src> EdgeMap<'src> {
+    fn new() -> Self {
+        Self {
+            index: HashMap::new(),
+            edges: BTreeMap::new(),
+            scratch: String::new(),
+        }
+    }
+
+    fn intern(&mut self, id: &str) -> usize {
+        if let Some(&i) = self.index.get(id) {
+            return i;
+        }
+        let i = self.index.len();
+        self.index.insert(id.to_owned(), i);
+        i
+    }
+
+    fn add(
+        &mut self,
+        source: &str,
+        target: &str,
+        relationship: EdgeKind,
+        path: Option<Cow<'src, str>>,
+    ) {
+        let (s, t) = (self.intern(source), self.intern(target));
+        self.add_interned(s, t, relationship, path);
+    }
+
+    /// Adds an edge between ids already interned. The hot path: a scope's
+    /// resource ids are interned once, up front, so an edge between two of
+    /// them hashes three integers rather than two URNs.
+    fn add_interned(
+        &mut self,
+        source: usize,
+        target: usize,
+        relationship: EdgeKind,
+        path: Option<Cow<'src, str>>,
+    ) {
+        let paths = self
+            .edges
+            .entry((source, target, relationship))
+            .or_default();
+        if let Some(p) = path {
+            paths.insert(p);
+        }
+    }
+
+    /// The interned id of every resource in `scope`, by index.
+    fn intern_scope(&mut self, scope: &Scope<'src>) -> Vec<usize> {
+        scope.infos.iter().map(|i| self.intern(&i.id)).collect()
+    }
+
+    /// Adds the edge a resolved reference induces: `relationship` for a node
+    /// in scope (skipped when it is `skip`, the source itself), and
+    /// `consumes_stack_output` for an output of a referenced stack.
+    /// `ids` is [`intern_scope`](Self::intern_scope) of `scope`; `source` is
+    /// already interned.
+    #[allow(clippy::too_many_arguments)]
+    fn add_target(
+        &mut self,
+        scope: &Scope<'src>,
+        ids: &[usize],
+        source: usize,
+        target: Target<'src>,
+        skip: Option<usize>,
+        relationship: EdgeKind,
+        path: Option<Cow<'src, str>>,
+    ) {
+        match target {
+            Target::Node(t) => {
+                if Some(t) != skip {
+                    self.add_interned(source, ids[t], relationship, path);
+                }
+            }
+            Target::StackOutput { sref, key } => {
+                // Only pushed for a StackReference with a known name.
+                let Some(fq) = scope.infos[sref].stack_fq.as_deref() else {
+                    return;
+                };
+                let mut id = std::mem::take(&mut self.scratch);
+                id.clear();
+                id.push_str("stackoutput::");
+                id.push_str(fq);
+                id.push_str("::");
+                id.push_str(key);
+                let t = self.intern(&id);
+                self.add_interned(source, t, EdgeKind::ConsumesStackOutput, path);
+                self.scratch = id;
+            }
+        }
+    }
+
+    /// Every edge with its endpoints as owned strings, in
+    /// `(source, target, relationship)` order.
+    fn into_sorted(self) -> Vec<SortedEdge<'src>> {
+        let mut names = vec![String::new(); self.index.len()];
+        for (name, i) in self.index {
+            names[i] = name;
+        }
+        let mut list: Vec<_> = self.edges.into_iter().collect();
+        // Keys are unique, so an unstable sort is deterministic.
+        list.sort_unstable_by(|((s1, t1, r1), _), ((s2, t2, r2), _)| {
+            names[*s1]
+                .cmp(&names[*s2])
+                .then_with(|| names[*t1].cmp(&names[*t2]))
+                .then_with(|| r1.cmp(r2))
+        });
+        list.into_iter()
+            .map(|((s, t, r), paths)| ((names[s].clone(), names[t].clone(), r), paths))
+            .collect()
     }
 }
 
@@ -357,6 +501,8 @@ struct Ctx<'src, 'o> {
     component_tokens: HashMap<String, &'src ComponentDecl<'src>>,
     /// Component key → verbatim registered token `{pkg}:index:{key}`.
     component_canonical: HashMap<&'src str, String>,
+    /// The recognised backend, when the caller named one.
+    backend: Option<Backend<'src>>,
 }
 
 impl<'src, 'o> Ctx<'src, 'o> {
@@ -384,7 +530,19 @@ impl<'src, 'o> Ctx<'src, 'o> {
             org_placeholder,
             component_tokens,
             component_canonical,
+            backend: opts.backend_url.and_then(parse_backend),
         }
+    }
+
+    /// The URI of stack `project`/`stack` in `organization`, on this backend.
+    fn stack_uri(&self, organization: &str, project: &str, stack: &str) -> Option<String> {
+        let known = organization != ORG_PLACEHOLDER || !self.org_placeholder;
+        StackUri::new(self.backend?, organization, known, project, stack).map(|u| u.to_string())
+    }
+
+    /// The exported stack's own URI.
+    fn own_stack_uri(&self) -> Option<String> {
+        self.stack_uri(self.org, self.opts.project, self.opts.stack)
     }
 
     fn source_file(&self, logical: &str) -> Option<&'src str> {
@@ -467,6 +625,12 @@ impl<'src> Scope<'src> {
     ) -> Self {
         let mut by_name = HashMap::new();
         let mut infos: Vec<ResInfo<'src>> = Vec::with_capacity(resources.len());
+        // Built once per scope; StackReference names and literal properties
+        // both resolve through it.
+        let variables: HashMap<&'src str, &'src Expr<'src>> = variables
+            .iter()
+            .map(|v| (v.key.as_ref(), &v.value))
+            .collect();
 
         // Pass 1: names, kinds, tokens.
         for entry in resources {
@@ -475,7 +639,7 @@ impl<'src> Scope<'src> {
             let (kind, token, component_decl) = classify(ctx, entry, raw);
             let reg_name = entry.resource.name.as_deref().unwrap_or(logical);
             let stack_fq = if kind == NodeKind::StackReference {
-                stack_reference_fq(ctx, entry, variables, diags)
+                stack_reference_fq(ctx, entry, &variables, diags)
             } else {
                 None
             };
@@ -553,10 +717,6 @@ impl<'src> Scope<'src> {
             }
         }
 
-        let variables = variables
-            .iter()
-            .map(|v| (v.key.as_ref(), &v.value))
-            .collect();
         Self {
             infos,
             by_name,
@@ -643,22 +803,18 @@ fn resolve_qualified(
 fn stack_reference_fq<'src>(
     ctx: &Ctx<'src, '_>,
     entry: &'src ResourceEntry<'src>,
-    variables: &'src [VariableEntry<'src>],
+    var_map: &HashMap<&'src str, &'src Expr<'src>>,
     diags: &mut Diagnostics,
 ) -> Option<String> {
     let name_prop = match &entry.resource.properties {
         ResourceProperties::Map(props) => props.iter().find(|p| p.key.as_ref() == "name"),
         ResourceProperties::Expr(_) => None,
     };
-    let var_map: HashMap<&str, &Expr<'_>> = variables
-        .iter()
-        .map(|v| (v.key.as_ref(), &v.value))
-        .collect();
     let raw = match name_prop {
         Some(prop) => {
             let mut memo = HashMap::new();
             let mut visiting = HashSet::new();
-            match resolve_literal(&prop.value, &var_map, &mut memo, &mut visiting) {
+            match resolve_literal(&prop.value, var_map, &mut memo, &mut visiting) {
                 Some(lit) => lit,
                 None => {
                     diags.warning(
@@ -693,25 +849,23 @@ fn normalize_stack_fq(ctx: &Ctx<'_, '_>, raw: &str) -> String {
     }
 }
 
-/// A resolved reference target within a scope.
-enum Target {
+/// A resolved reference target within a scope. `Copy`, so a memoized
+/// variable's targets are shared by slice rather than deep-cloned per hit.
+#[derive(Clone, Copy)]
+enum Target<'src> {
     /// Index into the scope's `infos`.
     Node(usize),
-    /// External stack output id (`stackoutput::…`).
-    StackOutput { id: String },
+    /// Output `key` of the stack the StackReference at `sref` names. The
+    /// `stackoutput::` id is formatted only when an edge is built.
+    StackOutput { sref: usize, key: &'src str },
 }
 
 /// Resolves property accesses to targets, collapsing variables/config.
 struct ScopeResolver<'s, 'src> {
     scope: &'s Scope<'src>,
-    var_memo: HashMap<&'src str, Vec<ResolvedTarget>>,
-}
-
-/// Owned variant of [`Target`] for memoization.
-#[derive(Clone)]
-enum ResolvedTarget {
-    Node(usize),
-    StackOutput { id: String },
+    var_memo: HashMap<&'src str, Vec<Target<'src>>>,
+    /// Reused across expressions.
+    accesses: Vec<&'src PropertyAccess<'src>>,
 }
 
 impl<'s, 'src> ScopeResolver<'s, 'src> {
@@ -719,61 +873,68 @@ impl<'s, 'src> ScopeResolver<'s, 'src> {
         Self {
             scope,
             var_memo: HashMap::new(),
+            accesses: Vec::new(),
         }
     }
 
-    fn targets_of_expr(&mut self, expr: &'src Expr<'src>) -> Vec<Target> {
-        let mut accesses: Vec<&'src PropertyAccess<'src>> = Vec::new();
+    /// Appends the targets `expr` references to `out`.
+    fn targets_of_expr(&mut self, expr: &'src Expr<'src>, out: &mut Vec<Target<'src>>) {
+        let mut accesses = std::mem::take(&mut self.accesses);
+        accesses.clear();
         walk_expr(expr, &AccessCollector, &mut accesses);
-        let mut out = Vec::new();
-        for access in accesses {
-            self.targets_of_access(access, &mut out);
+        for &access in &accesses {
+            self.targets_of_access(access, out);
         }
-        out
+        self.accesses = accesses;
     }
 
-    fn targets_of_access(&mut self, access: &'src PropertyAccess<'src>, out: &mut Vec<Target>) {
+    /// The direct target of `access` when its root is a resource in scope,
+    /// plus the stack output it reads when that resource is a StackReference.
+    fn push_node_targets(
+        &self,
+        idx: usize,
+        access: &'src PropertyAccess<'src>,
+        out: &mut Vec<Target<'src>>,
+    ) {
+        out.push(Target::Node(idx));
+        let info = &self.scope.infos[idx];
+        if info.kind == NodeKind::StackReference && info.stack_fq.is_some() {
+            if let Some(key) = output_key_of(access) {
+                out.push(Target::StackOutput { sref: idx, key });
+            }
+        }
+    }
+
+    fn targets_of_access(
+        &mut self,
+        access: &'src PropertyAccess<'src>,
+        out: &mut Vec<Target<'src>>,
+    ) {
         let root = match access.root_name() {
             Ok(root) => root,
             Err(_) => return,
         };
         if let Some(&idx) = self.scope.by_name.get(root) {
-            out.push(Target::Node(idx));
-            let info = &self.scope.infos[idx];
-            if info.kind == NodeKind::StackReference {
-                if let (Some(fq), Some(key)) = (&info.stack_fq, output_key_of(access)) {
-                    out.push(Target::StackOutput {
-                        id: format!("stackoutput::{}::{}", fq, key),
-                    });
-                }
-            }
+            self.push_node_targets(idx, access, out);
             return;
         }
         if self.scope.variables.contains_key(root) {
             let mut visiting = HashSet::new();
-            let resolved = self.resolve_variable(root, &mut visiting);
-            for t in resolved {
-                out.push(match t {
-                    ResolvedTarget::Node(idx) => Target::Node(idx),
-                    ResolvedTarget::StackOutput { id } => Target::StackOutput { id },
-                });
+            self.resolve_variable(root, &mut visiting);
+            if let Some(cached) = self.var_memo.get(root) {
+                out.extend_from_slice(cached);
             }
         }
         // config / pulumi / anything else: no edge.
     }
 
-    fn resolve_variable(
-        &mut self,
-        name: &'src str,
-        visiting: &mut HashSet<&'src str>,
-    ) -> Vec<ResolvedTarget> {
-        if let Some(cached) = self.var_memo.get(name) {
-            return cached.clone();
+    /// Fills `var_memo[name]` with the targets `name` reaches. A cycle
+    /// contributes nothing at the point it closes, as before.
+    fn resolve_variable(&mut self, name: &'src str, visiting: &mut HashSet<&'src str>) {
+        if self.var_memo.contains_key(name) || !visiting.insert(name) {
+            return;
         }
-        if !visiting.insert(name) {
-            return Vec::new();
-        }
-        let mut resolved: Vec<ResolvedTarget> = Vec::new();
+        let mut resolved: Vec<Target<'src>> = Vec::new();
         if let Some(expr) = self.scope.variables.get(name).copied() {
             let mut accesses: Vec<&'src PropertyAccess<'src>> = Vec::new();
             walk_expr(expr, &AccessCollector, &mut accesses);
@@ -783,23 +944,17 @@ impl<'s, 'src> ScopeResolver<'s, 'src> {
                     Err(_) => continue,
                 };
                 if let Some(&idx) = self.scope.by_name.get(root) {
-                    resolved.push(ResolvedTarget::Node(idx));
-                    let info = &self.scope.infos[idx];
-                    if info.kind == NodeKind::StackReference {
-                        if let (Some(fq), Some(key)) = (&info.stack_fq, output_key_of(access)) {
-                            resolved.push(ResolvedTarget::StackOutput {
-                                id: format!("stackoutput::{}::{}", fq, key),
-                            });
-                        }
-                    }
+                    self.push_node_targets(idx, access, &mut resolved);
                 } else if self.scope.variables.contains_key(root) && root != name {
-                    resolved.extend(self.resolve_variable(root, visiting));
+                    self.resolve_variable(root, visiting);
+                    if let Some(cached) = self.var_memo.get(root) {
+                        resolved.extend_from_slice(cached);
+                    }
                 }
             }
         }
         visiting.remove(name);
-        self.var_memo.insert(name, resolved.clone());
-        resolved
+        self.var_memo.insert(name, resolved);
     }
 }
 
@@ -828,10 +983,24 @@ fn emit_scope<'src>(
     instantiation_stack: &mut Vec<&'src str>,
     diags: &mut Diagnostics,
 ) {
-    let var_map: HashMap<&'src str, &'src Expr<'src>> =
-        scope.variables.iter().map(|(k, v)| (*k, *v)).collect();
-
+    // Resolved once per scope; with no backend nothing below formats a URI.
+    let own_stack = ctx.backend.and_then(|backend| {
+        let known = !ctx.org_placeholder;
+        StackUri::new(backend, ctx.org, known, ctx.opts.project, ctx.opts.stack)
+    });
     for info in &scope.infos {
+        let referenced_stack_uri = match (&info.stack_fq, info.kind) {
+            (Some(fq), NodeKind::StackReference) => {
+                let mut parts = fq.splitn(3, '/');
+                match (parts.next(), parts.next(), parts.next()) {
+                    (Some(org), Some(project), Some(stack)) => {
+                        ctx.stack_uri(org, project, stack).map(Cow::Owned)
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
         nodes.push(GraphNode {
             id: Cow::Owned(info.id.clone()),
             kind: info.kind,
@@ -846,10 +1015,13 @@ fn emit_scope<'src>(
                 .or_else(|| info.component_id.clone().map(Cow::Owned)),
             component_id: info.component_id.clone().map(Cow::Owned),
             source_file: info.source_file,
-            literal_properties: collect_literal_properties(info.entry, &var_map),
+            literal_properties: collect_literal_properties(info.entry, &scope.variables),
             organization: Cow::Borrowed(ctx.org),
             project: Cow::Borrowed(ctx.opts.project),
             stack: Cow::Borrowed(ctx.opts.stack),
+            stack_uri: None,
+            referenced_stack_uri,
+            resource_uri: own_stack.map(|s| Cow::Owned(s.resource(&info.id).to_string())),
         });
     }
 
@@ -895,13 +1067,7 @@ fn emit_scope<'src>(
             diags,
         );
         for child in &child_scope.infos {
-            add_edge(
-                edges,
-                info.id.clone(),
-                child.id.clone(),
-                EdgeKind::Contains,
-                None,
-            );
+            edges.add(&info.id, &child.id, EdgeKind::Contains, None);
         }
         emit_scope(ctx, &child_scope, nodes, edges, instantiation_stack, diags);
         instantiation_stack.pop();
@@ -920,6 +1086,8 @@ fn package_of<'src>(token: &Cow<'src, str>) -> Option<Cow<'src, str>> {
 /// merged walk in `eval::graph`).
 fn emit_typed_edges<'src>(scope: &Scope<'src>, edges: &mut EdgeMap<'src>) {
     let mut resolver = ScopeResolver::new(scope);
+    let mut targets: Vec<Target<'src>> = Vec::new();
+    let ids = edges.intern_scope(scope);
 
     // Default-provider donors (mirrors eval::graph's implicit edges).
     let default_providers: Vec<usize> = scope
@@ -931,30 +1099,24 @@ fn emit_typed_edges<'src>(scope: &Scope<'src>, edges: &mut EdgeMap<'src>) {
         .collect();
 
     for (idx, info) in scope.infos.iter().enumerate() {
-        let source_id = &info.id;
-        let emit = |resolver: &mut ScopeResolver<'_, 'src>,
-                    edges: &mut EdgeMap<'src>,
-                    expr: &'src Expr<'src>,
-                    relationship: EdgeKind,
-                    path: Option<Cow<'src, str>>| {
-            for target in resolver.targets_of_expr(expr) {
-                match target {
-                    Target::Node(t) if t != idx => add_edge(
-                        edges,
-                        source_id.clone(),
-                        scope.infos[t].id.clone(),
-                        relationship,
-                        path.clone(),
-                    ),
-                    Target::Node(_) => {}
-                    Target::StackOutput { id } => add_edge(
-                        edges,
-                        source_id.clone(),
-                        id,
-                        EdgeKind::ConsumesStackOutput,
-                        path.clone(),
-                    ),
-                }
+        let source = ids[idx];
+        let mut emit = |resolver: &mut ScopeResolver<'_, 'src>,
+                        edges: &mut EdgeMap<'src>,
+                        expr: &'src Expr<'src>,
+                        relationship: EdgeKind,
+                        path: Option<Cow<'src, str>>| {
+            targets.clear();
+            resolver.targets_of_expr(expr, &mut targets);
+            for &target in &targets {
+                edges.add_target(
+                    scope,
+                    &ids,
+                    source,
+                    target,
+                    Some(idx),
+                    relationship,
+                    path.clone(),
+                );
             }
         };
 
@@ -1049,25 +1211,13 @@ fn emit_typed_edges<'src>(scope: &Scope<'src>, edges: &mut EdgeMap<'src>) {
                 Some(Cow::Borrowed("get.id")),
             );
             for prop in &get.state {
-                for target in resolver.targets_of_expr(&prop.value) {
-                    match target {
-                        Target::Node(t) if t != idx => add_edge(
-                            edges,
-                            source_id.clone(),
-                            scope.infos[t].id.clone(),
-                            EdgeKind::References,
-                            Some(Cow::Owned(format!("get.state.{}", prop.key))),
-                        ),
-                        Target::Node(_) => {}
-                        Target::StackOutput { id } => add_edge(
-                            edges,
-                            source_id.clone(),
-                            id,
-                            EdgeKind::ConsumesStackOutput,
-                            Some(Cow::Owned(format!("get.state.{}", prop.key))),
-                        ),
-                    }
-                }
+                emit(
+                    &mut resolver,
+                    edges,
+                    &prop.value,
+                    EdgeKind::References,
+                    Some(Cow::Owned(format!("get.state.{}", prop.key))),
+                );
             }
         }
 
@@ -1075,13 +1225,7 @@ fn emit_typed_edges<'src>(scope: &Scope<'src>, edges: &mut EdgeMap<'src>) {
         if opts.provider.is_none() && info.entry.resource.default_provider != Some(true) {
             for &p in &default_providers {
                 if p != idx {
-                    add_edge(
-                        edges,
-                        source_id.clone(),
-                        scope.infos[p].id.clone(),
-                        EdgeKind::Provider,
-                        None,
-                    );
+                    edges.add_interned(source, ids[p], EdgeKind::Provider, None);
                 }
             }
         }
@@ -1099,6 +1243,19 @@ fn empty_graph<'src>(opts: &GraphExportOptions<'src>) -> ResourceGraph<'src> {
         organization: Cow::Borrowed(org),
         project: Cow::Borrowed(opts.project),
         stack: Cow::Borrowed(opts.stack),
+        stack_uri: opts
+            .backend_url
+            .and_then(parse_backend)
+            .and_then(|backend| {
+                StackUri::new(
+                    backend,
+                    org,
+                    !opts.organization.is_empty(),
+                    opts.project,
+                    opts.stack,
+                )
+                .map(|u| Cow::Owned(u.to_string()))
+            }),
         nodes: Vec::new(),
         edges: Vec::new(),
     }
@@ -1111,10 +1268,13 @@ fn finalize<'src>(
     edges: EdgeMap<'src>,
     diags: &mut Diagnostics,
 ) -> ResourceGraph<'src> {
+    // Stable: rows sharing an id keep their declaration order.
     nodes.sort_by(|a, b| a.id.cmp(&b.id));
-    let mut seen: HashSet<&str> = HashSet::new();
-    for node in &nodes {
-        if !seen.insert(node.id.as_ref()) {
+    // Sorted, so duplicates are adjacent: one warning per extra copy, in the
+    // same order a seen-set produced, without building one.
+    for pair in nodes.windows(2) {
+        if pair[0].id == pair[1].id {
+            let node = &pair[1];
             diags.warning(
                 None,
                 format!("duplicate node id '{}'", node.id),
@@ -1124,6 +1284,7 @@ fn finalize<'src>(
         }
     }
     let edges = edges
+        .into_sorted()
         .into_iter()
         .map(|((source_id, target_id, relationship), paths)| GraphEdge {
             source_id: Cow::Owned(source_id),
@@ -1140,6 +1301,7 @@ fn finalize<'src>(
         organization: Cow::Borrowed(ctx.org),
         project: Cow::Borrowed(opts.project),
         stack: Cow::Borrowed(opts.stack),
+        stack_uri: ctx.own_stack_uri().map(Cow::Owned),
         nodes,
         edges,
     }
@@ -1169,6 +1331,7 @@ mod tests {
             stack,
             source_map: None,
             schema_store: None,
+            ..Default::default()
         };
         export_resource_graph(template, &opts)
     }

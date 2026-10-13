@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "gcp-readfile-schema-test",
+  "stack": "golden",
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-readfile-schema-test/golden::readfileBucketName",
+      "kind": "output",
+      "logical_name": "readfileBucketName",
+      "name": "readfileBucketName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-readfile-schema-test",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-readfile-schema-test/golden::schemaObjectName",
+      "kind": "output",
+      "logical_name": "schemaObjectName",
+      "name": "schemaObjectName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-readfile-schema-test",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-readfile-schema-test/golden::websiteBucketName",
+      "kind": "output",
+      "logical_name": "websiteBucketName",
+      "name": "websiteBucketName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-readfile-schema-test",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-readfile-schema-test::gcp:storage/bucket:Bucket::readfileBucket",
+      "kind": "resource",
+      "logical_name": "readfileBucket",
+      "name": "readfileBucket",
+      "type_token": "gcp:storage/bucket:Bucket",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "labels.test": "readfile",
+        "labels.version": "readfile-e2e-v1",
+        "location": "US",
+        "name": "pulumi-rs-yaml-readfile-e2e-v1",
+        "uniformBucketLevelAccess": "true"
+      },
+      "organization": "org",
+      "project": "gcp-readfile-schema-test",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-readfile-schema-test::gcp:storage/bucket:Bucket::websiteBucket",
+      "kind": "resource",
+      "logical_name": "websiteBucket",
+      "name": "websiteBucket",
+      "type_token": "gcp:storage/bucket:Bucket",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "labels.test": "readfile-schema",
+        "labels.version": "readfile-e2e-v1",
+        "location": "US",
+        "name": "pulumi-rs-yaml-readfile-website-test",
+        "uniformBucketLevelAccess": "true"
+      },
+      "organization": "org",
+      "project": "gcp-readfile-schema-test",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-readfile-schema-test::gcp:storage/bucketObject:BucketObject::schemaObject",
+      "kind": "resource",
+      "logical_name": "schemaObject",
+      "name": "schemaObject",
+      "type_token": "gcp:storage/bucketObject:BucketObject",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "content": "[\n  {\n    \"name\": \"id\",\n    \"type\": \"INTEGER\",\n    \"mode\": \"REQUIRED\",\n    \"description\": \"Unique identifier\"\n  },\n  {\n    \"name\": \"name\",\n    \"type\": \"STRING\",\n    \"mode\": \"REQUIRED\",\n    \"description\": \"Display name\"\n  },\n  {\n    \"name\": \"email\",\n    \"type\": \"STRING\",\n    \"mode\": \"NULLABLE\",\n    \"description\": \"Email address\"\n  },\n  {\n    \"name\": \"created_at\",\n    \"type\": \"TIMESTAMP\",\n    \"mode\": \"REQUIRED\",\n    \"description\": \"Creation timestamp\"\n  }\n]\n",
+        "name": "schema.json"
+      },
+      "organization": "org",
+      "project": "gcp-readfile-schema-test",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-readfile-schema-test::pulumi:pulumi:Stack::gcp-readfile-schema-test-golden",
+      "kind": "stack",
+      "logical_name": "stack",
+      "name": "gcp-readfile-schema-test-golden",
+      "type_token": "pulumi:pulumi:Stack",
+      "package": "pulumi",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-readfile-schema-test",
+      "stack": "golden"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "stackoutput::org/gcp-readfile-schema-test/golden::readfileBucketName",
+      "target_id": "urn:pulumi:golden::gcp-readfile-schema-test::gcp:storage/bucket:Bucket::readfileBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "readfileBucketName"
+      ],
+      "organization": "org",
+      "project": "gcp-readfile-schema-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "stackoutput::org/gcp-readfile-schema-test/golden::schemaObjectName",
+      "target_id": "urn:pulumi:golden::gcp-readfile-schema-test::gcp:storage/bucketObject:BucketObject::schemaObject",
+      "relationship": "exports",
+      "property_paths": [
+        "schemaObjectName"
+      ],
+      "organization": "org",
+      "project": "gcp-readfile-schema-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "stackoutput::org/gcp-readfile-schema-test/golden::websiteBucketName",
+      "target_id": "urn:pulumi:golden::gcp-readfile-schema-test::gcp:storage/bucket:Bucket::websiteBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "websiteBucketName"
+      ],
+      "organization": "org",
+      "project": "gcp-readfile-schema-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-readfile-schema-test::gcp:storage/bucketObject:BucketObject::schemaObject",
+      "target_id": "urn:pulumi:golden::gcp-readfile-schema-test::gcp:storage/bucket:Bucket::websiteBucket",
+      "relationship": "references",
+      "property_paths": [
+        "bucket"
+      ],
+      "organization": "org",
+      "project": "gcp-readfile-schema-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-readfile-schema-test::pulumi:pulumi:Stack::gcp-readfile-schema-test-golden",
+      "target_id": "urn:pulumi:golden::gcp-readfile-schema-test::gcp:storage/bucket:Bucket::readfileBucket",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-readfile-schema-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-readfile-schema-test::pulumi:pulumi:Stack::gcp-readfile-schema-test-golden",
+      "target_id": "urn:pulumi:golden::gcp-readfile-schema-test::gcp:storage/bucket:Bucket::websiteBucket",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-readfile-schema-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-readfile-schema-test::pulumi:pulumi:Stack::gcp-readfile-schema-test-golden",
+      "target_id": "urn:pulumi:golden::gcp-readfile-schema-test::gcp:storage/bucketObject:BucketObject::schemaObject",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-readfile-schema-test",
+      "stack": "golden"
+    }
+  ]
+}

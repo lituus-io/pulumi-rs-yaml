@@ -509,7 +509,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -648,9 +648,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.4.18"
+version = "0.4.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "839c0e8a181239723652be9062bb56ca5bf5f64011f73b623f6f4fc59086a228"
+checksum = "7d29020232d6aa3fb1daca64c1127cf662cf97f254ae16c18c05b8ab635fc118"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -852,7 +852,7 @@ dependencies = [
  "hyper",
  "libc",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.2",
  "tokio",
  "tower-service",
  "tracing",
@@ -1012,7 +1012,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1139,9 +1139,9 @@ dependencies = [
 
 [[package]]
 name = "libredox"
-version = "0.1.18"
+version = "0.1.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c943259e342f1e06ff2da7a83eabdfe7f92ce10262688dbf1895ff0b3e6e4652"
+checksum = "61ff90caf6077a803a240f62fdbe88645a890bbca49ef8174c3cb0404362171d"
 dependencies = [
  "libc",
 ]
@@ -1427,9 +1427,9 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "polyglot-sql"
-version = "0.6.2"
+version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "009cbd62f8c82de46697221ee66b0cf3a6dacbda16f8c5a2ce25853940073bd5"
+checksum = "8bd560fb7445798460480716cac803d740bef433c4043c0cac47a7a0c3f4732f"
 dependencies = [
  "polyglot-sql-ast-derive",
  "serde",
@@ -1441,9 +1441,9 @@ dependencies = [
 
 [[package]]
 name = "polyglot-sql-ast-derive"
-version = "0.6.2"
+version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3250a6ffcd1d39670eb532e2b1877ad430799c49cb91b243d63c9425b868161"
+checksum = "3a43b746b86d14a9888e8e535efae4e8315a484caa94e9a0d78bdefe58f22e44"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1543,7 +1543,7 @@ dependencies = [
 
 [[package]]
 name = "pulumi-rs-yaml-converter"
-version = "0.5.33"
+version = "0.5.37"
 dependencies = [
  "base64",
  "heck",
@@ -1561,7 +1561,7 @@ dependencies = [
 
 [[package]]
 name = "pulumi-rs-yaml-core"
-version = "0.5.33"
+version = "0.5.37"
 dependencies = [
  "base64",
  "hcl-rs",
@@ -1595,7 +1595,7 @@ dependencies = [
 
 [[package]]
 name = "pulumi-rs-yaml-proto"
-version = "0.5.33"
+version = "0.5.37"
 dependencies = [
  "prost",
  "prost-types",
@@ -1762,7 +1762,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

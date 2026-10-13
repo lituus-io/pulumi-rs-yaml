@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "gcp-readfile-bigquery-test",
+  "stack": "golden",
+  "nodes": [
+    {
+      "id": "bq://spacy-muffin-lab-5a292e",
+      "kind": "project",
+      "name": "spacy-muffin-lab-5a292e",
+      "bq_project": "spacy-muffin-lab-5a292e",
+      "organization": "org",
+      "project": "gcp-readfile-bigquery-test",
+      "stack": "golden"
+    },
+    {
+      "id": "bq://spacy-muffin-lab-5a292e/readfile_test_dataset",
+      "kind": "dataset",
+      "name": "readfile_test_dataset",
+      "bq_project": "spacy-muffin-lab-5a292e",
+      "dataset": "readfile_test_dataset",
+      "defined_by_urn": "urn:pulumi:golden::gcp-readfile-bigquery-test::gcp:bigquery/dataset:Dataset::dataset",
+      "source_file": "Pulumi.yaml",
+      "organization": "org",
+      "project": "gcp-readfile-bigquery-test",
+      "stack": "golden"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "bq://spacy-muffin-lab-5a292e",
+      "target_id": "bq://spacy-muffin-lab-5a292e/readfile_test_dataset",
+      "relationship": "contains",
+      "resolution": "structural",
+      "organization": "org",
+      "project": "gcp-readfile-bigquery-test",
+      "stack": "golden"
+    },
+    {
+      "source_id": "bq://spacy-muffin-lab-5a292e/readfile_test_dataset",
+      "target_id": "urn:pulumi:golden::gcp-readfile-bigquery-test::gcp:bigquery/dataset:Dataset::dataset",
+      "relationship": "defined_by",
+      "resolution": "structural",
+      "organization": "org",
+      "project": "gcp-readfile-bigquery-test",
+      "stack": "golden"
+    }
+  ]
+}

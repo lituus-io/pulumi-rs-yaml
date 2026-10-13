@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "gcp-resource-options",
+  "stack": "golden",
+  "nodes": [
+    {
+      "id": "stackoutput::org/gcp-resource-options/golden::bucketName",
+      "kind": "output",
+      "logical_name": "bucketName",
+      "name": "bucketName",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-resource-options",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/gcp-resource-options/golden::bucketUrl",
+      "kind": "output",
+      "logical_name": "bucketUrl",
+      "name": "bucketUrl",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-resource-options",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-resource-options::gcp:storage/bucket:Bucket::optionsBucket",
+      "kind": "resource",
+      "logical_name": "optionsBucket",
+      "name": "optionsBucket",
+      "type_token": "gcp:storage/bucket:Bucket",
+      "package": "gcp",
+      "source_file": "Pulumi.yaml",
+      "literal_properties": {
+        "forceDestroy": "true",
+        "labels.env": "test",
+        "location": "US",
+        "name": "resource-options-test-bucket",
+        "uniformBucketLevelAccess": "true"
+      },
+      "organization": "org",
+      "project": "gcp-resource-options",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::gcp-resource-options::pulumi:pulumi:Stack::gcp-resource-options-golden",
+      "kind": "stack",
+      "logical_name": "stack",
+      "name": "gcp-resource-options-golden",
+      "type_token": "pulumi:pulumi:Stack",
+      "package": "pulumi",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "gcp-resource-options",
+      "stack": "golden"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "stackoutput::org/gcp-resource-options/golden::bucketName",
+      "target_id": "urn:pulumi:golden::gcp-resource-options::gcp:storage/bucket:Bucket::optionsBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "bucketName"
+      ],
+      "organization": "org",
+      "project": "gcp-resource-options",
+      "stack": "golden"
+    },
+    {
+      "source_id": "stackoutput::org/gcp-resource-options/golden::bucketUrl",
+      "target_id": "urn:pulumi:golden::gcp-resource-options::gcp:storage/bucket:Bucket::optionsBucket",
+      "relationship": "exports",
+      "property_paths": [
+        "bucketUrl"
+      ],
+      "organization": "org",
+      "project": "gcp-resource-options",
+      "stack": "golden"
+    },
+    {
+      "source_id": "urn:pulumi:golden::gcp-resource-options::pulumi:pulumi:Stack::gcp-resource-options-golden",
+      "target_id": "urn:pulumi:golden::gcp-resource-options::gcp:storage/bucket:Bucket::optionsBucket",
+      "relationship": "contains",
+      "property_paths": [],
+      "organization": "org",
+      "project": "gcp-resource-options",
+      "stack": "golden"
+    }
+  ]
+}

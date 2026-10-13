@@ -3,6 +3,338 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.37
+
+### Column lineage through scripts
+
+A view's columns were traced to their sources; a routine's were not. A
+procedure that rebuilds a mart with `CREATE OR REPLACE TABLE ... AS SELECT`,
+or appends to it with `INSERT ... SELECT`, said which tables it read and
+wrote and nothing about which column came from where. `--script-column-lineage`
+(Python: `script_column_lineage=True`) adds `column_derives_from` edges for
+those statements in routine bodies, jobs, scheduled queries and SQL jobs,
+`via` the script, with column nodes at both ends.
+
+The parser's column analysis takes a query and nothing else, so the worker
+regenerates the statement's query as SQL and analyses it exactly as it
+analyses a view; only the answer crosses back. What is recorded is only what
+the SQL says:
+
+- `CREATE TABLE ... AS SELECT` and `CREATE VIEW`: the projections are the new
+  object's columns, by name.
+- `INSERT INTO t (a, b) SELECT ...`: projections map onto the listed columns
+  by position, and only when the counts agree -- an unnamed projection is
+  dropped by the analysis, and a count that no longer agrees is the signal.
+
+Everything whose target columns the SQL does not state is left out rather
+than guessed: an `INSERT` with no column list, whose order is the table's
+schema; a `*` projection; a CTE the parser keeps outside the query, which the
+regenerated text would lack; a statement writing more than one table.
+
+Off by default, and the default output is byte-identical to 0.5.36. It is not
+free: regenerating and re-analysing every query-backed statement takes the
+fifty-statement routine bench from 1.5 ms to 6.7 ms, which is why it is a
+flag.
+
+### Tests
+
+Five unit tests: CTAS columns by name, an INSERT column list by position,
+CREATE VIEW in a script, five statements that must answer nothing rather
+than a guess, and no columns computed unless asked for. Two lineage tests:
+a routine's CTAS and INSERT traced column to column `via` the routine, and the
+flag off giving output identical to before. One CLI test, two Python tests.
+`fuzz_sql_lineage` runs the column path in its statement-layer pass. One
+bench, `sql_lineage_routine_50_statements_columns`.
+
+## 0.5.36
+
+### Where a stack's state lives, and where every resource is
+
+The graph said which stack a node belongs to and never where that stack is.
+Given the backend -- `--backend-url`, else `PULUMI_BACKEND_URL`, else
+`backend.url` in `Pulumi.yaml`; from Python, `backend_url=`, else
+`backend.url` -- the export now says:
+
+- `stack_uri` on the stack node and the graph:
+  `https://app.pulumi.com/{org}/{project}/{stack}` for Pulumi Cloud,
+  `{backend}/.pulumi/stacks/{project}/{stack}.json` for a `gs://`, `s3://`,
+  `azblob://` or `file://` backend.
+- `referenced_stack_uri` on every StackReference whose name is a literal. A
+  StackReference resolves on the backend of the stack that declares it, so
+  the referenced stack's location follows from the same URL -- the one piece
+  of cross-stack information a static export can state as fact rather than
+  infer.
+- `resource_uri` on every resource-like node: the stack's URI with the URN,
+  percent-encoded, as the fragment. It is a LOCATOR, not a console deep link
+  -- Pulumi documents no URL for a single resource, and this does not invent
+  one.
+
+A backend the crate does not recognise -- a self-hosted Pulumi Cloud, an
+unknown scheme -- adds nothing, and neither does no backend: the output is
+byte-identical to 0.5.35. A Pulumi Cloud URI is omitted when the organization
+is not known, because it would name the wrong one. The self-managed path is
+the project-scoped layout of backends created by 3.61 or later; a backend on
+the older global layout needs `pulumi state upgrade` to match it.
+
+A backend URL is caller input that ends up in a shared store, so it is held
+to what a location is. A query or fragment on a self-managed URL is dropped --
+`?profile=`, `?region=` and their kind are settings, and some are secrets. A
+URL carrying userinfo, whitespace or a control character is refused. Every
+author-chosen name -- organization, project, stack, URN, a StackReference's --
+is percent-encoded, so none can add a segment, a query or a fragment, and a
+name that is exactly `.` or `..` has its dots escaped so it cannot become a
+dot-segment a resolver would collapse. Formatting writes straight into the
+output through `fmt::Write`; with no backend nothing is formatted at all.
+
+The fuzzer found the first version's flaw within a minute: the percent
+encoder escaped a multi-byte character byte by byte and sliced the name
+between those bytes -- an empty slice, but one starting inside the character,
+which Rust refuses. Any resource named in Polish or Japanese, or with an em
+dash, aborted an export that had a backend. The encoder now slices only runs
+of plain ASCII, the crash input is a corpus seed, and the case is a security
+test.
+
+### Tests
+
+Seven unit tests on the module: every backend form and what it yields, the
+organization rule, encoding of segments and URNs, multi-byte names, dot
+segments, precedence, and reading `backend.url` from a project file. Four
+graph tests: no backend adds no field, a self-managed backend locating the
+stack, both references and a resource, Pulumi Cloud with and without an
+organization, and a dynamic StackReference name. Five security tests
+(169 -> 174): query credentials never exported, userinfo and control
+characters refused, a hostile name unable to change a URI's shape, a hostile
+StackReference name kept inside its segments, and a multi-byte resource name
+not aborting the export. `fuzz_resource_graph` exports every input with two
+backends and holds every URI under its backend, free of whitespace, control
+characters, queries and dot-segments; no new target (22). One CLI test for the
+flag over the project file, three Python tests for the keyword, the project
+fallback and `""`. One bench, `export_resource_graph_200_nodes_backend_url`:
+5% over the export without a backend.
+
+## 0.5.35
+
+### Every SQL statement, with what it reads and what it writes
+
+The lineage graph said which tables a view or a routine depends on, and never
+showed the SQL that made it so. `--sql-statements` (Python:
+`include_statements=True`) adds the statement layer: every statement a program
+carries, its exact text, what it does, where it is written, and edges from it
+to everything it reads and everything it writes.
+
+A statement is keyed by what it says -- `sql:` and the SHA-256 of its exact
+text, from the crate's own implementation -- so the same `MERGE` written in
+three routines is one row with three occurrences. An occurrence records the
+carrier (a view's table, a routine, a job, a dbt model), the statement's index
+and byte range inside the carrier's SQL, its role and provenance, the
+`fn::readFile` path it came from, and the declaring resource's URN. Edges:
+`has_statement` from the carrier, `reads` to each upstream table or location,
+`writes` to each table it creates or changes -- a view's query writes the view
+-- and `calls` to each routine. The URIs of `EXPORT DATA` and `LOAD DATA`
+become `external_location` nodes.
+
+The text is borrowed, not copied. A statement is a slice of its carrier, and
+the carrier is a slice of the parsed template whenever the SQL was written
+inline, which is why the splitter now hands out byte ranges. SQL read from a
+file comes from `SqlSourceStore`: every file the program names with
+`fn::readFile` is read once, before the export, under the same containment the
+exporter applies, and the graph borrows from it for as long as it lives. A file
+named by two spellings of one path is read once. Text that had to be built --
+a literal-only interpolation, a dbt model after substitution -- is owned, and
+`text_origin` says so. The store is an optimisation and never a second source
+of truth: a file it does not hold is read the way it always was, with the same
+warnings, and the export with and without it is byte-identical.
+
+Off by default. Statement text can carry what an author never meant to
+publish, and with the layer off nothing is hashed, no row is built, and the
+output is byte-identical to 0.5.34 -- every acceptance golden is unchanged.
+Measured on a program of twenty views and a fifty-statement routine, the layer
+costs 4% of the export.
+
+### What a statement changes is a write
+
+The script path classified statements by a match whose catch-all counted
+every table a statement named as a read. `DROP TABLE x` was reported as
+reading `x`; so were `TRUNCATE`, `ALTER` and the target of a Hive `LOAD DATA`.
+Each statement now has a kind -- `select`, `insert`, `update`, `delete`,
+`merge`, `create_table`, `create_table_as_select`, `create_view`,
+`create_materialized_view`, `create_function`, `create_procedure`, `drop`,
+`truncate`, `alter`, `export_data`, `load_data`, `call`, `scripting`, `other`
+-- and the objects of `DROP`, `TRUNCATE` and `ALTER` are writes.
+
+Two shapes the parser does not take are read from their text, each pinned by
+a test. BigQuery's `LOAD DATA ... FROM FILES` does not parse in 0.13.1; its
+target is a heuristic write, where the fallback scan would have reported it as
+a read. BigQuery's `CALL` arrives as an opaque command, so its detection stays
+textual. The `uri` of an `EXPORT DATA` and the `uris` of a `LOAD DATA` are read
+from the options text by a scanner that steps over quotes and comments.
+
+### An unquoted qualified table name lost its qualifiers
+
+`polyglot_sql::get_table_names` answers a table's BARE name for an unquoted
+qualified reference: `other.raw.events` comes back as `events`, while the
+backticked form keeps everything. Every unquoted read in a routine, a job or a
+scheduled query was therefore resolved against the default project and
+dataset -- lineage pointing at a table that does not exist, or at a different
+one that does, with nothing to say so. Views were never affected: they go
+through `analyze_query`, which keeps the qualifiers. The bare names are still
+what decides which tables count -- they already leave out CTE names -- and each
+is expanded to every qualified spelling of it the statement contains.
+
+### Scheduled queries run in their own project
+
+A `DataTransferConfig`'s destination, and every unqualified table its query
+named, was resolved against the stack's default project and never against the
+config's own `project`. And the destination's `derives_from` edges were
+hard-coded `parsed`, so a read the heuristic scanner found in SQL the parser
+could not read reappeared on the destination claiming it had been parsed. Both
+are fixed; a destination's edges carry the strength of the read they repeat.
+
+### The graph exports release the GIL
+
+`export_dependency_graph` and `export_sql_lineage` held the GIL through the
+whole of the work -- discovering, reading and rendering the project, the
+export, the serialization. The context dictionary is read under it now and
+everything after runs released, the same split the render and checkpoint
+paths have had since 0.5.29. Dict keys come out sorted, as they always have.
+
+The test that was meant to prove the render path released the GIL could not
+fail: the thread it watched also advances in the Python code on either side of
+the call. Both tests now compare the thread's progress during the call with its
+progress during an equal sleep. Measured, a GIL-holding call advances it about
+8% of that baseline and a releasing one about 63%; the bound is 30%. The graph
+test was checked against a build with the GIL held, and fails there.
+
+### Compressed NDJSON
+
+`--compress gzip` (with `--format ndjson`) writes every table as
+`*.ndjson.gz`, streamed through a gzip encoder -- the compression `bq load`
+reads natively, and the right one for a statement table that carries every
+query a program holds. The encoder is `flate2` on its pure-Rust backend
+(`miniz_oxide`), behind a `gzip` feature that is on by default; a build
+without it refuses the flag rather than writing uncompressed files under a
+compressed name. Every write, the final flush and the gzip trailer are
+checked, so a failure is an error and never a truncated table. The bytes a
+gzip table decompresses to are exactly the plain table's.
+
+### Tests
+
+Eleven new unit tests on the classifier, the option scanner, the `LOAD DATA`
+target reader, qualified names, CTEs, `EXPORT DATA` and `CALL`. Eighteen new
+lineage integration tests (11 -> 29): DROP, TRUNCATE and ALTER as writes; the
+heuristic `LOAD DATA` write; CTAS, MERGE and CALL in routines; a job's
+destination; a scheduled query's project and the strength of its destination
+edges; a `gcpx:scheduler:SqlJob` script; the unquoted qualified read; and the
+statement layer -- absent by default, a view as one statement, a script's
+offsets, kinds and edges, two occurrences of one text, interpolated text owned,
+an external location, file text borrowed from the store by pointer, and the
+store changing nothing but where the text lives. Six new security tests
+(163 -> 169): the store refuses a traversal, an absolute path, a symlink out of
+the tree, a file over the cap without reading it, and a non-UTF-8 file; and
+statement text never appears in the default output. `fuzz_sql_lineage` runs the
+statement layer and holds every id to the hash of its text and every statement
+edge to a statement that exists; `fuzz_sql_statements` drives the classifier;
+no new target (22). Four CLI tests -- the statement files, the flag's
+dependency on `--lineage`, `--compress` only with NDJSON, and gzip tables
+decompressing to the plain bytes -- and four Python tests. Three benches:
+`sql_lineage_70_statements_layer_off`, `..._layer_on` and
+`split_statement_spans_1mib`.
+
+## 0.5.34
+
+### A statement split that sliced author text inside a character
+
+Routine bodies, job queries and scheduled queries are split into statements
+before anything parses them, and the splitter sliced the author's text at byte
+offsets it had not proven were character boundaries. Three ways in, all
+reachable from a `definitionBody`, and under `panic = "abort"` each one took the
+host down:
+
+- `strip_begin_end` lowercased the body and then sliced the ORIGINAL with an
+  offset found in the lowercased copy. Lowercasing changes byte lengths -- `İ`
+  is two bytes and lowercases to three, the Kelvin sign is three and lowercases
+  to one -- so `BEGIN İ END` sliced past the end of the string.
+- The same function sliced `trimmed[..5]` before knowing byte 5 was a
+  boundary, so a body as plain as `ąąą` was enough.
+- CALL detection, on the parser worker, sliced `trimmed[..4]` the same way. A
+  panic there killed the worker, and a dead worker was indistinguishable from a
+  parse error: the whole script fell back to the heuristic scan and every write
+  it made was silently lost.
+
+The fuzzer never reached any of them. `fuzz_sql_lineage` wraps its input as a
+VIEW query, and a view is analysed as one statement -- it never meets the
+splitter. The target now also wraps its input as a routine body.
+
+The splitter scans bytes for ASCII delimiters now, and an ASCII byte never
+occurs inside a multi-byte sequence, so every position it stops at is a
+boundary by construction. It also returns its statements as byte ranges into
+the carrier (`split_statement_spans`) rather than as new strings -- the ground
+the statement-level lineage of the next release is built on. On ASCII input it
+agrees exactly with the splitter it replaces, which is kept as a test oracle.
+
+### Faster without moving a byte
+
+Every acceptance stack is now exported by a golden test -- infrastructure
+graph, lineage graph, the CLI's combined document and the diagnostics -- and
+compared with a stored copy byte for byte. Everything below was held to it.
+
+- `literal_resolve` borrowed nothing: the parser stores every literal as an
+  owned `Cow`, and `s.clone()` copied the whole string -- a view's SQL, a
+  schema -- per resolution and again per memo hit. It is a borrow now.
+- `MergedTemplate::as_template_decl` deep-cloned every expression tree in the
+  program, and every caller dropped the original. `into_parts` moves it.
+  `merge_templates` moves additional files' items instead of cloning them.
+- Every Jinja-rendered file was deserialized twice, once by the validator and
+  once by the parser. The validator now hands its document on.
+- The CLI and both Python exporters parsed the whole program just to read its
+  `name`, then read `Pulumi.yaml` a second time for the provider-templated
+  packages. `project_prepass` does both from one read, with a name reader that
+  never builds the template.
+- Graph edges were keyed by two cloned URN strings per insert. They are keyed
+  by interned ids, the topological walk runs on indices rather than hashed
+  names, evaluation dispatches through one name map and one rayon pool instead
+  of scanning the template per node and building a pool per level, and
+  default providers are found once rather than rescanned per resource.
+- NDJSON rows stream through a buffered writer; `graph` and `exec` no longer
+  start a tokio runtime they never use.
+
+Measured against 0.5.33 on one machine in one session: topological sort of a
+100-node chain -31%, merging ten files -23%, evaluating 200 resources -23%,
+literal resolution across 200 invokes -20%, Jinja render -15%, the graph export
+of 200 resources -10%. Nothing is slower than the benchmark gate allows.
+
+One fix fell out of the reading. An undefined reference's "did you mean"
+suggestion was the closest known name by edit distance, with ties left in
+`HashMap` order -- which is randomised per process, so the same typo could be
+told to mean a different name on each run. Ties now go to the name that sorts
+first.
+
+### The fuzz workspace's lockfile had not moved
+
+The fuzz crate is its own workspace, and its lockfile still resolved
+`polyglot-sql` to 0.6.2 -- the version that does not terminate on a
+ten-character query, which 0.5.33 moved off. Both lockfiles resolve 0.13.1 now.
+
+### Tests
+
+A Jinja changelog regression matrix: forty-seven Rust tests, one module per
+release from 0.4.0 to 0.5.33, each driving `multi_file::load_project` with a
+Jinja context -- the loader path the optimisations above move -- and eighteen
+Python tests driving the same fixes through `export_dependency_graph`. Every
+matrix test was checked to fail with its fix reverted; reverting the escaped
+dollar guard to the one 0.5.30 shipped fails the two tests written for it.
+
+Goldens for all thirty-two acceptance stacks, re-blessed only with
+`PULUMI_RS_YAML_BLESS=1`. Six unit tests on the splitter (the oracle agreement,
+`İ`, the Kelvin sign, a multi-byte fifth byte, CALL on the worker) and four
+security tests through the full export (159 -> 163), each failing against the
+splitter that shipped. A new fuzz target, `fuzz_sql_statements` (21 -> 22),
+holds every range in bounds, on boundaries, trimmed, ordered and agreeing with
+`split_statements`. One unit test each for borrowed literals, the name reader
+against the full parser, and a deterministic suggestion; one for streamed
+NDJSON being byte-identical. Three new benches: `export_resource_graph_200_nodes`,
+`eval_200_resource_wide_level` and `sql_lineage_routine_50_statements`.
+
 ## 0.5.33
 
 ### A derived string the engine can resolve before the deploy
