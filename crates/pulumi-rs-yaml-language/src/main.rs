@@ -16,8 +16,13 @@ use tonic::transport::Server;
 
 use server::YamlLanguageHost;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// Dispatches the synchronous subcommands before any runtime exists.
+///
+/// `exec` and `graph` never touch tokio, but under `#[tokio::main]` every
+/// invocation of either built the multi-threaded runtime -- a worker thread
+/// per core -- first, and tore it down after. Only the language host server
+/// needs one, so only it builds one.
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
 
     // Check for exec subcommand: pulumi-language-yaml exec -- <command> [args...]
@@ -40,6 +45,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(graph_cmd::run_graph(&args[2..]));
     }
 
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(serve(args))
+}
+
+/// The language host: the gRPC server the Pulumi engine talks to.
+async fn serve(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
     // Parse arguments: the last non-flag argument is the engine address
     let mut engine_address = String::new();
     let mut i = 1;

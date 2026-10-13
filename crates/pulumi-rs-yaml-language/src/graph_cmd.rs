@@ -140,30 +140,21 @@ pub fn run_graph(args: &[String]) -> i32 {
 
     // Project name pre-pass for the Jinja context (strip {% %} so the
     // main file parses as YAML even when it carries block syntax).
-    let project_name = match multi_file::discover_project_files(&parsed.dir) {
-        Ok(files) => match std::fs::read_to_string(&files.main_file) {
-            Ok(raw) => {
-                let stripped = pulumi_rs_yaml_core::jinja::strip_jinja_blocks(&raw);
-                let (tmpl, _) = pulumi_rs_yaml_core::ast::parse::parse_template(&stripped, None);
-                tmpl.name
-                    .map(|n| n.to_string())
-                    .unwrap_or_else(|| "unknown".to_string())
-            }
-            Err(e) => {
-                eprintln!("error: failed to read project file: {}", e);
-                return 1;
-            }
-        },
-        Err(e) => {
+    let prepass = match multi_file::project_prepass(&parsed.dir) {
+        Ok(p) => p,
+        Err(multi_file::PrepassError::Discover(e)) => {
             eprintln!("error: {}", e);
             return 1;
         }
+        Err(multi_file::PrepassError::ReadMain(e)) => {
+            eprintln!("error: failed to read project file: {}", e);
+            return 1;
+        }
     };
+    let project_name = prepass.name;
 
     let dir_str = parsed.dir.to_string_lossy().into_owned();
-    let scoped = pulumi_rs_yaml_core::provider_scope::effective_packages(
-        &std::fs::read_to_string(parsed.dir.join("Pulumi.yaml")).unwrap_or_default(),
-    );
+    let scoped = prepass.provider_templated_packages;
     let scoped: Vec<&str> = scoped.iter().map(String::as_str).collect();
     let config: HashMap<String, String> = HashMap::new();
     let extra: HashMap<String, String> = HashMap::new();
@@ -190,12 +181,12 @@ pub fn run_graph(args: &[String]) -> i32 {
     }
 
     let effective_project = merged.name().unwrap_or("unknown").to_string();
-    let template = merged.as_template_decl();
+    let (template, source_map) = merged.into_parts();
     let opts = GraphExportOptions {
         organization: &parsed.organization,
         project: &effective_project,
         stack: &parsed.stack,
-        source_map: Some(merged.source_map()),
+        source_map: Some(&source_map),
         schema_store: None,
     };
     let (graph, diags) = export_resource_graph(&template, &opts);
@@ -219,7 +210,7 @@ pub fn run_graph(args: &[String]) -> i32 {
             stack: &parsed.stack,
             project_dir: Some(&parsed.dir),
             default_bq_project: parsed.default_bq_project.as_deref(),
-            source_map: Some(merged.source_map()),
+            source_map: Some(&source_map),
             extra_sql_sources: &[],
         };
         let (lineage, lineage_diags) = export_sql_lineage(&template, &graph, &lineage_opts);
@@ -298,27 +289,8 @@ fn write_lineage_ndjson(
     out_dir: &std::path::Path,
     lineage: &pulumi_rs_yaml_core::sql_lineage::SqlLineageGraph<'_>,
 ) -> Result<(), String> {
-    let write_rows = |name: &str, rows: Vec<String>| -> Result<(), String> {
-        let path = out_dir.join(name);
-        let mut file = std::fs::File::create(&path)
-            .map_err(|e| format!("cannot create {}: {}", path.display(), e))?;
-        for row in rows {
-            writeln!(file, "{}", row).map_err(|e| format!("write {}: {}", path.display(), e))?;
-        }
-        Ok(())
-    };
-    let nodes: Vec<String> = lineage
-        .nodes
-        .iter()
-        .map(|n| serde_json::to_string(n).map_err(|e| format!("serialize lineage node: {}", e)))
-        .collect::<Result<_, _>>()?;
-    let edges: Vec<String> = lineage
-        .edges
-        .iter()
-        .map(|e| serde_json::to_string(e).map_err(|err| format!("serialize lineage edge: {}", err)))
-        .collect::<Result<_, _>>()?;
-    write_rows("lineage_nodes.ndjson", nodes)?;
-    write_rows("lineage_edges.ndjson", edges)?;
+    write_ndjson_rows(&out_dir.join("lineage_nodes.ndjson"), &lineage.nodes)?;
+    write_ndjson_rows(&out_dir.join("lineage_edges.ndjson"), &lineage.edges)?;
     Ok(())
 }
 
@@ -326,28 +298,34 @@ fn write_ndjson(
     out_dir: &std::path::Path,
     graph: &pulumi_rs_yaml_core::resource_graph::ResourceGraph<'_>,
 ) -> Result<(), String> {
-    let write_rows = |name: &str, rows: Vec<String>| -> Result<(), String> {
-        let path = out_dir.join(name);
-        let mut file = std::fs::File::create(&path)
-            .map_err(|e| format!("cannot create {}: {}", path.display(), e))?;
-        for row in rows {
-            writeln!(file, "{}", row).map_err(|e| format!("write {}: {}", path.display(), e))?;
-        }
-        Ok(())
-    };
+    write_ndjson_rows(&out_dir.join("nodes.ndjson"), &graph.nodes)?;
+    write_ndjson_rows(&out_dir.join("edges.ndjson"), &graph.edges)?;
+    Ok(())
+}
 
-    let nodes: Vec<String> = graph
-        .nodes
-        .iter()
-        .map(|n| serde_json::to_string(n).map_err(|e| format!("serialize node: {}", e)))
-        .collect::<Result<_, _>>()?;
-    let edges: Vec<String> = graph
-        .edges
-        .iter()
-        .map(|e| serde_json::to_string(e).map_err(|err| format!("serialize edge: {}", err)))
-        .collect::<Result<_, _>>()?;
-    write_rows("nodes.ndjson", nodes)?;
-    write_rows("edges.ndjson", edges)?;
+/// Streams one JSON row per line into `path`.
+///
+/// Rows used to be serialized into a `Vec<String>` -- the whole table held in
+/// memory twice over -- and then written to an unbuffered `File`, two write
+/// calls per row. Serializing straight into a buffered writer produces the
+/// same bytes (`to_string` is `to_writer` into a `Vec`) with one allocation
+/// for the buffer. The flush is explicit: `BufWriter`'s drop would swallow a
+/// failed final write, and a truncated table must be an error.
+fn write_ndjson_rows<T: serde::Serialize>(
+    path: &std::path::Path,
+    rows: &[T],
+) -> Result<(), String> {
+    let file = std::fs::File::create(path)
+        .map_err(|e| format!("cannot create {}: {}", path.display(), e))?;
+    let mut w = std::io::BufWriter::new(file);
+    for row in rows {
+        serde_json::to_writer(&mut w, row)
+            .map_err(|e| format!("serialize row for {}: {}", path.display(), e))?;
+        w.write_all(b"\n")
+            .map_err(|e| format!("write {}: {}", path.display(), e))?;
+    }
+    w.into_inner()
+        .map_err(|e| format!("write {}: {}", path.display(), e.error()))?;
     Ok(())
 }
 
@@ -500,6 +478,50 @@ mod tests {
         assert!(lineage_nodes.contains("bq://data-proj/marts/v1"));
         let lineage_edges = fs::read_to_string(out.join("lineage_edges.ndjson")).unwrap();
         assert!(lineage_edges.contains("derives_from"));
+    }
+
+    /// The streaming writer must produce exactly what the buffered one did:
+    /// each row as `serde_json::to_string`, then one newline.
+    #[test]
+    fn streamed_rows_are_byte_identical_to_per_row_serialization() {
+        let (template, diags) = pulumi_rs_yaml_core::ast::parse::parse_template(
+            "name: proj\nruntime: yaml\nresources:\n  a:\n    type: t:m:A\n    properties:\n      x: \"q\\\"uote\\u00e9\"\n  b:\n    type: t:m:B\n    properties:\n      y: ${a.id}\noutputs:\n  o: ${b.id}\n",
+            None,
+        );
+        assert!(!diags.has_errors(), "{diags}");
+        let opts = GraphExportOptions {
+            organization: "org",
+            project: "proj",
+            stack: "dev",
+            source_map: None,
+            schema_store: None,
+        };
+        let (graph, _) = export_resource_graph(&template, &opts);
+        let dir = tempfile::tempdir().unwrap();
+        write_ndjson(dir.path(), &graph).unwrap();
+        let expected = |rows: Vec<String>| rows.into_iter().map(|r| r + "\n").collect::<String>();
+        let nodes = expected(
+            graph
+                .nodes
+                .iter()
+                .map(|n| serde_json::to_string(n).unwrap())
+                .collect(),
+        );
+        let edges = expected(
+            graph
+                .edges
+                .iter()
+                .map(|e| serde_json::to_string(e).unwrap())
+                .collect(),
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join("nodes.ndjson")).unwrap(),
+            nodes
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join("edges.ndjson")).unwrap(),
+            edges
+        );
     }
 
     #[test]

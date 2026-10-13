@@ -165,6 +165,15 @@ fn topological_sort_inner<'a>(
         deps.insert(entry.key.as_ref(), node_deps);
     }
 
+    // Resources marked `defaultProvider`, found once rather than rescanned for
+    // every resource (an O(R^2) walk on a wide program).
+    let default_providers: Vec<&str> = template
+        .resources
+        .iter()
+        .filter(|e| e.resource.default_provider == Some(true))
+        .map(|e| e.logical_name.as_ref())
+        .collect();
+
     // Resources depend on whatever their properties, options, etc. reference
     for entry in &template.resources {
         let mut node_deps = HashSet::new();
@@ -173,11 +182,9 @@ fn topological_sort_inner<'a>(
         // Default provider dependencies: resources without an explicit provider
         // depend on any resource marked as defaultProvider
         if entry.resource.options.provider.is_none() {
-            for other_entry in &template.resources {
-                if other_entry.resource.default_provider == Some(true)
-                    && other_entry.logical_name != entry.logical_name
-                {
-                    node_deps.insert(other_entry.logical_name.as_ref());
+            for &provider in &default_providers {
+                if provider != entry.logical_name.as_ref() {
+                    node_deps.insert(provider);
                 }
             }
         }
@@ -188,30 +195,45 @@ fn topological_sort_inner<'a>(
     // "pulumi" node has no dependencies — always present
     deps.entry("pulumi").or_default();
 
-    // Topological sort using DFS with cycle detection and path reconstruction
-    let mut visited: HashSet<&str> = HashSet::with_capacity(names.len());
-    let mut order: Vec<String> = Vec::new();
-    let mut path: Vec<&str> = Vec::new();
-    let mut path_set: HashSet<&str> = HashSet::new();
-
-    // Sort in a deterministic order
+    // Topological sort using DFS with cycle detection and path reconstruction.
+    //
+    // The walk runs on indices into the name-sorted node list. It used to keep
+    // `&str` sets -- every visit and every path check hashed a name -- and to
+    // collect and string-sort each node's dependencies at every visit. Because
+    // the list is sorted by name, sorting a node's dependency INDICES is the
+    // same order as sorting their names, so the traversal, the cycle each
+    // error reports, and the order produced are exactly what they were.
     let mut all_nodes: Vec<&str> = deps.keys().copied().collect();
     all_nodes.sort();
+    let index: HashMap<&str, usize> = all_nodes.iter().enumerate().map(|(i, &n)| (n, i)).collect();
+    let adjacency: Vec<Vec<usize>> = all_nodes
+        .iter()
+        .map(|n| {
+            let mut out: Vec<usize> = deps
+                .get(n)
+                .map(|d| d.iter().filter_map(|dep| index.get(dep).copied()).collect())
+                .unwrap_or_default();
+            out.sort_unstable();
+            out
+        })
+        .collect();
 
-    for node in &all_nodes {
-        if !visited.contains(node) {
-            dfs_with_path(
-                node,
-                &deps,
-                &mut visited,
-                &mut path,
-                &mut path_set,
-                &mut order,
-                source_map,
-                &mut diags,
-            );
+    let mut walk = Dfs {
+        names: &all_nodes,
+        adjacency: &adjacency,
+        visited: vec![false; all_nodes.len()],
+        on_path: vec![false; all_nodes.len()],
+        path: Vec::new(),
+        order: Vec::with_capacity(all_nodes.len()),
+        source_map,
+        diags: &mut diags,
+    };
+    for node in 0..all_nodes.len() {
+        if !walk.visited[node] {
+            walk.visit(node);
         }
     }
+    let order = walk.order;
 
     (order, deps, diags)
 }
@@ -316,8 +338,6 @@ fn validate_references(
     source_map: Option<&HashMap<String, String>>,
     diags: &mut Diagnostics,
 ) {
-    let known_names: Vec<String> = names.keys().map(|k| k.to_string()).collect();
-
     // Check variables
     for entry in &template.variables {
         let mut refs = HashSet::new();
@@ -328,7 +348,6 @@ fn validate_references(
                 entry.key.as_ref(),
                 "variable",
                 names,
-                &known_names,
                 source_map,
                 diags,
             );
@@ -345,7 +364,6 @@ fn validate_references(
                 entry.logical_name.as_ref(),
                 "resource",
                 names,
-                &known_names,
                 source_map,
                 diags,
             );
@@ -362,7 +380,6 @@ fn validate_references(
                 output.key.as_ref(),
                 "output",
                 names,
-                &known_names,
                 source_map,
                 diags,
             );
@@ -376,7 +393,6 @@ fn check_ref(
     node_name: &str,
     node_kind: &str,
     names: &HashMap<&str, &str>,
-    known_names: &[String],
     source_map: Option<&HashMap<String, String>>,
     diags: &mut Diagnostics,
 ) {
@@ -384,11 +400,18 @@ fn check_ref(
         return;
     }
 
-    // Build error message with suggestion
-    let sorted = diag::sort_by_edit_distance(known_names, ref_name);
-    let suggestion = if let Some(best) = sorted.first() {
+    // The closest known name, ties broken by the name itself. Every name used
+    // to be copied into a list on every validation -- error or not -- and
+    // sorted by distance alone, so equally close names came out in `HashMap`
+    // order, which is randomised per process: the same typo could be told to
+    // mean a different name on each run.
+    let best = names
+        .keys()
+        .map(|&name| (diag::edit_distance(name, ref_name), name))
+        .min();
+    let suggestion = if let Some((_, best)) = best {
         let source_info = source_map
-            .and_then(|m| m.get(best.as_str()))
+            .and_then(|m| m.get(best))
             .map(|f| format!(" (defined in {})", f))
             .unwrap_or_default();
         format!("; did you mean '{}'?{}", best, source_info)
@@ -411,68 +434,60 @@ fn check_ref(
     );
 }
 
-#[allow(clippy::too_many_arguments)]
-fn dfs_with_path<'a>(
-    node: &'a str,
-    deps: &HashMap<&'a str, HashSet<&'a str>>,
-    visited: &mut HashSet<&'a str>,
-    path: &mut Vec<&'a str>,
-    path_set: &mut HashSet<&'a str>,
-    order: &mut Vec<String>,
-    source_map: Option<&HashMap<String, String>>,
-    diags: &mut Diagnostics,
-) {
-    if visited.contains(node) {
-        return;
-    }
-    if path_set.contains(node) {
-        // Found a cycle — reconstruct the cycle path
-        let cycle_start = path.iter().position(|&n| n == node).unwrap_or(0);
-        let cycle_nodes = &path[cycle_start..];
+/// Depth-first topological walk over node indices.
+struct Dfs<'a, 'd> {
+    /// Node names, sorted; an index is a position here.
+    names: &'d [&'a str],
+    /// Each node's dependencies, as sorted indices.
+    adjacency: &'d [Vec<usize>],
+    visited: Vec<bool>,
+    on_path: Vec<bool>,
+    path: Vec<usize>,
+    order: Vec<String>,
+    source_map: Option<&'d HashMap<String, String>>,
+    diags: &'d mut Diagnostics,
+}
 
-        let cycle_str = if let Some(sm) = source_map {
-            let parts: Vec<String> = cycle_nodes
-                .iter()
-                .map(|&n| {
-                    if let Some(file) = sm.get(n) {
-                        format!("{} ({})", n, file)
-                    } else {
-                        n.to_string()
-                    }
-                })
-                .collect();
-            let last = if let Some(file) = sm.get(node) {
-                format!("{} ({})", node, file)
-            } else {
-                node.to_string()
-            };
-            format!("{} -> {}", parts.join(" -> "), last)
-        } else {
-            let parts: Vec<&str> = cycle_nodes.to_vec();
-            format!("{} -> {}", parts.join(" -> "), node)
-        };
-
-        diags.error(None, format!("circular dependency: {}", cycle_str), "");
-        return;
-    }
-
-    path.push(node);
-    path_set.insert(node);
-
-    if let Some(node_deps) = deps.get(node) {
-        let mut sorted_deps: Vec<&str> = node_deps.iter().copied().collect();
-        sorted_deps.sort();
-        for dep in sorted_deps {
-            if deps.contains_key(dep) {
-                dfs_with_path(dep, deps, visited, path, path_set, order, source_map, diags);
-            }
+impl Dfs<'_, '_> {
+    fn visit(&mut self, node: usize) {
+        if self.visited[node] {
+            return;
         }
+        if self.on_path[node] {
+            self.report_cycle(node);
+            return;
+        }
+
+        self.path.push(node);
+        self.on_path[node] = true;
+
+        let adjacency = self.adjacency;
+        for &dep in &adjacency[node] {
+            self.visit(dep);
+        }
+
+        self.path.pop();
+        self.on_path[node] = false;
+        self.visited[node] = true;
+        self.order.push(self.names[node].to_string());
     }
 
-    path.pop();
-    path_set.remove(node);
-    visited.insert(node);
-    order.push(node.to_string());
+    /// Reports the cycle that closes at `node`, naming each member's file
+    /// when a source map is known.
+    fn report_cycle(&mut self, node: usize) {
+        let cycle_start = self.path.iter().position(|&n| n == node).unwrap_or(0);
+        let label = |n: usize| -> String {
+            let name = self.names[n];
+            match self.source_map.and_then(|sm| sm.get(name)) {
+                Some(file) => format!("{} ({})", name, file),
+                None => name.to_string(),
+            }
+        };
+        let parts: Vec<String> = self.path[cycle_start..].iter().map(|&n| label(n)).collect();
+        let cycle_str = format!("{} -> {}", parts.join(" -> "), label(node));
+        self.diags
+            .error(None, format!("circular dependency: {}", cycle_str), "");
+    }
 }
 
 /// Collects ALL `${ref}` root names from an expression, without filtering by known names.
@@ -714,6 +729,39 @@ resources:
             "expected suggestion for storageBucket, got: {:?}",
             errors
         );
+    }
+
+    /// Two names equally close to a typo: the suggestion is the
+    /// alphabetically first, on every run. It used to follow `HashMap`
+    /// iteration order, which is randomised per process.
+    #[test]
+    fn an_equally_close_suggestion_is_deterministic() {
+        let source = r#"
+name: test
+runtime: yaml
+resources:
+  bucketB:
+    type: test:Resource
+  bucketA:
+    type: test:Resource
+  user:
+    type: test:Resource
+    properties:
+      dep: ${bucketC.id}
+"#;
+        let (template, _) = parse_template(source, None);
+        for _ in 0..32 {
+            let (_, diags) = topological_sort(&template);
+            let summary = diags
+                .iter()
+                .find(|d| d.is_error())
+                .map(|d| d.summary.clone())
+                .expect("an undefined reference");
+            assert!(
+                summary.contains("did you mean 'bucketA'?"),
+                "expected the alphabetically first of two equal candidates: {summary}"
+            );
+        }
     }
 
     #[test]

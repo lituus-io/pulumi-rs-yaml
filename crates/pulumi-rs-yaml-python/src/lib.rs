@@ -638,23 +638,18 @@ fn create_execution_plan(
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
 
-    // Extract project name from main file (strip {% %} blocks first so it parses as valid YAML).
-    let project_name_owned = {
-        let files = pulumi_rs_yaml_core::multi_file::discover_project_files(path).map_err(|e| {
+    // Project name and provider-templated packages, from one read of the main
+    // file (strip {% %} blocks first so it parses as valid YAML).
+    let prepass = pulumi_rs_yaml_core::multi_file::project_prepass(path).map_err(|e| match e {
+        pulumi_rs_yaml_core::multi_file::PrepassError::Discover(e) => {
             PyValueError::new_err(format!("Failed to discover project files: {}", e))
-        })?;
-        let raw = std::fs::read_to_string(&files.main_file)
-            .map_err(|e| PyValueError::new_err(format!("Failed to read main file: {}", e)))?;
-        let stripped = pulumi_rs_yaml_core::jinja::strip_jinja_blocks(&raw);
-        let (tmpl, _) = pulumi_rs_yaml_core::ast::parse::parse_template(&stripped, None);
-        tmpl.name
-            .map(|n| n.to_string())
-            .unwrap_or_else(|| "unknown".to_string())
-    };
-
-    let scoped = pulumi_rs_yaml_core::provider_scope::effective_packages(
-        &std::fs::read_to_string(path.join("Pulumi.yaml")).unwrap_or_default(),
-    );
+        }
+        pulumi_rs_yaml_core::multi_file::PrepassError::ReadMain(e) => {
+            PyValueError::new_err(format!("Failed to read main file: {}", e))
+        }
+    })?;
+    let project_name_owned = prepass.name;
+    let scoped = prepass.provider_templated_packages;
     let scoped: Vec<&str> = scoped.iter().map(String::as_str).collect();
 
     let jinja_ctx = pulumi_rs_yaml_core::jinja::JinjaContext {
@@ -1126,7 +1121,7 @@ fn export_dependency_graph(
 ) -> PyResult<Py<PyAny>> {
     let (merged, project_name, stack_name, organization_name) =
         load_graph_project(project_dir, stack, organization, jinja_context)?;
-    let template = merged.as_template_decl();
+    let (template, source_map) = merged.into_parts();
 
     let schema_store = if let Some(sd) = schema_dir {
         let schema_path = std::path::Path::new(sd);
@@ -1139,7 +1134,7 @@ fn export_dependency_graph(
         organization: &organization_name,
         project: &project_name,
         stack: &stack_name,
-        source_map: Some(merged.source_map()),
+        source_map: Some(&source_map),
         schema_store: schema_store.as_ref(),
     };
     let (graph, diags) =
@@ -1178,7 +1173,7 @@ fn export_sql_lineage(
 ) -> PyResult<Py<PyAny>> {
     let (merged, project_name, stack_name, organization_name) =
         load_graph_project(project_dir, stack, organization, jinja_context)?;
-    let template = merged.as_template_decl();
+    let (template, source_map) = merged.into_parts();
 
     let schema_store = if let Some(sd) = schema_dir {
         let schema_path = std::path::Path::new(sd);
@@ -1190,7 +1185,7 @@ fn export_sql_lineage(
         organization: &organization_name,
         project: &project_name,
         stack: &stack_name,
-        source_map: Some(merged.source_map()),
+        source_map: Some(&source_map),
         schema_store: schema_store.as_ref(),
     };
     let (infra, infra_diags) =
@@ -1208,7 +1203,7 @@ fn export_sql_lineage(
         stack: &stack_name,
         project_dir: Some(std::path::Path::new(project_dir)),
         default_bq_project,
-        source_map: Some(merged.source_map()),
+        source_map: Some(&source_map),
         extra_sql_sources: &[],
     };
     let (lineage, diags) =
@@ -1305,23 +1300,18 @@ fn load_graph_project(
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
 
-    // Extract project name from the main file (strip {% %} blocks first).
-    let project_name_owned = {
-        let files = pulumi_rs_yaml_core::multi_file::discover_project_files(path).map_err(|e| {
+    // Project name and provider-templated packages, from one read of the main
+    // file (strip {% %} blocks first so it parses as valid YAML).
+    let prepass = pulumi_rs_yaml_core::multi_file::project_prepass(path).map_err(|e| match e {
+        pulumi_rs_yaml_core::multi_file::PrepassError::Discover(e) => {
             PyValueError::new_err(format!("Failed to discover project files: {}", e))
-        })?;
-        let raw = std::fs::read_to_string(&files.main_file)
-            .map_err(|e| PyValueError::new_err(format!("Failed to read main file: {}", e)))?;
-        let stripped = pulumi_rs_yaml_core::jinja::strip_jinja_blocks(&raw);
-        let (tmpl, _) = pulumi_rs_yaml_core::ast::parse::parse_template(&stripped, None);
-        tmpl.name
-            .map(|n| n.to_string())
-            .unwrap_or_else(|| "unknown".to_string())
-    };
-
-    let scoped = pulumi_rs_yaml_core::provider_scope::effective_packages(
-        &std::fs::read_to_string(path.join("Pulumi.yaml")).unwrap_or_default(),
-    );
+        }
+        pulumi_rs_yaml_core::multi_file::PrepassError::ReadMain(e) => {
+            PyValueError::new_err(format!("Failed to read main file: {}", e))
+        }
+    })?;
+    let project_name_owned = prepass.name;
+    let scoped = prepass.provider_templated_packages;
     let scoped: Vec<&str> = scoped.iter().map(String::as_str).collect();
 
     let jinja_ctx = pulumi_rs_yaml_core::jinja::JinjaContext {
