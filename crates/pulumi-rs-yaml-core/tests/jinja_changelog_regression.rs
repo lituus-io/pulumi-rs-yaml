@@ -34,28 +34,46 @@ use pulumi_rs_yaml_core::provider_scope::{protect, restore};
 
 /// A stack on disk. `root` is the render root; the stack directory is
 /// `root/<stack_rel>` so includes that climb out of the stack and into the
-/// root are exercised the way a monorepo lays them out.
+/// root are exercised the way a monorepo lays them out. `outside` is a
+/// sibling of the root -- inside neither tree -- so an escape can be written
+/// as a plain relative path on every platform.
 struct Stack {
     _tmp: tempfile::TempDir,
     root: std::path::PathBuf,
     dir: std::path::PathBuf,
+    outside: std::path::PathBuf,
 }
 
 impl Stack {
     fn new(stack_rel: &str) -> Self {
         let tmp = tempfile::tempdir().expect("tempdir");
-        let root = tmp.path().canonicalize().expect("canonical root");
+        let base = tmp.path().canonicalize().expect("canonical tempdir");
+        let root = base.join("root");
+        let outside = base.join("outside");
         let dir = if stack_rel.is_empty() {
             root.clone()
         } else {
             root.join(stack_rel)
         };
         fs::create_dir_all(&dir).expect("stack dir");
+        fs::create_dir_all(&outside).expect("outside dir");
         Self {
             _tmp: tmp,
             root,
             dir,
+            outside,
         }
+    }
+
+    /// The relative path from the stack directory to `outside/<name>`.
+    fn escape_to(&self, name: &str) -> String {
+        let depth = self
+            .dir
+            .strip_prefix(self.root.parent().expect("base"))
+            .expect("stack below base")
+            .components()
+            .count();
+        format!("{}outside/{}", "../".repeat(depth), name)
     }
 
     fn at_root() -> Self {
@@ -173,6 +191,14 @@ fn one_value(value_yaml: &str) -> String {
     )
 }
 
+/// An absolute path as a template can spell it on every platform: forward
+/// slashes (a backslash in a Jinja string is an escape) and no Windows
+/// verbatim prefix. Still absolute -- `C:/...` and `/...` both are.
+fn template_path(path: &Path) -> String {
+    let text = path.to_string_lossy().replace('\\', "/");
+    text.strip_prefix("//?/").map(str::to_owned).unwrap_or(text)
+}
+
 fn render_str(source: &str, project_dir: &Path) -> Result<String, String> {
     let config = HashMap::new();
     let extra = HashMap::new();
@@ -275,21 +301,9 @@ mod v0_5_12_containment {
 
     #[test]
     fn traversal_out_of_both_roots_is_refused_and_not_inlined() {
-        let outer = tempfile::tempdir().expect("outer");
-        fs::write(outer.path().join("secret.yaml"), "TOPSECRET").expect("secret");
         let s = Stack::new("stacks/a");
-        // Climb far enough to leave the render root entirely.
-        let rel = format!(
-            "{}{}",
-            "../".repeat(s.dir.components().count() + 2),
-            outer
-                .path()
-                .canonicalize()
-                .expect("canon")
-                .join("secret.yaml")
-                .to_string_lossy()
-                .trim_start_matches('/')
-        );
+        fs::write(s.outside.join("secret.yaml"), "TOPSECRET").expect("secret");
+        let rel = s.escape_to("secret.yaml");
         s.write(
             "Pulumi.yaml",
             one_value(&format!("\"{{% include '{rel}' %}}\"")),
@@ -306,7 +320,7 @@ mod v0_5_12_containment {
         let abs = s.dir.join("inside.txt");
         s.write(
             "Pulumi.yaml",
-            one_value(&format!("\"{{% include '{}' %}}\"", abs.display())),
+            one_value(&format!("\"{{% include '{}' %}}\"", template_path(&abs))),
         );
         let err = s.load().err();
         assert!(err.contains("[absolute]"), "{err}");
@@ -626,7 +640,7 @@ mod v0_5_29_diagnostics {
             "Pulumi.yaml",
             one_value(&format!(
                 "\"{{% include '{}' ignore missing %}}\"",
-                abs.display()
+                template_path(&abs)
             )),
         );
         let err = t.load().err();
