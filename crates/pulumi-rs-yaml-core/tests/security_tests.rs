@@ -1043,6 +1043,7 @@ mod sql_lineage_security {
             default_bq_project: Some("proj"),
             source_map: None,
             extra_sql_sources: &[],
+            ..Default::default()
         };
         let (lineage, diags) = export_sql_lineage(template, infra, &opts);
         let json = lineage.to_json().expect("serializes");
@@ -3087,6 +3088,7 @@ mod sql_statement_security {
             default_bq_project: Some("proj"),
             source_map: None,
             extra_sql_sources: &[],
+            ..Default::default()
         };
         let (lineage, _) = export_sql_lineage(template, infra, &opts);
         lineage.to_json().expect("serializes")
@@ -3125,5 +3127,111 @@ mod sql_statement_security {
             json.contains("\"writes_to\""),
             "parser worker died; the INSERT fell back to the heuristic: {json}"
         );
+    }
+}
+
+// ============================================================================
+// sql_lineage/source_store.rs — files read up front for zero-copy lineage
+//
+// The store reads files before the export runs, so it must apply the same
+// containment the exporter does, and must never read what it is not allowed
+// to hold. Statement text can carry secrets, so it must never appear in the
+// default output.
+// ============================================================================
+
+mod sql_source_store_security {
+    use pulumi_rs_yaml_core::ast::parse::parse_template;
+    use pulumi_rs_yaml_core::resource_graph::{export_resource_graph, GraphExportOptions};
+    use pulumi_rs_yaml_core::sql_lineage::{
+        export_sql_lineage, SqlLineageOptions, SqlSourceStore, MAX_SQL_FILE_BYTES,
+    };
+
+    fn view_reading(path: &str) -> String {
+        format!(
+            "name: p\nruntime: yaml\nresources:\n  v:\n    type: gcp:bigquery:Table\n    properties:\n      project: p\n      datasetId: d\n      tableId: v\n      view:\n        query:\n          fn::readFile: {path}\n"
+        )
+    }
+
+    fn store_for(yaml: &str, dir: &std::path::Path) -> SqlSourceStore {
+        let (template, _) = parse_template(yaml, None);
+        SqlSourceStore::collect(&template, dir)
+    }
+
+    #[test]
+    fn a_traversal_out_of_the_project_is_never_read() {
+        let outer = tempfile::tempdir().expect("outer");
+        std::fs::write(outer.path().join("secret.sql"), "SELECT 'TOPSECRET'").expect("write");
+        let project = outer.path().join("project");
+        std::fs::create_dir(&project).expect("mkdir");
+        let store = store_for(&view_reading("../secret.sql"), &project);
+        assert!(store.is_empty(), "escaped file was read");
+        assert!(store.get("../secret.sql").is_none());
+    }
+
+    #[test]
+    fn an_absolute_path_is_never_read() {
+        let dir = tempfile::tempdir().expect("dir");
+        std::fs::write(dir.path().join("q.sql"), "SELECT 1").expect("write");
+        let abs = dir.path().join("q.sql");
+        let store = store_for(&view_reading(&abs.to_string_lossy()), dir.path());
+        assert!(store.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_out_of_the_project_is_never_read() {
+        let outer = tempfile::tempdir().expect("outer");
+        std::fs::write(outer.path().join("t.sql"), "SELECT 'OUTSIDE'").expect("write");
+        let dir = tempfile::tempdir().expect("dir");
+        std::os::unix::fs::symlink(outer.path().join("t.sql"), dir.path().join("link.sql"))
+            .expect("symlink");
+        let store = store_for(&view_reading("link.sql"), dir.path());
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn a_file_over_the_cap_is_left_unread() {
+        // Sparse: the size is decided from metadata, so this costs a stat.
+        let dir = tempfile::tempdir().expect("dir");
+        let f = std::fs::File::create(dir.path().join("big.sql")).expect("create");
+        f.set_len(MAX_SQL_FILE_BYTES + 1).expect("set_len");
+        let store = store_for(&view_reading("big.sql"), dir.path());
+        assert!(store.is_empty());
+        assert_eq!(store.total_bytes(), 0);
+    }
+
+    #[test]
+    fn a_non_utf8_file_is_left_to_the_exporter() {
+        let dir = tempfile::tempdir().expect("dir");
+        std::fs::write(dir.path().join("bin.sql"), [0xFFu8, 0xFE, 0x00]).expect("write");
+        let store = store_for(&view_reading("bin.sql"), dir.path());
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn statement_text_never_appears_in_the_default_output() {
+        let secret = "SELECT 'sk-live-0123456789' AS key FROM `p.d.s`";
+        let yaml = format!(
+            "name: p\nruntime: yaml\nresources:\n  v:\n    type: gcp:bigquery:Table\n    properties:\n      project: p\n      datasetId: d\n      tableId: v\n      view:\n        query: \"{}\"\n",
+            secret.replace('"', "\\\"")
+        );
+        let (template, _) = parse_template(&yaml, None);
+        let graph_opts = GraphExportOptions {
+            organization: "org",
+            project: "p",
+            stack: "s",
+            source_map: None,
+            schema_store: None,
+        };
+        let (infra, _) = export_resource_graph(&template, &graph_opts);
+        let opts = SqlLineageOptions {
+            organization: "org",
+            project: "p",
+            stack: "s",
+            ..Default::default()
+        };
+        let (lineage, _) = export_sql_lineage(&template, &infra, &opts);
+        let json = lineage.to_json().expect("json");
+        assert!(!json.contains("sk-live"), "statement text leaked: {json}");
     }
 }

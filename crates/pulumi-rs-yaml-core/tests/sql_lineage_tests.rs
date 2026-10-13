@@ -56,6 +56,7 @@ fn export_with_dir(
         default_bq_project: None,
         source_map: None,
         extra_sql_sources: &[],
+        ..Default::default()
     };
     let (lineage, diags) = export_sql_lineage(template, infra, &opts);
     Export {
@@ -469,6 +470,7 @@ fn dag_failure_returns_empty_graph() {
             default_bq_project: None,
             source_map: None,
             extra_sql_sources: &[],
+            ..Default::default()
         },
     );
     assert!(diags.has_errors());
@@ -516,6 +518,7 @@ fn multi_file_source_attribution() {
             default_bq_project: None,
             source_map: Some(source_map),
             extra_sql_sources: &[],
+            ..Default::default()
         },
     );
     assert!(!diags.has_errors(), "{}", diags);
@@ -591,5 +594,579 @@ fn dataset_and_table_ids_derived_from_str_invokes() {
     assert_eq!(
         node(&e.lineage, "bq://data-proj/sales-eu/orders").kind,
         DataNodeKind::Table
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Statement kinds: what a script statement CHANGES is a write, never a read.
+// ---------------------------------------------------------------------------
+
+fn edge_of<'g>(
+    g: &'g SqlLineageGraph<'static>,
+    source: &str,
+    target: &str,
+    kind: DataEdgeKind,
+) -> Option<&'g pulumi_rs_yaml_core::sql_lineage::DataEdge<'static>> {
+    g.edges
+        .iter()
+        .find(|e| e.source_id == source && e.target_id == target && e.relationship == kind)
+}
+
+fn routine(body: &str) -> String {
+    format!(
+        "name: routines\nruntime: yaml\nresources:\n  r:\n    type: gcp:bigquery:Routine\n    properties:\n      project: data-proj\n      datasetId: ops\n      routineId: r\n      routineType: PROCEDURE\n      definitionBody: {}\n",
+        serde_json::to_string(body).expect("quote")
+    )
+}
+
+const ROUTINE: &str = "bq-routine://data-proj/ops/r";
+
+#[test]
+fn drop_truncate_alter_are_writes_not_reads() {
+    let e = export(
+        &routine(
+            "BEGIN DROP TABLE `data-proj.stage.a`; TRUNCATE TABLE `data-proj.stage.b`; ALTER TABLE `data-proj.stage.c` ADD COLUMN x INT64; END",
+        ),
+        "routines",
+        "prod",
+    );
+    for t in ["a", "b", "c"] {
+        let id = format!("bq://data-proj/stage/{t}");
+        assert!(
+            has_edge(&e.lineage, ROUTINE, &id, DataEdgeKind::WritesTo),
+            "{id} must be written"
+        );
+        assert!(
+            !has_edge(&e.lineage, ROUTINE, &id, DataEdgeKind::DerivesFrom),
+            "{id} must not be read"
+        );
+    }
+}
+
+#[test]
+fn bigquery_load_data_target_is_a_heuristic_write() {
+    let e = export(
+        &routine(
+            "LOAD DATA INTO `data-proj.raw.events` FROM FILES (format = 'CSV', uris = ['gs://landing/events/*.csv'])",
+        ),
+        "routines",
+        "prod",
+    );
+    let w = edge_of(
+        &e.lineage,
+        ROUTINE,
+        "bq://data-proj/raw/events",
+        DataEdgeKind::WritesTo,
+    )
+    .expect("the load target is written");
+    assert_eq!(w.resolution, Resolution::Heuristic);
+    assert!(!has_edge(
+        &e.lineage,
+        ROUTINE,
+        "bq://data-proj/raw/events",
+        DataEdgeKind::DerivesFrom
+    ));
+}
+
+#[test]
+fn ctas_in_a_routine_writes_and_derives_via_the_routine() {
+    let e = export(
+        &routine("CREATE OR REPLACE TABLE `data-proj.marts.m` AS SELECT id FROM `data-proj.raw.r`"),
+        "routines",
+        "prod",
+    );
+    assert!(has_edge(
+        &e.lineage,
+        ROUTINE,
+        "bq://data-proj/marts/m",
+        DataEdgeKind::WritesTo
+    ));
+    let d = edge_of(
+        &e.lineage,
+        "bq://data-proj/marts/m",
+        "bq://data-proj/raw/r",
+        DataEdgeKind::DerivesFrom,
+    )
+    .expect("target derives from source");
+    assert_eq!(d.via.as_deref(), Some(ROUTINE));
+}
+
+#[test]
+fn merge_target_is_written_and_source_read() {
+    let e = export(
+        &routine(
+            "MERGE `data-proj.marts.t` T USING `data-proj.raw.s` S ON T.id = S.id WHEN MATCHED THEN UPDATE SET v = S.v",
+        ),
+        "routines",
+        "prod",
+    );
+    assert!(has_edge(
+        &e.lineage,
+        ROUTINE,
+        "bq://data-proj/marts/t",
+        DataEdgeKind::WritesTo
+    ));
+    assert!(has_edge(
+        &e.lineage,
+        ROUTINE,
+        "bq://data-proj/raw/s",
+        DataEdgeKind::DerivesFrom
+    ));
+}
+
+#[test]
+fn call_links_the_routine_called() {
+    let e = export(
+        &routine("CALL `data-proj.ops.refresh`()"),
+        "routines",
+        "prod",
+    );
+    assert!(has_edge(
+        &e.lineage,
+        ROUTINE,
+        "bq-routine://data-proj/ops/refresh",
+        DataEdgeKind::Calls
+    ));
+}
+
+// ---------------------------------------------------------------------------
+// Jobs and scheduled queries
+// ---------------------------------------------------------------------------
+
+#[test]
+fn job_query_destination_derives_from_its_reads() {
+    let yaml = r#"name: jobs
+runtime: yaml
+config:
+  gcp:project:
+    value: data-proj
+resources:
+  backfill:
+    type: gcp:bigquery:Job
+    properties:
+      jobId: backfill-1
+      query:
+        query: "SELECT id FROM `data-proj.raw.events`"
+        destinationTable:
+          projectId: data-proj
+          datasetId: marts
+          tableId: backfill
+"#;
+    let e = export(yaml, "jobs", "prod");
+    let job = "bq-job://org/jobs/prod/backfill";
+    assert!(has_edge(
+        &e.lineage,
+        job,
+        "bq://data-proj/marts/backfill",
+        DataEdgeKind::WritesTo
+    ));
+    assert!(has_edge(
+        &e.lineage,
+        "bq://data-proj/marts/backfill",
+        "bq://data-proj/raw/events",
+        DataEdgeKind::DerivesFrom
+    ));
+}
+
+#[test]
+fn scheduled_query_writes_in_its_own_project() {
+    let yaml = r#"name: sched
+runtime: yaml
+config:
+  gcp:project:
+    value: stack-default
+resources:
+  nightly:
+    type: gcp:bigquery:DataTransferConfig
+    properties:
+      project: analytics-proj
+      displayName: nightly
+      dataSourceId: scheduled_query
+      destinationDatasetId: marts
+      params:
+        destination_table_name_template: nightly_rollup
+        query: "SELECT id FROM raw.events"
+"#;
+    let e = export(yaml, "sched", "prod");
+    let job = "bq-job://org/sched/prod/nightly";
+    assert!(
+        has_edge(
+            &e.lineage,
+            job,
+            "bq://analytics-proj/marts/nightly_rollup",
+            DataEdgeKind::WritesTo
+        ),
+        "destination must be in the config's project; edges: {:?}",
+        e.lineage
+            .edges
+            .iter()
+            .map(|x| (&x.source_id, &x.target_id))
+            .collect::<Vec<_>>()
+    );
+    // The unqualified `raw.events` resolves in the same project.
+    assert!(has_edge(
+        &e.lineage,
+        job,
+        "bq://analytics-proj/raw/events",
+        DataEdgeKind::DerivesFrom
+    ));
+    assert!(!e
+        .lineage
+        .edges
+        .iter()
+        .any(|x| x.target_id.contains("stack-default")));
+}
+
+#[test]
+fn scheduled_query_heuristic_read_stays_heuristic_on_the_destination() {
+    // Unparseable SQL: the read is found by the heuristic scanner, and must
+    // not reappear on the destination claiming it was parsed.
+    let yaml = r#"name: sched
+runtime: yaml
+config:
+  gcp:project:
+    value: p
+resources:
+  nightly:
+    type: gcp:bigquery:DataTransferConfig
+    properties:
+      destinationDatasetId: marts
+      params:
+        destination_table_name_template: out
+        query: "SELECT FROM WHERE `p.raw.events` ((("
+"#;
+    let e = export(yaml, "sched", "prod");
+    let d = edge_of(
+        &e.lineage,
+        "bq://p/marts/out",
+        "bq://p/raw/events",
+        DataEdgeKind::DerivesFrom,
+    )
+    .expect("destination derives from the heuristic read");
+    assert_eq!(d.resolution, Resolution::Heuristic);
+}
+
+#[test]
+fn gcpx_scheduler_sql_job_script_lineage() {
+    let yaml = r#"name: sj
+runtime: yaml
+config:
+  gcp:project:
+    value: p
+resources:
+  loader:
+    type: gcpx:scheduler:SqlJob
+    properties:
+      sql: "INSERT INTO `p.marts.t` SELECT * FROM `p.raw.s`; DELETE FROM `p.raw.s` WHERE TRUE"
+"#;
+    let e = export(yaml, "sj", "prod");
+    let job = "bq-job://org/sj/prod/loader";
+    assert!(has_edge(
+        &e.lineage,
+        job,
+        "bq://p/marts/t",
+        DataEdgeKind::WritesTo
+    ));
+    assert!(has_edge(
+        &e.lineage,
+        job,
+        "bq://p/raw/s",
+        DataEdgeKind::WritesTo
+    ));
+}
+
+#[test]
+fn an_unquoted_qualified_read_in_a_script_keeps_its_project_and_dataset() {
+    // `get_table_names` answers the bare `events` for an unquoted
+    // `other-proj.raw.events`, and the read used to resolve against the
+    // routine's own project and dataset: `data-proj/ops/events`, a table that
+    // does not exist, with nothing to say so.
+    let e = export(
+        &routine("INSERT INTO marts.daily SELECT id FROM `other-proj`.raw.events"),
+        "routines",
+        "prod",
+    );
+    assert!(has_edge(
+        &e.lineage,
+        ROUTINE,
+        "bq://data-proj/marts/daily",
+        DataEdgeKind::WritesTo
+    ));
+    assert!(
+        has_edge(
+            &e.lineage,
+            ROUTINE,
+            "bq://other-proj/raw/events",
+            DataEdgeKind::DerivesFrom
+        ),
+        "edges: {:?}",
+        e.lineage
+            .edges
+            .iter()
+            .map(|x| (&x.source_id, &x.target_id))
+            .collect::<Vec<_>>()
+    );
+    assert!(!e
+        .lineage
+        .nodes
+        .iter()
+        .any(|n| n.id == "bq://data-proj/ops/events"));
+}
+
+// ---------------------------------------------------------------------------
+// The statement layer and the source store
+// ---------------------------------------------------------------------------
+
+use pulumi_rs_yaml_core::sql_lineage::{SqlSourceStore, SqlStatement, StatementKind, TextOrigin};
+
+/// Exports with the statement layer on, optionally with a source store.
+fn export_statements(
+    yaml: &str,
+    dir: Option<&'static std::path::Path>,
+    with_store: bool,
+) -> (
+    &'static TemplateDecl<'static>,
+    SqlLineageGraph<'static>,
+    Option<&'static SqlSourceStore>,
+) {
+    let (template, parse_diags) = parse_template(yaml, None);
+    assert!(!parse_diags.has_errors(), "{parse_diags}");
+    let template: &'static TemplateDecl<'static> = Box::leak(Box::new(template));
+    let graph_opts = GraphExportOptions {
+        organization: "org",
+        project: "stmts",
+        stack: "prod",
+        source_map: None,
+        schema_store: None,
+    };
+    let (infra, _) = export_resource_graph(template, &graph_opts);
+    let infra: &'static ResourceGraph<'static> = Box::leak(Box::new(infra));
+    let store: Option<&'static SqlSourceStore> = match (with_store, dir) {
+        (true, Some(d)) => Some(Box::leak(Box::new(SqlSourceStore::collect(template, d)))),
+        _ => None,
+    };
+    let opts = SqlLineageOptions {
+        organization: "org",
+        project: "stmts",
+        stack: "prod",
+        project_dir: dir,
+        default_bq_project: Some("p"),
+        sql_sources: store,
+        include_statements: true,
+        ..Default::default()
+    };
+    let (lineage, _) = export_sql_lineage(template, infra, &opts);
+    (template, lineage, store)
+}
+
+fn statement<'g>(g: &'g SqlLineageGraph<'static>, text: &str) -> &'g SqlStatement<'static> {
+    g.statements
+        .iter()
+        .find(|s| s.text.as_deref() == Some(text))
+        .unwrap_or_else(|| {
+            panic!(
+                "no statement {text:?}; have {:?}",
+                g.statements.iter().map(|s| &s.text).collect::<Vec<_>>()
+            )
+        })
+}
+
+fn points_into(inner: &str, outer: &str) -> bool {
+    let (i, o) = (inner.as_ptr() as usize, outer.as_ptr() as usize);
+    i >= o && i + inner.len() <= o + outer.len()
+}
+
+const VIEW: &str = "name: stmts\nruntime: yaml\nresources:\n  v:\n    type: gcp:bigquery:Table\n    properties:\n      project: p\n      datasetId: marts\n      tableId: v\n      view:\n        query: \"SELECT a.id FROM `p.raw.a` a\"\n";
+
+#[test]
+fn statements_are_absent_unless_asked_for() {
+    let e = export(VIEW, "stmts", "prod");
+    assert!(e.lineage.statements.is_empty());
+    assert!(e.lineage.statement_occurrences.is_empty());
+    let json = e.lineage.to_json().expect("json");
+    assert!(!json.contains("\"statements\""), "{json}");
+    assert!(!json.contains("has_statement"), "{json}");
+}
+
+#[test]
+fn a_view_is_one_statement_that_reads_its_sources_and_writes_the_view() {
+    let (template, g, _) = export_statements(VIEW, None, false);
+    let st = statement(&g, "SELECT a.id FROM `p.raw.a` a");
+    assert_eq!(st.statement_kind, StatementKind::Select);
+    assert!(
+        st.id.starts_with("sql:") && st.id.len() == 4 + 64,
+        "{}",
+        st.id
+    );
+    assert!(has_edge(
+        &g,
+        "bq://p/marts/v",
+        &st.id,
+        DataEdgeKind::HasStatement
+    ));
+    assert!(has_edge(&g, &st.id, "bq://p/raw/a", DataEdgeKind::Reads));
+    assert!(has_edge(&g, &st.id, "bq://p/marts/v", DataEdgeKind::Writes));
+
+    // Zero copy: the statement's text is a slice of the parsed template's
+    // own string, not a copy of it.
+    let text = st.text.as_deref().expect("text");
+    let pulumi_rs_yaml_core::ast::template::ResourceProperties::Map(props) =
+        &template.resources[0].resource.properties
+    else {
+        panic!("map");
+    };
+    let view = props.iter().find(|p| p.key == "view").expect("view");
+    let pulumi_rs_yaml_core::ast::expr::Expr::Object(_, obj) = &view.value else {
+        panic!("object");
+    };
+    let pulumi_rs_yaml_core::ast::expr::Expr::String(_, query) = obj[0].value.as_ref() else {
+        panic!("string");
+    };
+    assert!(
+        points_into(text, query),
+        "statement text must borrow the template literal"
+    );
+    let occ = &g.statement_occurrences[0];
+    assert_eq!(occ.text_origin, TextOrigin::Literal);
+    assert_eq!(occ.statement_index, 0);
+    assert_eq!(occ.carrier_id, "bq://p/marts/v");
+}
+
+#[test]
+fn script_statements_have_offsets_kinds_and_their_own_edges() {
+    let body = "BEGIN\n  INSERT INTO `p.marts.t` SELECT id FROM `p.raw.s`;\n  DROP TABLE `p.stage.tmp`;\nEND";
+    let (_, g, _) = export_statements(&routine(body), None, false);
+    let insert = statement(&g, "INSERT INTO `p.marts.t` SELECT id FROM `p.raw.s`");
+    let drop = statement(&g, "DROP TABLE `p.stage.tmp`");
+    assert_eq!(insert.statement_kind, StatementKind::Insert);
+    assert_eq!(drop.statement_kind, StatementKind::Drop);
+    assert!(has_edge(
+        &g,
+        &insert.id,
+        "bq://p/marts/t",
+        DataEdgeKind::Writes
+    ));
+    assert!(has_edge(
+        &g,
+        &insert.id,
+        "bq://p/raw/s",
+        DataEdgeKind::Reads
+    ));
+    assert!(has_edge(
+        &g,
+        &drop.id,
+        "bq://p/stage/tmp",
+        DataEdgeKind::Writes
+    ));
+    assert!(!has_edge(
+        &g,
+        &drop.id,
+        "bq://p/stage/tmp",
+        DataEdgeKind::Reads
+    ));
+
+    // Offsets index the carrier's own text.
+    for occ in &g.statement_occurrences {
+        let st = g
+            .statements
+            .iter()
+            .find(|s| s.id == occ.statement_id)
+            .expect("row");
+        let text = st.text.as_deref().expect("text");
+        assert_eq!(&body[occ.byte_offset..occ.byte_offset + occ.byte_len], text);
+    }
+    let indices: Vec<u32> = g
+        .statement_occurrences
+        .iter()
+        .map(|o| o.statement_index)
+        .collect();
+    assert_eq!(indices, vec![0, 1]);
+}
+
+#[test]
+fn identical_text_is_one_statement_with_two_occurrences() {
+    let yaml = "name: stmts\nruntime: yaml\nresources:\n  a:\n    type: gcp:bigquery:Routine\n    properties:\n      project: p\n      datasetId: ops\n      routineId: a\n      routineType: PROCEDURE\n      definitionBody: \"DELETE FROM `p.raw.s` WHERE TRUE\"\n  b:\n    type: gcp:bigquery:Routine\n    properties:\n      project: p\n      datasetId: ops\n      routineId: b\n      routineType: PROCEDURE\n      definitionBody: \"DELETE FROM `p.raw.s` WHERE TRUE\"\n";
+    let (_, g, _) = export_statements(yaml, None, false);
+    assert_eq!(g.statements.len(), 1);
+    assert_eq!(g.statement_occurrences.len(), 2);
+    let carriers: Vec<&str> = g
+        .statement_occurrences
+        .iter()
+        .map(|o| o.carrier_id.as_ref())
+        .collect();
+    assert_eq!(
+        carriers,
+        vec!["bq-routine://p/ops/a", "bq-routine://p/ops/b"]
+    );
+}
+
+#[test]
+fn interpolated_sql_is_owned_and_says_so() {
+    let yaml = "name: stmts\nruntime: yaml\nvariables:\n  ds: raw\nresources:\n  r:\n    type: gcp:bigquery:Routine\n    properties:\n      project: p\n      datasetId: ops\n      routineId: r\n      routineType: PROCEDURE\n      definitionBody: \"DELETE FROM `p.${ds}.s` WHERE TRUE\"\n";
+    let (_, g, _) = export_statements(yaml, None, false);
+    assert_eq!(
+        g.statement_occurrences[0].text_origin,
+        TextOrigin::Interpolated
+    );
+    let st = statement(&g, "DELETE FROM `p.raw.s` WHERE TRUE");
+    assert!(matches!(st.text, Some(std::borrow::Cow::Owned(_))));
+}
+
+#[test]
+fn export_data_writes_an_external_location() {
+    let (_, g, _) = export_statements(
+        &routine("EXPORT DATA OPTIONS (uri = 'gs://bucket/out/*.csv', format = 'CSV') AS SELECT id FROM `p.raw.s`"),
+        None,
+        false,
+    );
+    let st = &g.statements[0];
+    assert_eq!(st.statement_kind, StatementKind::ExportData);
+    assert!(has_edge(
+        &g,
+        &st.id,
+        "gs://bucket/out/*.csv",
+        DataEdgeKind::Writes
+    ));
+    assert!(has_edge(&g, &st.id, "bq://p/raw/s", DataEdgeKind::Reads));
+    assert_eq!(
+        node(&g, "gs://bucket/out/*.csv").kind,
+        DataNodeKind::ExternalLocation
+    );
+}
+
+const READFILE_VIEW: &str = "name: stmts\nruntime: yaml\nresources:\n  v:\n    type: gcp:bigquery:Table\n    properties:\n      project: p\n      datasetId: marts\n      tableId: v\n      view:\n        query:\n          fn::readFile: q.sql\n  w:\n    type: gcp:bigquery:Table\n    properties:\n      project: p\n      datasetId: marts\n      tableId: w\n      view:\n        query:\n          fn::readFile: ./q.sql\n";
+
+fn readfile_dir() -> &'static std::path::Path {
+    let dir: &'static _ = Box::leak(Box::new(tempfile::tempdir().expect("tempdir")));
+    fs::write(dir.path().join("q.sql"), "SELECT id FROM `p.raw.events`\n").expect("write");
+    dir.path()
+}
+
+#[test]
+fn file_statement_text_is_borrowed_from_the_store() {
+    let dir = readfile_dir();
+    let (_, g, store) = export_statements(READFILE_VIEW, Some(dir), true);
+    let store = store.expect("store");
+    // Two literals, one file: read once.
+    assert_eq!(store.len(), 1);
+    let held = store.get("q.sql").expect("held");
+    assert!(std::ptr::eq(held, store.get("./q.sql").expect("same text")));
+    let st = statement(&g, "SELECT id FROM `p.raw.events`");
+    assert!(points_into(st.text.as_deref().expect("text"), held));
+    assert_eq!(g.statement_occurrences.len(), 2);
+    for occ in &g.statement_occurrences {
+        assert_eq!(occ.text_origin, TextOrigin::File);
+        assert!(occ.carrier_file.is_some());
+    }
+}
+
+#[test]
+fn the_store_changes_nothing_but_where_the_text_lives() {
+    let dir = readfile_dir();
+    let (_, with_store, _) = export_statements(READFILE_VIEW, Some(dir), true);
+    let (_, without, _) = export_statements(READFILE_VIEW, Some(dir), false);
+    assert_eq!(
+        with_store.to_json().expect("json"),
+        without.to_json().expect("json")
     );
 }

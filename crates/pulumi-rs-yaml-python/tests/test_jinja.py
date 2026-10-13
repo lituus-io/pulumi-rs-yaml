@@ -221,12 +221,22 @@ class TestPreprocessJinjaDiag:
             out = preprocess_jinja_diag(source, "t.yaml", self.CTX)
             elapsed = time.perf_counter() - started
             during = counter - before
+            # The same length of time with the GIL certainly released.
+            before = counter
+            time.sleep(elapsed)
+            baseline = counter - before
         finally:
             stop.set()
             worker.join(timeout=5)
         assert "rendered" in out
         assert elapsed > 0.01, "the render was too fast to prove anything"
-        assert during > 0, "the counter did not advance while the template rendered: the GIL was held"
+        # `during > 0` alone passes with the GIL held: the spinner gets
+        # switch-interval slices in the Python code around the call. Measured
+        # against an equal sleep, a held GIL advances it ~8%, a released ~70%.
+        assert during > 0.3 * baseline, (
+            f"the counter advanced {during} during the render against {baseline} "
+            "while sleeping as long: the GIL was held"
+        )
 
     def test_a_json_include_now_renders(self, tmp_path):
         (tmp_path / "schemas").mkdir()

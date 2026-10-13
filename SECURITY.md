@@ -20,7 +20,7 @@ Do **not** open public issues for security vulnerabilities.
 
 ### Fuzz testing
 
-Eleven fuzz targets cover the attack surface:
+The core fuzz targets are listed below; `fuzz/Cargo.toml` registers all twenty-two:
 
 | Target | Coverage |
 |--------|----------|
@@ -34,7 +34,8 @@ Eleven fuzz targets cover the attack surface:
 | `fuzz_starlark` | Starlark compilation and `fn::starlark` evaluation |
 | `fuzz_parallel_eval` | Parallel vs. sequential evaluator differential testing |
 | `fuzz_resource_graph` | Dependency-graph export: determinism, ordering, URN construction |
-| `fuzz_sql_lineage` | SQL lineage export and the SQL parser boundary |
+| `fuzz_sql_lineage` | SQL lineage export, the SQL parser boundary, and the statement layer |
+| `fuzz_sql_statements` | Statement splitting and classification on author text: every range in bounds and on a character boundary |
 
 Fuzz tests run weekly in CI and can be triggered manually.
 
@@ -53,6 +54,12 @@ Fuzz tests run weekly in CI and can be triggered manually.
 - Interpolation expressions are parsed with a bounded recursive descent parser.
 - `readFile()` is restricted to the project directory (no path traversal), including static SQL reads by the lineage exporter.
 - SQL handed to the parser is bounded by size and bracket-nesting depth, and parsed on a worker thread with a large explicit stack — deep recursion cannot abort the process under `panic = "abort"`.
+- Statement splitting slices author text only at ASCII delimiters, which are always character boundaries, so no SQL text can make a slice panic.
+- The lineage source store reads `fn::readFile` files up front under the same containment as the exporter, refuses absolute paths, symlink escapes and files over 16 MiB, and holds nothing it could not decode as UTF-8.
+
+### Exported SQL text
+
+The lineage statement layer (`--sql-statements`, `include_statements=True`) exports the full text of every SQL statement a program carries. SQL can hold credentials, connection strings and literals an author never meant to publish, so the layer is **off by default**, and nothing in the default output contains statement text. Enable it only for destinations that may hold the program's source.
 
 ## Supported Versions
 

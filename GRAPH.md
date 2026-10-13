@@ -64,6 +64,9 @@ bq load --source_format=NEWLINE_DELIMITED_JSON infra.nodes graph-export/nodes.nd
 bq load --source_format=NEWLINE_DELIMITED_JSON infra.edges graph-export/edges.ndjson
 ```
 
+`--compress gzip` writes `*.ndjson.gz` instead; `bq load` reads gzip NDJSON
+directly (`bq load ... infra.nodes graph-export/nodes.ndjson.gz`).
+
 ### Cross-stack identity linking
 
 Explicit `pulumi:pulumi:StackReference` consumption is exported directly as
@@ -147,6 +150,77 @@ CREATE TABLE IF NOT EXISTS infra.lineage_edges (
 Refresh per stack with the same `DELETE WHERE stack/project` + `bq load` flow
 as the infrastructure tables.
 
+### Statement layer
+
+`--sql-statements` (Python: `include_statements=True`) adds every SQL
+statement the program carries -- its exact text, what it does, and where it is
+written -- with statement-level edges to everything it reads and writes:
+
+```bash
+pulumi-language-yaml graph --stack prod --lineage --sql-statements \
+  --format ndjson --out ./graph-export
+# adds lineage_statements.ndjson + lineage_statement_occurrences.ndjson
+```
+
+- A **statement** is keyed by the content of its text,
+  `sql:{sha256 hex of the exact text}`, so the same statement written in
+  three places is one row. `statement_kind` is one of `select`, `insert`,
+  `update`, `delete`, `merge`, `create_table`, `create_table_as_select`,
+  `create_view`, `create_materialized_view`, `create_function`,
+  `create_procedure`, `drop`, `truncate`, `alter`, `export_data`, `load_data`,
+  `call`, `scripting`, `other`. `text` is omitted above 1 MiB; the id still
+  hashes the full text.
+- An **occurrence** is one place a statement is written: the carrier (a
+  view's table id, a routine's, a job's, a dbt model's), the statement's
+  index and byte range inside the carrier's SQL, its role and provenance, the
+  `fn::readFile` path it came from, and the declaring resource's URN.
+  `text_origin` says whether the text is as written (`literal`, `file`) or was
+  built (`interpolated`, `dbt_rendered` -- a dbt model's offsets index the
+  rendered SQL).
+- **Edges**: `has_statement` from carrier to statement; `reads` from a
+  statement to each table or external location it reads (its upstream);
+  `writes` to each it creates or changes (its downstream -- a view's query
+  writes the view; `DROP`, `TRUNCATE` and `ALTER` write their table);
+  `calls` to each routine it calls. `EXPORT DATA` and `LOAD DATA` locations
+  appear as `external_location` nodes whose id is the URI.
+
+The layer is off by default -- statement text can carry secrets a caller did
+not ask to export -- and with it off the output is byte-identical to a build
+without it.
+
+```sql
+CREATE TABLE IF NOT EXISTS infra.lineage_statements (
+  id STRING NOT NULL,
+  statement_kind STRING, text STRING, byte_len INT64,
+  organization STRING, project STRING, stack STRING,
+  PRIMARY KEY (id) NOT ENFORCED
+);
+
+CREATE TABLE IF NOT EXISTS infra.lineage_statement_occurrences (
+  statement_id STRING NOT NULL,
+  carrier_id STRING NOT NULL,
+  statement_index INT64, byte_offset INT64, byte_len INT64,
+  sql_role STRING, sql_provenance STRING, text_origin STRING,
+  carrier_file STRING, source_file STRING, defined_by_urn STRING,
+  organization STRING, project STRING, stack STRING,
+  FOREIGN KEY (statement_id) REFERENCES infra.lineage_statements (id) NOT ENFORCED
+);
+```
+
+Statement rows are shared across stacks by construction -- the same text
+hashes to the same id everywhere -- so refresh `lineage_statements` with a
+`MERGE` on `id` rather than a per-stack delete, and per-stack delete only the
+occurrences.
+
+```sql
+-- Every statement that writes a table, with its text and where it lives.
+SELECT s.statement_kind, s.text, o.carrier_id, o.carrier_file, o.stack
+FROM infra.lineage_edges e
+JOIN infra.lineage_statements s ON s.id = e.source_id
+JOIN infra.lineage_statement_occurrences o ON o.statement_id = s.id
+WHERE e.relationship = 'writes' AND e.target_id = 'bq://data-proj/marts/daily';
+```
+
 ## Property graph and GQL
 
 ```sql
@@ -185,6 +259,38 @@ CREATE PROPERTY GRAPH infra.FullGraph
       DESTINATION KEY (target_id) REFERENCES lineage_nodes (id)
       LABEL flows PROPERTIES (relationship, resolution, stack)
   );
+```
+
+With the statement layer loaded, statements become a third node table, so a
+traversal can stop at the SQL that moves data between two tables:
+
+```sql
+CREATE PROPERTY GRAPH infra.StatementGraph
+  NODE TABLES (
+    infra.lineage_nodes KEY (id)
+      LABEL DataObject PROPERTIES (id, kind, name, bq_project, dataset, stack),
+    infra.lineage_statements KEY (id)
+      LABEL Statement PROPERTIES (id, statement_kind, text)
+  )
+  EDGE TABLES (
+    infra.lineage_edges AS reads KEY (source_id, target_id, relationship)
+      SOURCE KEY (source_id) REFERENCES lineage_statements (id)
+      DESTINATION KEY (target_id) REFERENCES lineage_nodes (id)
+      LABEL reads PROPERTIES (relationship, resolution),
+    infra.lineage_edges AS writes KEY (source_id, target_id, relationship)
+      SOURCE KEY (source_id) REFERENCES lineage_statements (id)
+      DESTINATION KEY (target_id) REFERENCES lineage_nodes (id)
+      LABEL writes PROPERTIES (relationship, resolution)
+  );
+```
+
+```sql
+-- The statements that read raw.events and what each one writes.
+GRAPH infra.StatementGraph
+MATCH (src:DataObject)<-[r:reads WHERE r.relationship = 'reads']-(s:Statement)
+      -[w:writes WHERE w.relationship = 'writes']->(dst:DataObject)
+WHERE src.id = 'bq://data-proj/raw/events'
+RETURN s.statement_kind, s.text, dst.id
 ```
 
 ```sql

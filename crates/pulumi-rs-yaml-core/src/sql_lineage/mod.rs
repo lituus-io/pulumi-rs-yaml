@@ -40,6 +40,7 @@ mod dbt;
 pub mod ids;
 pub mod registry;
 mod resolve;
+mod source_store;
 mod sql;
 
 use std::borrow::Cow;
@@ -59,11 +60,13 @@ pub use ids::TableName;
 pub use registry::{SqlRole, SqlSourceSpec};
 pub use resolve::SqlProvenance;
 
+pub use source_store::{SqlSourceStore, MAX_SQL_FILE_BYTES};
+pub use sql::StatementKind;
 /// The statement splitter, exposed for the fuzz harness and for callers that
 /// want to point at a statement inside a carrier without copying it. Not a
 /// stable interface.
 #[doc(hidden)]
-pub use sql::{split_statement_spans, split_statements};
+pub use sql::{classify_statement_text, split_statement_spans, split_statements};
 
 /// Lineage export schema version (independent of the infra graph's).
 pub const SCHEMA_VERSION: u32 = 1;
@@ -82,6 +85,9 @@ pub enum DataNodeKind {
     Column,
     Routine,
     Job,
+    /// A location outside BigQuery a statement reads or writes -- the `uri`
+    /// of an `EXPORT DATA`, the `uris` of a `LOAD DATA`. Its id is the URI.
+    ExternalLocation,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -94,6 +100,12 @@ pub enum DataEdgeKind {
     Calls,
     DefinedBy,
     RenamedFrom,
+    /// Carrier (view, routine, job, dbt model) → one of its statements.
+    HasStatement,
+    /// Statement → a table or location it reads: its upstream.
+    Reads,
+    /// Statement → a table or location it creates or changes: its downstream.
+    Writes,
 }
 
 /// How an edge was established; dedup keeps the strongest
@@ -157,6 +169,65 @@ pub struct DataEdge<'src> {
     pub stack: Cow<'src, str>,
 }
 
+/// How a statement's text came to be: borrowed as written, or built.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TextOrigin {
+    /// A string literal in the program, borrowed from the parsed template.
+    Literal,
+    /// The text of a `fn::readFile` file, borrowed from the source store.
+    File,
+    /// Assembled from a literal-only interpolation; necessarily owned.
+    Interpolated,
+    /// A dbt model after `ref`/`source`/`this`/`config` substitution; owned,
+    /// and its offsets index the rendered text rather than the source.
+    DbtRendered,
+}
+
+/// One distinct SQL statement, keyed by the hash of its exact text: the same
+/// statement written in three places is one row with three occurrences.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SqlStatement<'src> {
+    /// `sql:` followed by the lowercase hex SHA-256 of the statement's bytes.
+    pub id: Cow<'src, str>,
+    pub statement_kind: StatementKind,
+    /// The statement as written. Omitted above the 1 MiB the parser accepts;
+    /// the id is still the hash of the full text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<Cow<'src, str>>,
+    pub byte_len: usize,
+    pub organization: Cow<'src, str>,
+    pub project: Cow<'src, str>,
+    pub stack: Cow<'src, str>,
+}
+
+/// One place a statement is written.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SqlStatementOccurrence<'src> {
+    pub statement_id: Cow<'src, str>,
+    /// The view, materialized view, routine, job or dbt model whose SQL holds
+    /// the statement.
+    pub carrier_id: Cow<'src, str>,
+    /// Position among the carrier's statements, from zero.
+    pub statement_index: u32,
+    /// Where the statement sits in the carrier's text, in bytes.
+    pub byte_offset: usize,
+    pub byte_len: usize,
+    pub sql_role: SqlRole,
+    pub sql_provenance: SqlProvenance,
+    pub text_origin: TextOrigin,
+    /// The `fn::readFile` path the carrier's text came from.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub carrier_file: Option<Cow<'src, str>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_file: Option<&'src str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub defined_by_urn: Option<Cow<'src, str>>,
+    pub organization: Cow<'src, str>,
+    pub project: Cow<'src, str>,
+    pub stack: Cow<'src, str>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct SqlLineageGraph<'src> {
     pub schema_version: u32,
@@ -165,6 +236,12 @@ pub struct SqlLineageGraph<'src> {
     pub stack: Cow<'src, str>,
     pub nodes: Vec<DataNode<'src>>,
     pub edges: Vec<DataEdge<'src>>,
+    /// Present only with [`SqlLineageOptions::include_statements`].
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub statements: Vec<SqlStatement<'src>>,
+    /// Present only with [`SqlLineageOptions::include_statements`].
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub statement_occurrences: Vec<SqlStatementOccurrence<'src>>,
 }
 
 const _: () = {
@@ -186,6 +263,7 @@ impl SqlLineageGraph<'_> {
     }
 }
 
+#[derive(Default)]
 pub struct SqlLineageOptions<'src> {
     pub organization: &'src str,
     pub project: &'src str,
@@ -200,6 +278,19 @@ pub struct SqlLineageOptions<'src> {
     /// Additional SQL sources; caller entries win on duplicate
     /// (token, path).
     pub extra_sql_sources: &'src [SqlSourceSpec<'src>],
+    /// File texts read up front by [`SqlSourceStore::collect`]. SQL read
+    /// from a file the store holds is BORROWED from it -- and a statement row
+    /// can then point into it -- instead of being read and copied at each
+    /// occurrence. `None` reads files as they are met, as before; the output
+    /// is the same either way.
+    pub sql_sources: Option<&'src SqlSourceStore>,
+    /// Adds the statement layer: one [`SqlStatement`] per distinct statement
+    /// text, one [`SqlStatementOccurrence`] per place it is written, and
+    /// `has_statement` / `reads` / `writes` / `calls` edges from each
+    /// statement. Off by default, so existing output does not move -- and
+    /// because statement text can carry secrets a caller did not ask to
+    /// export.
+    pub include_statements: bool,
 }
 
 /// Extracts the data-object lineage graph. Pure and deterministic;
@@ -258,6 +349,8 @@ pub fn export_sql_lineage<'src>(
         registry: build_registry(opts.extra_sql_sources),
         nodes: BTreeMap::new(),
         edges: BTreeMap::new(),
+        statements: BTreeMap::new(),
+        occurrences: Vec::new(),
         diags: Diagnostics::new(),
     };
 
@@ -296,7 +389,57 @@ struct Ctx<'src, 'o> {
     registry: Vec<SqlSourceSpec<'o>>,
     nodes: BTreeMap<String, DataNode<'src>>,
     edges: BTreeMap<EdgeKey, EdgeVal<'src>>,
+    /// Statement rows by id; filled only with `include_statements`.
+    statements: BTreeMap<String, SqlStatement<'src>>,
+    occurrences: Vec<SqlStatementOccurrence<'src>>,
     diags: Diagnostics,
+}
+
+/// The most statements one carrier contributes rows for. 1 MiB of
+/// `select 1 from t;` is ~65,000 statements; the lineage edges are still
+/// derived for all of them, only the rows stop.
+const MAX_STATEMENTS_PER_CARRIER: usize = 10_000;
+
+/// A SQL-bearing resource, as the statement layer records it.
+struct Carrier<'src, 'a> {
+    /// The lineage id the statements belong to: a view's table id, a
+    /// routine's, a job's, a dbt model's.
+    id: &'a str,
+    /// The carrier's whole SQL text; statement spans index it.
+    text: &'a Cow<'src, str>,
+    origin: TextOrigin,
+    file: Option<&'a Cow<'src, str>>,
+    role: SqlRole,
+    provenance: SqlProvenance,
+    /// The declaring resource's logical name, for its URN.
+    logical: &'a str,
+    source_file: Option<&'src str>,
+}
+
+impl<'src> Carrier<'src, '_> {
+    /// The statement at `span`, borrowed when the carrier's text is.
+    fn slice(&self, span: std::ops::Range<usize>) -> Cow<'src, str> {
+        match self.text {
+            Cow::Borrowed(text) => Cow::Borrowed(&text[span]),
+            Cow::Owned(text) => Cow::Owned(text[span].to_owned()),
+        }
+    }
+}
+
+/// How a carrier's text came to be, from whether it is `borrowed` (as
+/// written) and where it was read from.
+fn text_origin(borrowed: bool, provenance: SqlProvenance) -> TextOrigin {
+    match (borrowed, provenance) {
+        (_, SqlProvenance::File) => TextOrigin::File,
+        (true, SqlProvenance::Inline) => TextOrigin::Literal,
+        (false, SqlProvenance::Inline) => TextOrigin::Interpolated,
+    }
+}
+
+/// The whole of `text`, trimmed, as a span: a view is one statement.
+fn trimmed_span(text: &str) -> std::ops::Range<usize> {
+    let start = text.len() - text.trim_start().len();
+    start..start + text.trim().len()
 }
 
 fn build_registry<'o>(extra: &'o [SqlSourceSpec<'o>]) -> Vec<SqlSourceSpec<'o>> {
@@ -314,6 +457,104 @@ fn build_registry<'o>(extra: &'o [SqlSourceSpec<'o>]) -> Vec<SqlSourceSpec<'o>> 
 }
 
 impl<'src> Ctx<'src, '_> {
+    /// Records the statement at `span` of `carrier` -- a row for its text if
+    /// this is the first time it is seen, an occurrence either way, and the
+    /// carrier's `has_statement` edge -- and returns its id. `None` when the
+    /// statement layer is off, the span is empty, or the carrier is past
+    /// [`MAX_STATEMENTS_PER_CARRIER`].
+    fn statement(
+        &mut self,
+        carrier: &Carrier<'src, '_>,
+        index: usize,
+        span: std::ops::Range<usize>,
+        kind: StatementKind,
+    ) -> Option<String> {
+        if !self.opts.include_statements || span.is_empty() {
+            return None;
+        }
+        if index >= MAX_STATEMENTS_PER_CARRIER {
+            if index == MAX_STATEMENTS_PER_CARRIER {
+                self.diags.warning(
+                    None,
+                    format!(
+                        "{}: more than {} statements; rows recorded for the first {} only",
+                        carrier.id, MAX_STATEMENTS_PER_CARRIER, MAX_STATEMENTS_PER_CARRIER
+                    ),
+                    "table-level lineage still covers every statement",
+                );
+            }
+            return None;
+        }
+        let text = carrier.slice(span.clone());
+        let mut id = String::with_capacity(4 + 64);
+        id.push_str("sql:");
+        id.push_str(&crate::sha256::hex(&crate::sha256::digest(text.as_bytes())));
+        let byte_len = text.len();
+        if !self.statements.contains_key(&id) {
+            let row = SqlStatement {
+                id: Cow::Owned(id.clone()),
+                statement_kind: kind,
+                text: (byte_len <= sql::MAX_SQL_BYTES).then_some(text),
+                byte_len,
+                organization: Cow::Borrowed(self.org),
+                project: Cow::Borrowed(self.opts.project),
+                stack: Cow::Borrowed(self.opts.stack),
+            };
+            self.statements.insert(id.clone(), row);
+        }
+        let urn = self.infra_urns.get(carrier.logical).copied();
+        self.occurrences.push(SqlStatementOccurrence {
+            statement_id: Cow::Owned(id.clone()),
+            carrier_id: Cow::Owned(carrier.id.to_owned()),
+            statement_index: u32::try_from(index).unwrap_or(u32::MAX),
+            byte_offset: span.start,
+            byte_len,
+            sql_role: carrier.role,
+            sql_provenance: carrier.provenance,
+            text_origin: carrier.origin,
+            carrier_file: carrier.file.cloned(),
+            source_file: carrier.source_file,
+            defined_by_urn: urn.map(Cow::Borrowed),
+            organization: Cow::Borrowed(self.org),
+            project: Cow::Borrowed(self.opts.project),
+            stack: Cow::Borrowed(self.opts.stack),
+        });
+        let val = EdgeVal {
+            resolution: Resolution::Structural,
+            sql_role: Some(carrier.role),
+            sql_provenance: Some(carrier.provenance),
+            via: None,
+        };
+        self.edge(
+            carrier.id.to_owned(),
+            id.clone(),
+            DataEdgeKind::HasStatement,
+            val,
+        );
+        Some(id)
+    }
+
+    /// An external location (a `gs://` URI) as a node of its own.
+    fn external_location(&mut self, uri: &str) {
+        self.node(DataNode {
+            id: Cow::Owned(uri.to_owned()),
+            kind: DataNodeKind::ExternalLocation,
+            name: Cow::Owned(uri.to_owned()),
+            bq_project: None,
+            dataset: None,
+            table: None,
+            column: None,
+            data_type: None,
+            mode: None,
+            description: None,
+            defined_by_urn: None,
+            source_file: None,
+            organization: Cow::Borrowed(self.org),
+            project: Cow::Borrowed(self.opts.project),
+            stack: Cow::Borrowed(self.opts.stack),
+        });
+    }
+
     fn node(&mut self, node: DataNode<'src>) {
         use std::collections::btree_map::Entry;
         match self.nodes.entry(node.id.to_string()) {
@@ -710,10 +951,11 @@ fn process_resource<'src>(
         if let Some(schema_expr) =
             resolve::get_property_by_path(&entry.resource.properties, "schema")
         {
-            if let Some((text, _)) = resolve::resolve_sql_text(
+            if let Some(resolve::SqlText { text, .. }) = resolve::resolve_sql_text(
                 schema_expr,
                 var_map,
                 ctx.opts.project_dir,
+                ctx.opts.sql_sources,
                 &format!("{}.schema", logical),
                 &mut ctx.diags,
             ) {
@@ -734,7 +976,17 @@ fn process_resource<'src>(
             ("materializedView.query", SqlRole::MaterializedView),
         ] {
             if let Some(expr) = resolve::get_property_by_path(&entry.resource.properties, path) {
-                extract_select_lineage(ctx, entry, expr, var_map, &fq, role, logical, path);
+                extract_select_lineage(
+                    ctx,
+                    entry,
+                    expr,
+                    var_map,
+                    &fq,
+                    role,
+                    logical,
+                    path,
+                    source_file,
+                );
             }
         }
         return;
@@ -783,23 +1035,33 @@ fn process_resource<'src>(
                 let Some(fq) = model.fq.clone() else { continue };
                 ctx.emit_table_entity(&fq, DataNodeKind::Table, Some(logical), source_file);
                 let context = format!("{}.{}", logical, spec.sql_path);
-                if let Some((text, provenance)) = resolve::resolve_sql_text(
+                if let Some(sql) = resolve::resolve_sql_text(
                     expr,
                     var_map,
                     ctx.opts.project_dir,
+                    ctx.opts.sql_sources,
                     &context,
                     &mut ctx.diags,
                 ) {
-                    let substituted =
-                        dbt::substitute(dbt_env, model, text.as_ref(), &context, &mut ctx.diags);
-                    select_lineage_from_text(
-                        ctx,
-                        &substituted,
-                        &fq,
-                        SqlRole::DbtModel,
-                        provenance,
+                    let substituted: Cow<'src, str> = Cow::Owned(dbt::substitute(
+                        dbt_env,
+                        model,
+                        sql.text.as_ref(),
                         &context,
-                    );
+                        &mut ctx.diags,
+                    ));
+                    let carrier_id = fq.id();
+                    let carrier = Carrier {
+                        id: &carrier_id,
+                        text: &substituted,
+                        origin: TextOrigin::DbtRendered,
+                        file: sql.file.as_ref(),
+                        role: SqlRole::DbtModel,
+                        provenance: sql.provenance,
+                        logical,
+                        source_file,
+                    };
+                    select_lineage_from_text(ctx, &carrier, &fq, &context);
                 }
             }
             SqlRole::JobQuery | SqlRole::ScheduledQuery | SqlRole::SqlScript => {
@@ -824,6 +1086,7 @@ fn process_resource<'src>(
                         spec.role,
                         logical,
                         spec.sql_path,
+                        source_file,
                     );
                 }
             }
@@ -841,32 +1104,62 @@ fn extract_select_lineage<'src>(
     role: SqlRole,
     logical: &str,
     path: &str,
+    source_file: Option<&'src str>,
 ) {
     let context = format!("{}.{}", logical, path);
-    let Some((text, provenance)) = resolve::resolve_sql_text(
+    let Some(sql) = resolve::resolve_sql_text(
         expr,
         var_map,
         ctx.opts.project_dir,
+        ctx.opts.sql_sources,
         &context,
         &mut ctx.diags,
     ) else {
         return;
     };
-    select_lineage_from_text(ctx, text.as_ref(), self_fq, role, provenance, &context);
+    let carrier_id = self_fq.id();
+    let carrier = Carrier {
+        id: &carrier_id,
+        text: &sql.text,
+        origin: text_origin(matches!(sql.text, Cow::Borrowed(_)), sql.provenance),
+        file: sql.file.as_ref(),
+        role,
+        provenance: sql.provenance,
+        logical,
+        source_file,
+    };
+    select_lineage_from_text(ctx, &carrier, self_fq, &context);
 }
 
 /// L0–L2 ladder for a SELECT-shaped SQL text deriving `self_fq`.
-fn select_lineage_from_text(
-    ctx: &mut Ctx<'_, '_>,
-    text: &str,
+fn select_lineage_from_text<'src>(
+    ctx: &mut Ctx<'src, '_>,
+    carrier: &Carrier<'src, '_>,
     self_fq: &TableName,
-    role: SqlRole,
-    provenance: SqlProvenance,
     context: &str,
 ) {
+    let text: &str = carrier.text.as_ref();
+    let (role, provenance) = (carrier.role, carrier.provenance);
     let default_project = self_fq.project.clone();
     let default_dataset = self_fq.dataset.clone();
-    match sql::analyze_select(text) {
+    let analysis = sql::analyze_select(text);
+    // A view's query is one statement, and the object it produces is the view.
+    let kind = if analysis.is_ok() {
+        sql::StatementKind::Select
+    } else {
+        sql::classify_statement_text(text)
+    };
+    let statement = ctx.statement(carrier, 0, trimmed_span(text), kind);
+    if let Some(statement) = &statement {
+        let val = EdgeVal {
+            resolution: Resolution::Structural,
+            sql_role: Some(role),
+            sql_provenance: Some(provenance),
+            via: None,
+        };
+        ctx.edge(statement.clone(), self_fq.id(), DataEdgeKind::Writes, val);
+    }
+    match analysis {
         Ok(facts) => {
             for raw in &facts.reads {
                 let Some(src) =
@@ -889,6 +1182,15 @@ fn select_lineage_from_text(
                         via: None,
                     },
                 );
+                if let Some(statement) = &statement {
+                    let val = EdgeVal {
+                        resolution: Resolution::Parsed,
+                        sql_role: Some(role),
+                        sql_provenance: Some(provenance),
+                        via: None,
+                    };
+                    ctx.edge(statement.clone(), src.id(), DataEdgeKind::Reads, val);
+                }
             }
             for (out_col, upstream) in &facts.columns {
                 for (raw_table, src_col) in upstream {
@@ -978,6 +1280,15 @@ fn select_lineage_from_text(
                         via: None,
                     },
                 );
+                if let Some(statement) = &statement {
+                    let val = EdgeVal {
+                        resolution: Resolution::Heuristic,
+                        sql_role: Some(role),
+                        sql_provenance: Some(provenance),
+                        via: None,
+                    };
+                    ctx.edge(statement.clone(), src.id(), DataEdgeKind::Reads, val);
+                }
             }
         }
     }
@@ -1041,25 +1352,28 @@ fn process_routine<'src>(
         return;
     };
     let context = format!("{}.definitionBody", logical);
-    let Some((text, provenance)) = resolve::resolve_sql_text(
+    let Some(sql) = resolve::resolve_sql_text(
         body_expr,
         var_map,
         ctx.opts.project_dir,
+        ctx.opts.sql_sources,
         &context,
         &mut ctx.diags,
     ) else {
         return;
     };
 
-    script_lineage(
-        ctx,
-        text.as_ref(),
-        &routine_id,
-        Some((&project, dataset.as_ref())),
-        SqlRole::RoutineBody,
-        provenance,
-        &context,
-    );
+    let carrier = Carrier {
+        id: &routine_id,
+        text: &sql.text,
+        origin: text_origin(matches!(sql.text, Cow::Borrowed(_)), sql.provenance),
+        file: sql.file.as_ref(),
+        role: SqlRole::RoutineBody,
+        provenance: sql.provenance,
+        logical,
+        source_file,
+    };
+    script_lineage(ctx, &carrier, Some((&project, dataset.as_ref())), &context);
 }
 
 fn process_job_like<'src>(
@@ -1103,6 +1417,7 @@ fn process_job_like<'src>(
     // Explicit destinations.
     let mut destination: Option<TableName> = None;
     let mut default_dataset: Option<String> = None;
+    let mut scheduled_project: Option<String> = None;
     if role == SqlRole::JobQuery {
         let dest_project =
             resolve::literal_prop(entry, var_map, &["query.destinationTable.projectId"])
@@ -1120,9 +1435,16 @@ fn process_job_like<'src>(
     } else if role == SqlRole::ScheduledQuery {
         default_dataset =
             resolve::literal_prop(entry, var_map, &["destinationDatasetId"]).map(Cow::into_owned);
+        // A transfer config runs -- and writes -- in its own `project`. Only
+        // the stack's default project was consulted, so a config declared for
+        // another project put its destination, and every unqualified table
+        // its query names, in the wrong one.
+        scheduled_project = resolve::literal_prop(entry, var_map, &["project"])
+            .map(Cow::into_owned)
+            .or_else(|| ctx.default_project.clone());
         let template_name =
             resolve::literal_prop(entry, var_map, &["params.destination_table_name_template"]);
-        if let (Some(p), Some(d)) = (ctx.default_project.clone(), default_dataset.clone()) {
+        if let (Some(p), Some(d)) = (scheduled_project.clone(), default_dataset.clone()) {
             match template_name {
                 Some(t) if !t.contains('{') => {
                     destination = ids::table_name(&p, &d, t.as_ref());
@@ -1165,41 +1487,52 @@ fn process_job_like<'src>(
     }
 
     let context = format!("{}.sql", logical);
-    let Some((text, provenance)) = resolve::resolve_sql_text(
+    let Some(sql) = resolve::resolve_sql_text(
         sql_expr,
         var_map,
         ctx.opts.project_dir,
+        ctx.opts.sql_sources,
         &context,
         &mut ctx.diags,
     ) else {
         return;
     };
 
-    let project_for_refs = ctx.default_project.clone();
-    script_lineage(
-        ctx,
-        text.as_ref(),
-        &job_id,
-        project_for_refs
-            .as_deref()
-            .map(|p| (p, ""))
-            .map(|(p, _)| (p, default_dataset.as_deref().unwrap_or(""))),
+    let project_for_refs = scheduled_project.or_else(|| ctx.default_project.clone());
+    let provenance = sql.provenance;
+    let carrier = Carrier {
+        id: &job_id,
+        text: &sql.text,
+        origin: text_origin(matches!(sql.text, Cow::Borrowed(_)), sql.provenance),
+        file: sql.file.as_ref(),
         role,
         provenance,
+        logical,
+        source_file,
+    };
+    script_lineage(
+        ctx,
+        &carrier,
+        project_for_refs
+            .as_deref()
+            .map(|p| (p, default_dataset.as_deref().unwrap_or(""))),
         &context,
     );
 
-    // Destination derives from every read.
+    // Destination derives from every read, at the strength the read itself
+    // was established. This was hard-coded `Parsed`, so a read the heuristic
+    // scanner found -- from SQL the parser could not read -- reappeared on
+    // the destination claiming it had been parsed.
     if let Some(dest) = destination {
-        let reads: Vec<String> = ctx
+        let reads: Vec<(String, Resolution)> = ctx
             .edges
             .iter()
             .filter(|((s, _, k), _)| s == &job_id && *k == DataEdgeKind::DerivesFrom)
-            .map(|((_, t, _), _)| t.clone())
+            .map(|((_, t, _), v)| (t.clone(), v.resolution))
             .collect();
-        for read in reads {
+        for (read, resolution) in reads {
             let val = EdgeVal {
-                resolution: Resolution::Parsed,
+                resolution,
                 sql_role: Some(role),
                 sql_provenance: Some(provenance),
                 via: Some(Cow::Owned(job_id.clone())),
@@ -1212,15 +1545,14 @@ fn process_job_like<'src>(
 /// Statement-by-statement lineage for scripts/procedure bodies:
 /// reads become `derives_from` (subject ← source), DML targets become
 /// `writes_to`, `CALL` becomes `calls`.
-fn script_lineage(
-    ctx: &mut Ctx<'_, '_>,
-    text: &str,
-    subject_id: &str,
+fn script_lineage<'src>(
+    ctx: &mut Ctx<'src, '_>,
+    carrier: &Carrier<'src, '_>,
     defaults: Option<(&str, &str)>,
-    role: SqlRole,
-    provenance: SqlProvenance,
     context: &str,
 ) {
+    let subject_id = carrier.id;
+    let (role, provenance) = (carrier.role, carrier.provenance);
     let (default_project, default_dataset) = match defaults {
         Some((p, d)) => (
             Some(p.to_string()),
@@ -1232,13 +1564,24 @@ fn script_lineage(
         ),
         None => (None, None),
     };
-    let statements = sql::split_statements(text);
+    let text: &str = carrier.text.as_ref();
+    let spans = sql::split_statement_spans(text);
+    let statements: Vec<&str> = spans.iter().map(|r| &text[r.clone()]).collect();
     // One parser thread for the whole script, not one per statement: nothing
     // bounds how many statements a script has, and each used to cost a thread
     // with a 64 MiB stack.
     let parsed = sql::statement_facts_for_all(&statements);
     let mut any_parsed = false;
-    for (stmt_text, result) in statements.iter().zip(parsed) {
+    for (index, ((span, stmt_text), result)) in
+        spans.iter().zip(&statements).zip(parsed).enumerate()
+    {
+        let kind = match &result {
+            Ok(all_facts) => all_facts
+                .first()
+                .map_or(sql::StatementKind::Other, |f| f.kind),
+            Err(_) => sql::classify_statement_text(stmt_text),
+        };
+        let statement = ctx.statement(carrier, index, span.clone(), kind);
         match result {
             Ok(all_facts) => {
                 any_parsed = true;
@@ -1252,12 +1595,55 @@ fn script_lineage(
                         role,
                         provenance,
                         Resolution::Parsed,
+                        statement.as_deref(),
                     );
                 }
             }
             Err(_) => {
+                // BigQuery's `LOAD DATA ... FROM FILES` is not accepted by the
+                // parser; its target is still plain to read, and it is a WRITE
+                // -- left to the scan below it would be reported as a read.
+                let load_target = (sql::classify_statement_text(stmt_text)
+                    == sql::StatementKind::LoadData)
+                    .then(|| sql::load_data_target(stmt_text))
+                    .flatten();
+                if let Some(raw) = &load_target {
+                    if let Some(target) = ids::parse_table_reference(
+                        raw,
+                        default_project.as_deref(),
+                        default_dataset.as_deref(),
+                    )
+                    .filter(|t| !t.is_unresolved())
+                    {
+                        ctx.emit_table_entity(&target, DataNodeKind::Table, None, None);
+                        let val = EdgeVal {
+                            resolution: Resolution::Heuristic,
+                            sql_role: Some(role),
+                            sql_provenance: Some(provenance),
+                            via: None,
+                        };
+                        ctx.edge(
+                            subject_id.to_string(),
+                            target.id(),
+                            DataEdgeKind::WritesTo,
+                            val,
+                        );
+                        if let Some(statement) = &statement {
+                            let val = EdgeVal {
+                                resolution: Resolution::Heuristic,
+                                sql_role: Some(role),
+                                sql_provenance: Some(provenance),
+                                via: None,
+                            };
+                            ctx.edge(statement.clone(), target.id(), DataEdgeKind::Writes, val);
+                        }
+                    }
+                }
                 let refs = sql::heuristic_table_refs(stmt_text);
                 for raw in refs {
+                    if load_target.as_deref() == Some(raw.as_str()) {
+                        continue;
+                    }
                     if let Some(src) = ids::parse_table_reference(
                         &raw,
                         default_project.as_deref(),
@@ -1279,6 +1665,15 @@ fn script_lineage(
                             DataEdgeKind::DerivesFrom,
                             val,
                         );
+                        if let Some(statement) = &statement {
+                            let val = EdgeVal {
+                                resolution: Resolution::Heuristic,
+                                sql_role: Some(role),
+                                sql_provenance: Some(provenance),
+                                via: None,
+                            };
+                            ctx.edge(statement.clone(), src.id(), DataEdgeKind::Reads, val);
+                        }
                     }
                 }
             }
@@ -1303,6 +1698,7 @@ fn emit_statement_facts(
     role: SqlRole,
     provenance: SqlProvenance,
     resolution: Resolution,
+    statement: Option<&str>,
 ) {
     let resolve_name = |raw: &str| -> Option<TableName> {
         let name = ids::parse_table_reference(raw, default_project, default_dataset)?;
@@ -1327,6 +1723,15 @@ fn emit_statement_facts(
                 DataEdgeKind::WritesTo,
                 val,
             );
+            if let Some(statement) = statement {
+                let val = EdgeVal {
+                    resolution,
+                    sql_role: Some(role),
+                    sql_provenance: Some(provenance),
+                    via: None,
+                };
+                ctx.edge(statement.to_owned(), target.id(), DataEdgeKind::Writes, val);
+            }
             // Target derives from each read via the subject.
             for read_raw in &facts.reads {
                 if let Some(src) = resolve_name(read_raw) {
@@ -1357,6 +1762,35 @@ fn emit_statement_facts(
                 DataEdgeKind::DerivesFrom,
                 val,
             );
+            if let Some(statement) = statement {
+                let val = EdgeVal {
+                    resolution,
+                    sql_role: Some(role),
+                    sql_provenance: Some(provenance),
+                    via: None,
+                };
+                ctx.edge(statement.to_owned(), src.id(), DataEdgeKind::Reads, val);
+            }
+        }
+    }
+    // Locations outside BigQuery exist only in the statement layer: without
+    // it there is no node to hang them on, and the default output stays as
+    // it was.
+    if let Some(statement) = statement {
+        for (uris, kind) in [
+            (&facts.external_reads, DataEdgeKind::Reads),
+            (&facts.external_writes, DataEdgeKind::Writes),
+        ] {
+            for uri in uris {
+                ctx.external_location(uri);
+                let val = EdgeVal {
+                    resolution,
+                    sql_role: Some(role),
+                    sql_provenance: Some(provenance),
+                    via: None,
+                };
+                ctx.edge(statement.to_owned(), uri.clone(), kind, val);
+            }
         }
     }
     for raw in &facts.calls {
@@ -1369,6 +1803,20 @@ fn emit_statement_facts(
                     sql_provenance: Some(provenance),
                     via: None,
                 };
+                if let Some(statement) = statement {
+                    let val = EdgeVal {
+                        resolution,
+                        sql_role: Some(role),
+                        sql_provenance: Some(provenance),
+                        via: None,
+                    };
+                    ctx.edge(
+                        statement.to_owned(),
+                        routine_id.clone(),
+                        DataEdgeKind::Calls,
+                        val,
+                    );
+                }
                 ctx.edge(subject_id.to_string(), routine_id, DataEdgeKind::Calls, val);
             }
         }
@@ -1528,6 +1976,8 @@ fn empty_graph<'src>(opts: &SqlLineageOptions<'src>) -> SqlLineageGraph<'src> {
         stack: Cow::Borrowed(opts.stack),
         nodes: Vec::new(),
         edges: Vec::new(),
+        statements: Vec::new(),
+        statement_occurrences: Vec::new(),
     }
 }
 
@@ -1537,6 +1987,14 @@ fn finalize<'src>(
     org: &'src str,
 ) -> SqlLineageGraph<'src> {
     let nodes: Vec<DataNode<'src>> = ctx.nodes.into_values().collect();
+    let mut occurrences = ctx.occurrences;
+    occurrences.sort_by(|a, b| {
+        (a.carrier_id.as_ref(), a.statement_index, a.byte_offset).cmp(&(
+            b.carrier_id.as_ref(),
+            b.statement_index,
+            b.byte_offset,
+        ))
+    });
     let edges: Vec<DataEdge<'src>> = ctx
         .edges
         .into_iter()
@@ -1560,5 +2018,7 @@ fn finalize<'src>(
         stack: Cow::Borrowed(opts.stack),
         nodes,
         edges,
+        statements: ctx.statements.into_values().collect(),
+        statement_occurrences: occurrences,
     }
 }

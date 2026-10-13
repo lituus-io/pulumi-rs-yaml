@@ -15,11 +15,14 @@
 //! - every range is trimmed: no statement starts or ends with whitespace
 //! - `split_statements` is exactly the ranges, sliced
 //! - the split is deterministic
+//! - the statement-kind classifier never panics and is deterministic
 
 #![no_main]
 use libfuzzer_sys::fuzz_target;
 
-use pulumi_rs_yaml_core::sql_lineage::{split_statement_spans, split_statements};
+use pulumi_rs_yaml_core::sql_lineage::{
+    classify_statement_text, split_statement_spans, split_statements,
+};
 
 fuzz_target!(|data: &[u8]| {
     let Ok(script) = std::str::from_utf8(data) else {
@@ -48,4 +51,10 @@ fuzz_target!(|data: &[u8]| {
     let sliced: Vec<&str> = spans.iter().map(|r| &script[r.clone()]).collect();
     assert_eq!(split_statements(script), sliced);
     assert_eq!(split_statement_spans(script), spans, "split must be deterministic");
+
+    // The keyword classifier reads author text too; it may answer anything,
+    // but it must answer, and answer the same twice.
+    for piece in sliced.iter().copied().chain(std::iter::once(script)) {
+        assert_eq!(classify_statement_text(piece), classify_statement_text(piece));
+    }
 });

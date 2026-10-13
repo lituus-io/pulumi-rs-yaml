@@ -3,6 +3,134 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.35
+
+### Every SQL statement, with what it reads and what it writes
+
+The lineage graph said which tables a view or a routine depends on, and never
+showed the SQL that made it so. `--sql-statements` (Python:
+`include_statements=True`) adds the statement layer: every statement a program
+carries, its exact text, what it does, where it is written, and edges from it
+to everything it reads and everything it writes.
+
+A statement is keyed by what it says -- `sql:` and the SHA-256 of its exact
+text, from the crate's own implementation -- so the same `MERGE` written in
+three routines is one row with three occurrences. An occurrence records the
+carrier (a view's table, a routine, a job, a dbt model), the statement's index
+and byte range inside the carrier's SQL, its role and provenance, the
+`fn::readFile` path it came from, and the declaring resource's URN. Edges:
+`has_statement` from the carrier, `reads` to each upstream table or location,
+`writes` to each table it creates or changes -- a view's query writes the view
+-- and `calls` to each routine. The URIs of `EXPORT DATA` and `LOAD DATA`
+become `external_location` nodes.
+
+The text is borrowed, not copied. A statement is a slice of its carrier, and
+the carrier is a slice of the parsed template whenever the SQL was written
+inline, which is why the splitter now hands out byte ranges. SQL read from a
+file comes from `SqlSourceStore`: every file the program names with
+`fn::readFile` is read once, before the export, under the same containment the
+exporter applies, and the graph borrows from it for as long as it lives. A file
+named by two spellings of one path is read once. Text that had to be built --
+a literal-only interpolation, a dbt model after substitution -- is owned, and
+`text_origin` says so. The store is an optimisation and never a second source
+of truth: a file it does not hold is read the way it always was, with the same
+warnings, and the export with and without it is byte-identical.
+
+Off by default. Statement text can carry what an author never meant to
+publish, and with the layer off nothing is hashed, no row is built, and the
+output is byte-identical to 0.5.34 -- every acceptance golden is unchanged.
+Measured on a program of twenty views and a fifty-statement routine, the layer
+costs 4% of the export.
+
+### What a statement changes is a write
+
+The script path classified statements by a match whose catch-all counted
+every table a statement named as a read. `DROP TABLE x` was reported as
+reading `x`; so were `TRUNCATE`, `ALTER` and the target of a Hive `LOAD DATA`.
+Each statement now has a kind -- `select`, `insert`, `update`, `delete`,
+`merge`, `create_table`, `create_table_as_select`, `create_view`,
+`create_materialized_view`, `create_function`, `create_procedure`, `drop`,
+`truncate`, `alter`, `export_data`, `load_data`, `call`, `scripting`, `other`
+-- and the objects of `DROP`, `TRUNCATE` and `ALTER` are writes.
+
+Two shapes the parser does not take are read from their text, each pinned by
+a test. BigQuery's `LOAD DATA ... FROM FILES` does not parse in 0.13.1; its
+target is a heuristic write, where the fallback scan would have reported it as
+a read. BigQuery's `CALL` arrives as an opaque command, so its detection stays
+textual. The `uri` of an `EXPORT DATA` and the `uris` of a `LOAD DATA` are read
+from the options text by a scanner that steps over quotes and comments.
+
+### An unquoted qualified table name lost its qualifiers
+
+`polyglot_sql::get_table_names` answers a table's BARE name for an unquoted
+qualified reference: `other.raw.events` comes back as `events`, while the
+backticked form keeps everything. Every unquoted read in a routine, a job or a
+scheduled query was therefore resolved against the default project and
+dataset -- lineage pointing at a table that does not exist, or at a different
+one that does, with nothing to say so. Views were never affected: they go
+through `analyze_query`, which keeps the qualifiers. The bare names are still
+what decides which tables count -- they already leave out CTE names -- and each
+is expanded to every qualified spelling of it the statement contains.
+
+### Scheduled queries run in their own project
+
+A `DataTransferConfig`'s destination, and every unqualified table its query
+named, was resolved against the stack's default project and never against the
+config's own `project`. And the destination's `derives_from` edges were
+hard-coded `parsed`, so a read the heuristic scanner found in SQL the parser
+could not read reappeared on the destination claiming it had been parsed. Both
+are fixed; a destination's edges carry the strength of the read they repeat.
+
+### The graph exports release the GIL
+
+`export_dependency_graph` and `export_sql_lineage` held the GIL through the
+whole of the work -- discovering, reading and rendering the project, the
+export, the serialization. The context dictionary is read under it now and
+everything after runs released, the same split the render and checkpoint
+paths have had since 0.5.29. Dict keys come out sorted, as they always have.
+
+The test that was meant to prove the render path released the GIL could not
+fail: the thread it watched also advances in the Python code on either side of
+the call. Both tests now compare the thread's progress during the call with its
+progress during an equal sleep. Measured, a GIL-holding call advances it about
+8% of that baseline and a releasing one about 63%; the bound is 30%. The graph
+test was checked against a build with the GIL held, and fails there.
+
+### Compressed NDJSON
+
+`--compress gzip` (with `--format ndjson`) writes every table as
+`*.ndjson.gz`, streamed through a gzip encoder -- the compression `bq load`
+reads natively, and the right one for a statement table that carries every
+query a program holds. The encoder is `flate2` on its pure-Rust backend
+(`miniz_oxide`), behind a `gzip` feature that is on by default; a build
+without it refuses the flag rather than writing uncompressed files under a
+compressed name. Every write, the final flush and the gzip trailer are
+checked, so a failure is an error and never a truncated table. The bytes a
+gzip table decompresses to are exactly the plain table's.
+
+### Tests
+
+Eleven new unit tests on the classifier, the option scanner, the `LOAD DATA`
+target reader, qualified names, CTEs, `EXPORT DATA` and `CALL`. Eighteen new
+lineage integration tests (11 -> 29): DROP, TRUNCATE and ALTER as writes; the
+heuristic `LOAD DATA` write; CTAS, MERGE and CALL in routines; a job's
+destination; a scheduled query's project and the strength of its destination
+edges; a `gcpx:scheduler:SqlJob` script; the unquoted qualified read; and the
+statement layer -- absent by default, a view as one statement, a script's
+offsets, kinds and edges, two occurrences of one text, interpolated text owned,
+an external location, file text borrowed from the store by pointer, and the
+store changing nothing but where the text lives. Six new security tests
+(163 -> 169): the store refuses a traversal, an absolute path, a symlink out of
+the tree, a file over the cap without reading it, and a non-UTF-8 file; and
+statement text never appears in the default output. `fuzz_sql_lineage` runs the
+statement layer and holds every id to the hash of its text and every statement
+edge to a statement that exists; `fuzz_sql_statements` drives the classifier;
+no new target (22). Four CLI tests -- the statement files, the flag's
+dependency on `--lineage`, `--compress` only with NDJSON, and gzip tables
+decompressing to the plain bytes -- and four Python tests. Three benches:
+`sql_lineage_70_statements_layer_off`, `..._layer_on` and
+`split_statement_spans_1mib`.
+
 ## 0.5.34
 
 ### A statement split that sliced author text inside a character

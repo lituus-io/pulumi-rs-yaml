@@ -6,13 +6,14 @@
 
 use polyglot_sql::guard::ComplexityGuardOptions;
 use polyglot_sql::query_analysis::{analyze_query, AnalyzeQueryOptions};
+use std::collections::HashMap;
 use std::ops::Range;
 
 use polyglot_sql::{DialectType, Expression};
 
 /// SQL larger than this is skipped (defense-in-depth under
 /// `panic = "abort"` — no unwinding safety net exists).
-const MAX_SQL_BYTES: usize = 1024 * 1024;
+pub(crate) const MAX_SQL_BYTES: usize = 1024 * 1024;
 
 /// Stack size for the parser worker thread.
 ///
@@ -144,15 +145,54 @@ fn guard(sql: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// What a statement does, as far as lineage is concerned.
+///
+/// Serialized snake_case. New variants go at the END: the enum's order is not
+/// part of any contract, but appending keeps every existing comparison stable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StatementKind {
+    Select,
+    Insert,
+    Update,
+    Delete,
+    Merge,
+    CreateTable,
+    CreateTableAsSelect,
+    CreateView,
+    CreateMaterializedView,
+    CreateFunction,
+    CreateProcedure,
+    Drop,
+    Truncate,
+    Alter,
+    ExportData,
+    LoadData,
+    Call,
+    /// Procedural scripting: `DECLARE`, `SET`, `IF`, `BEGIN`, loops, ...
+    Scripting,
+    #[default]
+    Other,
+}
+
 /// Table-level facts for one statement.
 #[derive(Debug, Default)]
 pub(crate) struct StatementFacts {
+    /// What the statement does.
+    pub kind: StatementKind,
     /// Raw referenced table names (reads), as written.
     pub reads: Vec<String>,
-    /// Raw write-target table names (INSERT/MERGE/UPDATE/DELETE/CTAS/CREATE VIEW).
+    /// Raw names of tables the statement changes: INSERT/MERGE/UPDATE/DELETE
+    /// targets, CREATE TABLE/VIEW (with or without AS SELECT), and the
+    /// objects of DROP, TRUNCATE and ALTER. Those last three used to fall
+    /// through to the reads, so `DROP TABLE x` was reported as reading `x`.
     pub writes: Vec<String>,
     /// Raw routine names invoked via CALL.
     pub calls: Vec<String>,
+    /// External locations read: the URIs a `LOAD DATA` loads from.
+    pub external_reads: Vec<String>,
+    /// External locations written: the URI an `EXPORT DATA` writes to.
+    pub external_writes: Vec<String>,
 }
 
 /// Column-level facts for a SELECT-shaped statement.
@@ -261,6 +301,72 @@ fn analyze_select_inner(sql: &str) -> Result<SelectFacts, String> {
     })
 }
 
+/// Every table `expr` names, fully qualified as written.
+///
+/// `polyglot_sql::get_table_names` returns a table's BARE name for an
+/// unquoted qualified reference: `p.raw.events` comes back as `events`, while
+/// the backticked `` `p.raw.events` `` keeps its qualifiers. Every unquoted
+/// read in a routine, job or scheduled query was then resolved against the
+/// default project and dataset -- lineage pointing at a different table, with
+/// nothing to say so. It still decides WHICH tables count (it already leaves
+/// out CTE names, for one); each bare name it returns is expanded here to
+/// every qualified spelling of it the statement contains.
+fn qualified_table_names(expr: &Expression) -> Vec<String> {
+    use polyglot_sql::expressions::TableRef;
+    use polyglot_sql::traversal::ExpressionWalk;
+
+    let bare = polyglot_sql::get_table_names(expr);
+    if bare.is_empty() {
+        return bare;
+    }
+    fn note<'e>(t: &'e TableRef, qualified: &mut HashMap<&'e str, Vec<String>>) {
+        let full = tableref_name(t);
+        let spellings = qualified.entry(t.name.name.as_str()).or_default();
+        if !spellings.contains(&full) {
+            spellings.push(full);
+        }
+    }
+    let mut qualified: HashMap<&str, Vec<String>> = HashMap::new();
+    for node in expr.dfs() {
+        match node {
+            Expression::Table(t) => note(t, &mut qualified),
+            Expression::Insert(i) => note(&i.table, &mut qualified),
+            Expression::Update(u) => {
+                note(&u.table, &mut qualified);
+                for t in &u.extra_tables {
+                    note(t, &mut qualified);
+                }
+            }
+            Expression::Delete(d) => {
+                note(&d.table, &mut qualified);
+                for t in d.using.iter().chain(&d.tables) {
+                    note(t, &mut qualified);
+                }
+            }
+            Expression::CreateTable(c) => note(&c.name, &mut qualified),
+            _ => {}
+        }
+    }
+    let mut out = Vec::with_capacity(bare.len());
+    for name in &bare {
+        match qualified.get(name.as_str()) {
+            Some(spellings) => {
+                for full in spellings {
+                    if !out.contains(full) {
+                        out.push(full.clone());
+                    }
+                }
+            }
+            None => {
+                if !out.contains(name) {
+                    out.push(name.clone());
+                }
+            }
+        }
+    }
+    out
+}
+
 fn tableref_name(t: &polyglot_sql::expressions::TableRef) -> String {
     let mut parts = Vec::new();
     if let Some(c) = &t.catalog {
@@ -277,20 +383,107 @@ fn tableref_name(t: &polyglot_sql::expressions::TableRef) -> String {
 /// statement's source text (used for CALL detection, which parses as an
 /// opaque command).
 fn statement_facts(stmt: &Expression, raw: &str) -> StatementFacts {
+    use Expression as E;
     let mut facts = StatementFacts::default();
 
-    match stmt {
-        Expression::Insert(insert) => facts.writes.push(tableref_name(&insert.table)),
-        Expression::Update(update) => facts.writes.push(tableref_name(&update.table)),
-        Expression::Delete(delete) => facts.writes.push(tableref_name(&delete.table)),
-        Expression::Merge(merge) => {
-            let targets = polyglot_sql::get_table_names(&merge.this);
-            facts.writes.extend(targets);
+    facts.kind = match stmt {
+        E::Select(_)
+        | E::Union(_)
+        | E::Intersect(_)
+        | E::Except(_)
+        | E::SetOperation(_)
+        | E::With(_)
+        | E::Values(_) => StatementKind::Select,
+        E::Insert(insert) => {
+            facts.writes.push(tableref_name(&insert.table));
+            StatementKind::Insert
         }
-        Expression::CreateTable(create) => facts.writes.push(tableref_name(&create.name)),
-        Expression::CreateView(create) => facts.writes.push(tableref_name(&create.name)),
-        _ => {}
-    }
+        E::Update(update) => {
+            facts.writes.push(tableref_name(&update.table));
+            StatementKind::Update
+        }
+        E::Delete(delete) => {
+            facts.writes.push(tableref_name(&delete.table));
+            StatementKind::Delete
+        }
+        E::Merge(merge) => {
+            facts.writes.extend(qualified_table_names(&merge.this));
+            StatementKind::Merge
+        }
+        E::CreateTable(create) => {
+            facts.writes.push(tableref_name(&create.name));
+            if create.as_select.is_some() {
+                StatementKind::CreateTableAsSelect
+            } else {
+                StatementKind::CreateTable
+            }
+        }
+        E::CreateView(create) => {
+            facts.writes.push(tableref_name(&create.name));
+            if create.materialized {
+                StatementKind::CreateMaterializedView
+            } else {
+                StatementKind::CreateView
+            }
+        }
+        E::DropTable(drop) => {
+            facts.writes.extend(drop.names.iter().map(tableref_name));
+            StatementKind::Drop
+        }
+        E::DropView(drop) => {
+            facts.writes.push(tableref_name(&drop.name));
+            StatementKind::Drop
+        }
+        E::DropFunction(_) | E::DropProcedure(_) | E::DropSchema(_) => StatementKind::Drop,
+        E::Truncate(truncate) => {
+            facts.writes.push(tableref_name(&truncate.table));
+            facts.writes.extend(
+                truncate
+                    .extra_tables
+                    .iter()
+                    .map(|e| tableref_name(&e.table)),
+            );
+            StatementKind::Truncate
+        }
+        E::TruncateTable(truncate) => {
+            for e in &truncate.expressions {
+                facts.writes.extend(qualified_table_names(e));
+            }
+            StatementKind::Truncate
+        }
+        E::AlterTable(alter) => {
+            facts.writes.push(tableref_name(&alter.name));
+            StatementKind::Alter
+        }
+        E::AlterView(alter) => {
+            facts.writes.push(tableref_name(&alter.name));
+            StatementKind::Alter
+        }
+        E::Export(_) => {
+            facts.external_writes = option_strings(raw, b"uri");
+            StatementKind::ExportData
+        }
+        E::LoadData(load) => {
+            facts.writes.extend(qualified_table_names(&load.table));
+            facts.external_reads.push(load.inpath.clone());
+            StatementKind::LoadData
+        }
+        E::CreateFunction(_) => StatementKind::CreateFunction,
+        E::CreateProcedure(_) => StatementKind::CreateProcedure,
+        E::Call(_) => StatementKind::Call,
+        E::Declare(_)
+        | E::DeclareItem(_)
+        | E::Set(_)
+        | E::SetStatement(_)
+        | E::Transaction(_)
+        | E::Commit(_)
+        | E::Rollback(_)
+        | E::ReturnStmt(_) => StatementKind::Scripting,
+        // Commands the dialect keeps opaque -- BigQuery's CALL among them --
+        // and anything else: classified by their leading keywords.
+        E::Command(command) => classify_statement_text(&command.this),
+        _ => classify_statement_text(raw),
+    };
 
     // CALL parses dialect-dependently; detect textually.
     // Compared as bytes: `trimmed[..4]` panicked when byte 4 fell inside a
@@ -308,7 +501,7 @@ fn statement_facts(stmt: &Expression, raw: &str) -> StatementFacts {
         }
     }
 
-    let all = polyglot_sql::get_table_names(stmt);
+    let all = qualified_table_names(stmt);
     for name in all {
         if !facts.writes.contains(&name) {
             facts.reads.push(name);
@@ -442,6 +635,272 @@ fn rfind_ascii_ci(hay: &[u8], needle: &[u8]) -> Option<usize> {
     (0..=hay.len() - needle.len())
         .rev()
         .find(|&i| hay[i..i + needle.len()].eq_ignore_ascii_case(needle))
+}
+
+/// The kind of a statement read from its leading keywords alone, for text
+/// the parser kept opaque or could not parse. Skips leading whitespace and
+/// comments; allocates nothing.
+pub fn classify_statement_text(sql: &str) -> StatementKind {
+    let mut words = Keywords::new(sql);
+    let Some(first) = words.next() else {
+        return StatementKind::Other;
+    };
+    let is = |w: &str, k: &str| w.eq_ignore_ascii_case(k);
+    if is(first, "select") || is(first, "with") || first.starts_with('(') {
+        return StatementKind::Select;
+    }
+    for (keyword, kind) in [
+        ("insert", StatementKind::Insert),
+        ("update", StatementKind::Update),
+        ("delete", StatementKind::Delete),
+        ("merge", StatementKind::Merge),
+        ("drop", StatementKind::Drop),
+        ("truncate", StatementKind::Truncate),
+        ("alter", StatementKind::Alter),
+        ("export", StatementKind::ExportData),
+        ("load", StatementKind::LoadData),
+        ("call", StatementKind::Call),
+    ] {
+        if is(first, keyword) {
+            return kind;
+        }
+    }
+    if is(first, "create") {
+        // CREATE [OR REPLACE] [TEMP|TEMPORARY] [MATERIALIZED|TABLE|AGGREGATE]
+        // ... -- the first word that names the object decides.
+        for word in words {
+            if is(word, "table") {
+                return StatementKind::CreateTable;
+            }
+            if is(word, "materialized") {
+                return StatementKind::CreateMaterializedView;
+            }
+            if is(word, "view") {
+                return StatementKind::CreateView;
+            }
+            if is(word, "function") {
+                return StatementKind::CreateFunction;
+            }
+            if is(word, "procedure") {
+                return StatementKind::CreateProcedure;
+            }
+            if !(is(word, "or")
+                || is(word, "replace")
+                || is(word, "temp")
+                || is(word, "temporary")
+                || is(word, "aggregate")
+                || is(word, "if")
+                || is(word, "not")
+                || is(word, "exists"))
+            {
+                break;
+            }
+        }
+        return StatementKind::Other;
+    }
+    const SCRIPTING: &[&str] = &[
+        "declare", "set", "if", "begin", "end", "loop", "while", "repeat", "for", "return",
+        "raise", "execute", "leave", "continue", "iterate", "break", "assert", "commit",
+        "rollback", "case",
+    ];
+    if SCRIPTING.iter().any(|k| is(first, k)) {
+        return StatementKind::Scripting;
+    }
+    StatementKind::Other
+}
+
+/// The leading words of a statement: runs of ASCII alphanumerics and `_`,
+/// or a single `(`, with whitespace and `--` / `/* */` comments skipped. Every
+/// boundary is an ASCII byte, so every word is a valid slice.
+struct Keywords<'a> {
+    rest: &'a str,
+}
+
+impl<'a> Keywords<'a> {
+    fn new(sql: &'a str) -> Self {
+        Self { rest: sql }
+    }
+}
+
+impl<'a> Iterator for Keywords<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<&'a str> {
+        loop {
+            let trimmed = self.rest.trim_start();
+            if let Some(after) = trimmed.strip_prefix("--") {
+                self.rest = after.find('\n').map_or("", |i| &after[i..]);
+                continue;
+            }
+            if let Some(after) = trimmed.strip_prefix("/*") {
+                self.rest = after.find("*/").map_or("", |i| &after[i + 2..]);
+                continue;
+            }
+            self.rest = trimmed;
+            break;
+        }
+        let bytes = self.rest.as_bytes();
+        let first = *bytes.first()?;
+        let len = if first == b'(' {
+            1
+        } else {
+            bytes
+                .iter()
+                .position(|b| !(b.is_ascii_alphanumeric() || *b == b'_'))
+                .unwrap_or(bytes.len())
+        };
+        if len == 0 {
+            return None;
+        }
+        let (word, rest) = self.rest.split_at(len);
+        self.rest = rest;
+        Some(word)
+    }
+}
+
+/// The string values given to `key` in a statement's options, e.g.
+/// `uri = 'gs://b/*.csv'` or `uris = ['gs://a', "gs://b"]`. The key matches
+/// ASCII case-insensitively at a word boundary. Text inside quotes or
+/// comments is never mistaken for a key.
+pub(crate) fn option_strings(sql: &str, key: &[u8]) -> Vec<String> {
+    let bytes = sql.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\'' | b'"' | b'`' => i = skip_quoted(bytes, i),
+            b'-' if bytes.get(i + 1) == Some(&b'-') => {
+                while i < bytes.len() && bytes[i] != b'\n' {
+                    i += 1;
+                }
+            }
+            b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                i += 2;
+                while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                    i += 1;
+                }
+                i = (i + 2).min(bytes.len());
+            }
+            _ => {
+                let boundary_before =
+                    i == 0 || !(bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_');
+                let end = i + key.len();
+                let matches = boundary_before
+                    && end <= bytes.len()
+                    && bytes[i..end].eq_ignore_ascii_case(key)
+                    && bytes
+                        .get(end)
+                        .is_none_or(|b| !(b.is_ascii_alphanumeric() || *b == b'_'));
+                if matches {
+                    let mut j = end;
+                    while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                        j += 1;
+                    }
+                    if bytes.get(j) == Some(&b'=') {
+                        j += 1;
+                        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                            j += 1;
+                        }
+                        i = read_option_values(sql, j, &mut out);
+                        continue;
+                    }
+                }
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
+/// Reads one quoted string, or a `[...]` list of them, starting at `at`;
+/// returns where reading stopped.
+fn read_option_values(sql: &str, at: usize, out: &mut Vec<String>) -> usize {
+    let bytes = sql.as_bytes();
+    let mut i = at;
+    let list = bytes.get(i) == Some(&b'[');
+    if list {
+        i += 1;
+    }
+    loop {
+        while i < bytes.len() && (bytes[i].is_ascii_whitespace() || bytes[i] == b',') {
+            i += 1;
+        }
+        match bytes.get(i) {
+            Some(&q) if q == b'\'' || q == b'"' => {
+                let end = skip_quoted(bytes, i);
+                // `skip_quoted` stops after the closing quote, or at the end.
+                let close = if end <= bytes.len() && end > i + 1 && bytes[end - 1] == q {
+                    end - 1
+                } else {
+                    end
+                };
+                out.push(sql[i + 1..close.max(i + 1)].to_string());
+                i = end;
+                if !list {
+                    return i;
+                }
+            }
+            Some(b']') if list => return i + 1,
+            _ => return i,
+        }
+    }
+}
+
+/// Index just past the quoted run starting at `start` (whose byte is the
+/// quote), honouring backslash escapes; the end of input if unterminated.
+fn skip_quoted(bytes: &[u8], start: usize) -> usize {
+    let q = bytes[start];
+    let mut i = start + 1;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => i += 2,
+            b if b == q => return i + 1,
+            _ => i += 1,
+        }
+    }
+    bytes.len()
+}
+
+/// The target of a BigQuery `LOAD DATA {INTO|OVERWRITE} [TEMP TABLE] name`,
+/// which the parser does not accept. `None` when the text is not that shape.
+pub(crate) fn load_data_target(sql: &str) -> Option<String> {
+    let mut words = Keywords::new(sql);
+    let is = |w: Option<&str>, k: &str| w.is_some_and(|w| w.eq_ignore_ascii_case(k));
+    if !is(words.next(), "load") || !is(words.next(), "data") {
+        return None;
+    }
+    let mode = words.next();
+    if !(is(mode, "into") || is(mode, "overwrite")) {
+        return None;
+    }
+    // What follows the mode keyword: an optional TEMP/TEMPORARY TABLE, then
+    // the name -- backticked, or a dotted run of identifier characters.
+    let mut rest = words.rest.trim_start();
+    for _ in 0..2 {
+        let mut probe = Keywords::new(rest);
+        match probe.next() {
+            Some(w)
+                if w.eq_ignore_ascii_case("temp")
+                    || w.eq_ignore_ascii_case("temporary")
+                    || w.eq_ignore_ascii_case("table") =>
+            {
+                rest = probe.rest.trim_start();
+            }
+            _ => break,
+        }
+    }
+    let bytes = rest.as_bytes();
+    let name = if bytes.first() == Some(&b'`') {
+        let end = rest[1..].find('`')? + 1;
+        &rest[1..end]
+    } else {
+        let len = bytes
+            .iter()
+            .position(|b| !(b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-')))
+            .unwrap_or(bytes.len());
+        &rest[..len]
+    };
+    (!name.is_empty()).then(|| name.to_string())
 }
 
 /// Heuristic fallback when parsing fails: scans comment- and
@@ -864,5 +1323,208 @@ mod tests {
             "worker died: {:?}",
             facts[0].as_ref().err()
         );
+    }
+
+    fn facts_of(sql: &str) -> StatementFacts {
+        let mut out = statement_facts_for_all(&[sql]);
+        let mut stmts = out
+            .remove(0)
+            .unwrap_or_else(|e| panic!("{sql:?} did not parse: {e}"));
+        assert_eq!(stmts.len(), 1, "{sql:?}");
+        stmts.remove(0)
+    }
+
+    #[test]
+    fn drop_truncate_alter_change_their_table_and_read_nothing() {
+        for (sql, kind) in [
+            ("DROP TABLE `p.d.t`", StatementKind::Drop),
+            ("DROP VIEW `p.d.t`", StatementKind::Drop),
+            ("TRUNCATE TABLE `p.d.t`", StatementKind::Truncate),
+            (
+                "ALTER TABLE `p.d.t` ADD COLUMN c INT64",
+                StatementKind::Alter,
+            ),
+        ] {
+            let f = facts_of(sql);
+            assert_eq!(f.kind, kind, "{sql}");
+            assert_eq!(f.writes, vec!["p.d.t".to_string()], "{sql}");
+            assert!(f.reads.is_empty(), "{sql} reported reads {:?}", f.reads);
+        }
+    }
+
+    #[test]
+    fn dml_and_ddl_kinds() {
+        for (sql, kind) in [
+            ("SELECT 1", StatementKind::Select),
+            (
+                "WITH a AS (SELECT 1) SELECT * FROM a",
+                StatementKind::Select,
+            ),
+            (
+                "INSERT INTO `p.d.t` SELECT * FROM `p.d.s`",
+                StatementKind::Insert,
+            ),
+            ("UPDATE `p.d.t` SET a = 1 WHERE TRUE", StatementKind::Update),
+            ("DELETE FROM `p.d.t` WHERE TRUE", StatementKind::Delete),
+            (
+                "MERGE `p.d.t` T USING `p.d.s` S ON T.id = S.id WHEN MATCHED THEN DELETE",
+                StatementKind::Merge,
+            ),
+            ("CREATE TABLE `p.d.t` (a INT64)", StatementKind::CreateTable),
+            (
+                "CREATE TABLE `p.d.t` AS SELECT * FROM `p.d.s`",
+                StatementKind::CreateTableAsSelect,
+            ),
+            (
+                "CREATE VIEW `p.d.v` AS SELECT * FROM `p.d.s`",
+                StatementKind::CreateView,
+            ),
+            (
+                "CREATE MATERIALIZED VIEW `p.d.v` AS SELECT * FROM `p.d.s`",
+                StatementKind::CreateMaterializedView,
+            ),
+        ] {
+            assert_eq!(facts_of(sql).kind, kind, "{sql}");
+        }
+    }
+
+    #[test]
+    fn ctas_writes_its_table_and_reads_its_source() {
+        let f = facts_of("CREATE OR REPLACE TABLE `p.d.t` AS SELECT a FROM `p.d.s`");
+        assert_eq!(f.writes, vec!["p.d.t".to_string()]);
+        assert_eq!(f.reads, vec!["p.d.s".to_string()]);
+    }
+
+    #[test]
+    fn export_data_reads_its_query_and_writes_its_uri() {
+        let f = facts_of(
+            "EXPORT DATA OPTIONS (uri = 'gs://bucket/out/*.csv', format = 'CSV') AS SELECT a FROM `p.d.s`",
+        );
+        assert_eq!(f.kind, StatementKind::ExportData);
+        assert_eq!(f.reads, vec!["p.d.s".to_string()]);
+        assert!(f.writes.is_empty());
+        assert_eq!(f.external_writes, vec!["gs://bucket/out/*.csv".to_string()]);
+    }
+
+    #[test]
+    fn bigquery_call_is_a_call() {
+        let f = facts_of("CALL `p.d.proc`(1)");
+        assert_eq!(f.kind, StatementKind::Call);
+        assert_eq!(f.calls, vec!["p.d.proc".to_string()]);
+    }
+
+    #[test]
+    fn classify_statement_text_reads_leading_keywords() {
+        for (sql, kind) in [
+            ("", StatementKind::Other),
+            ("   -- only a comment", StatementKind::Other),
+            ("-- note\n/* block */ select 1", StatementKind::Select),
+            ("(SELECT 1)", StatementKind::Select),
+            (
+                "load data into p.d.t from files (uris = ['gs://b/x'])",
+                StatementKind::LoadData,
+            ),
+            (
+                "CREATE OR REPLACE TEMP TABLE t AS SELECT 1",
+                StatementKind::CreateTable,
+            ),
+            (
+                "create materialized view v as select 1",
+                StatementKind::CreateMaterializedView,
+            ),
+            (
+                "CREATE AGGREGATE FUNCTION f()",
+                StatementKind::CreateFunction,
+            ),
+            (
+                "CREATE PROCEDURE p() BEGIN END",
+                StatementKind::CreateProcedure,
+            ),
+            ("CREATE SCHEMA s", StatementKind::Other),
+            ("DECLARE x INT64", StatementKind::Scripting),
+            ("IF x THEN SELECT 1; END IF", StatementKind::Scripting),
+            (
+                "EXPORT DATA OPTIONS(uri='gs://x') AS SELECT 1",
+                StatementKind::ExportData,
+            ),
+            ("ąąą", StatementKind::Other),
+        ] {
+            assert_eq!(classify_statement_text(sql), kind, "{sql:?}");
+        }
+    }
+
+    #[test]
+    fn option_strings_reads_values_and_skips_quotes_and_comments() {
+        assert_eq!(
+            option_strings("OPTIONS (URI = 'gs://a/*', format='CSV')", b"uri"),
+            vec!["gs://a/*".to_string()]
+        );
+        assert_eq!(
+            option_strings(
+                "FROM FILES (format = 'CSV', uris = ['gs://a/1', \"gs://a/2\"])",
+                b"uris"
+            ),
+            vec!["gs://a/1".to_string(), "gs://a/2".to_string()]
+        );
+        // `uri` inside a string or a comment, or as part of a longer word, is
+        // not the option.
+        assert!(option_strings("SELECT 'uri = x' -- uri = 'y'\n", b"uri").is_empty());
+        assert!(option_strings("myuri = 'z'", b"uri").is_empty());
+        // Unterminated input ends the scan rather than reading past it.
+        assert_eq!(
+            option_strings("uri = 'gs://open", b"uri"),
+            vec!["gs://open".to_string()]
+        );
+    }
+
+    #[test]
+    fn load_data_target_reads_the_bigquery_shapes() {
+        for (sql, want) in [
+            (
+                "LOAD DATA INTO p.d.t FROM FILES (uris=['gs://b/x'])",
+                Some("p.d.t"),
+            ),
+            (
+                "load data overwrite `p.d.t` from files(uris=['x'])",
+                Some("p.d.t"),
+            ),
+            (
+                "LOAD DATA INTO TEMP TABLE t FROM FILES (uris=['x'])",
+                Some("t"),
+            ),
+            ("LOAD DATA LOCAL INPATH 'x' INTO TABLE t", None),
+            ("SELECT 1", None),
+        ] {
+            assert_eq!(load_data_target(sql).as_deref(), want, "{sql}");
+        }
+    }
+
+    #[test]
+    fn unquoted_qualified_names_keep_their_qualifiers() {
+        // `get_table_names` answers `events` for an unquoted `p.raw.events`;
+        // the reads must not lose the project and dataset.
+        let f = facts_of("SELECT id FROM p.raw.events JOIN raw.users USING (id)");
+        assert_eq!(
+            f.reads,
+            vec!["p.raw.events".to_string(), "raw.users".to_string()]
+        );
+        let f = facts_of("INSERT INTO marts.t SELECT * FROM raw.s");
+        assert_eq!(f.writes, vec!["marts.t".to_string()]);
+        assert_eq!(f.reads, vec!["raw.s".to_string()]);
+        let f = facts_of("MERGE marts.t T USING raw.s S ON T.id = S.id WHEN MATCHED THEN DELETE");
+        assert_eq!(f.writes, vec!["marts.t".to_string()]);
+        assert_eq!(f.reads, vec!["raw.s".to_string()]);
+    }
+
+    #[test]
+    fn two_tables_sharing_a_bare_name_are_both_read() {
+        let f = facts_of("SELECT * FROM a.d.t JOIN b.d.t USING (id)");
+        assert_eq!(f.reads, vec!["a.d.t".to_string(), "b.d.t".to_string()]);
+    }
+
+    #[test]
+    fn a_cte_is_not_a_table() {
+        let f = facts_of("WITH x AS (SELECT * FROM p.raw.s) SELECT * FROM x");
+        assert_eq!(f.reads, vec!["p.raw.s".to_string()]);
     }
 }

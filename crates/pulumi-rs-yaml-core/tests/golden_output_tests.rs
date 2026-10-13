@@ -141,6 +141,7 @@ fn export_one(name: &str) {
             default_bq_project: None,
             source_map: Some(&source_map),
             extra_sql_sources: &[],
+            ..Default::default()
         };
         let (lineage, ldiags) = export_sql_lineage(&template, &graph, &lopts);
         let ljson = lineage.to_json().expect("lineage json");

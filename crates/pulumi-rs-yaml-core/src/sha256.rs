@@ -139,18 +139,21 @@ fn compress(h: &mut [u32; 8], block: &[u8; BLOCK]) {
     }
 }
 
+/// Lowercase hexadecimal of `bytes`, two digits per byte, with one
+/// allocation of exactly the right size and no formatting machinery.
+pub fn hex(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        s.push(DIGITS[usize::from(b >> 4)] as char);
+        s.push(DIGITS[usize::from(b & 0x0f)] as char);
+    }
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn hex(bytes: &[u8]) -> String {
-        let mut s = String::with_capacity(bytes.len() * 2);
-        for b in bytes {
-            use std::fmt::Write as _;
-            write!(s, "{b:02x}").expect("writing to a String cannot fail");
-        }
-        s
-    }
 
     /// The published FIPS 180-4 vectors. These are the specification's own
     /// answers, not this implementation's, which is the whole point: a

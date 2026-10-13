@@ -260,3 +260,63 @@ class TestMarkedProject:
         assert graph["diagnostics"] == []
         bucket = next(n for n in graph["nodes"] if n["logical_name"] == "bucket")
         assert bucket["id"] == "urn:pulumi:dev::proj::gcp:storage/bucket:Bucket::bucket"
+
+
+class TestGilRelease:
+    def test_a_graph_export_releases_the_gil(self, tmp_project):
+        """Another thread keeps running while a large project exports -- the
+        observable form of the GIL being released around the load and the
+        export."""
+        import threading
+        import time
+
+        resources = "".join(
+            f"  r{i}:\n    type: gcp:storage:Bucket\n    properties:\n"
+            f"      name: b-{i}\n      labels:\n        prev: ${{r{max(i - 1, 0)}.id}}\n"
+            for i in range(1, 3000)
+        )
+        project_dir = tmp_project(
+            "name: big\nruntime: yaml\nresources:\n  r0:\n    type: gcp:storage:Bucket\n"
+            + resources
+        )
+        counter = 0
+        stop = threading.Event()
+
+        def spin():
+            nonlocal counter
+            while not stop.is_set():
+                counter += 1
+
+        worker = threading.Thread(target=spin, daemon=True)
+        worker.start()
+        try:
+            time.sleep(0.05)
+            before = counter
+            started = time.perf_counter()
+            graph = export_dependency_graph(project_dir, "dev", "org")
+            elapsed = time.perf_counter() - started
+            during = counter - before
+            # The same length of time with the GIL certainly released.
+            before = counter
+            time.sleep(elapsed)
+            baseline = counter - before
+        finally:
+            stop.set()
+            worker.join(timeout=5)
+        assert len(graph["nodes"]) > 3000
+        assert elapsed > 0.01, "the export was too fast to prove anything"
+        # The spinner also gets switch-interval slices in the Python code on
+        # either side of the call, so `during > 0` proves nothing. Measured:
+        # a GIL-holding export advances it ~8% of the baseline, a releasing
+        # one ~63%.
+        assert during > 0.3 * baseline, (
+            f"the counter advanced {during} during the export against {baseline} "
+            "while sleeping as long: the GIL was held"
+        )
+
+    def test_dict_keys_are_sorted_as_they_always_were(self, tmp_project):
+        graph = export_dependency_graph(tmp_project(BASIC), "dev", "org")
+        top = [k for k in graph if k != "diagnostics"]
+        assert top == sorted(top)
+        node = graph["nodes"][0]
+        assert list(node) == sorted(node)

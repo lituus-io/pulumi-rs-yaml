@@ -54,6 +54,15 @@ pub(crate) fn get_property_by_path<'src>(
     Some(current)
 }
 
+/// A resolved SQL string and where it came from.
+pub(crate) struct SqlText<'src> {
+    /// Borrowed from the template or the source store whenever it can be.
+    pub text: Cow<'src, str>,
+    pub provenance: SqlProvenance,
+    /// The `fn::readFile` path literal, for text read from a file.
+    pub file: Option<Cow<'src, str>>,
+}
+
 /// Materializes a SQL string: literal resolution first, then
 /// `fn::readFile` with a **contained** read (the Jinja rule — reject
 /// absolute paths, canonicalize both sides, `starts_with` check).
@@ -63,13 +72,18 @@ pub(crate) fn resolve_sql_text<'src>(
     expr: &'src Expr<'src>,
     variables: &HashMap<&'src str, &'src Expr<'src>>,
     project_dir: Option<&Path>,
+    store: Option<&'src super::SqlSourceStore>,
     context: &str,
     diags: &mut Diagnostics,
-) -> Option<(Cow<'src, str>, SqlProvenance)> {
+) -> Option<SqlText<'src>> {
     let mut memo = HashMap::new();
     let mut visiting = HashSet::new();
     if let Some(lit) = resolve_literal(expr, variables, &mut memo, &mut visiting) {
-        return Some((lit, SqlProvenance::Inline));
+        return Some(SqlText {
+            text: lit,
+            provenance: SqlProvenance::Inline,
+            file: None,
+        });
     }
     if let Expr::ReadFile(_, inner) = expr {
         let path_lit = resolve_literal(inner, variables, &mut memo, &mut visiting)?;
@@ -81,10 +95,25 @@ pub(crate) fn resolve_sql_text<'src>(
             );
             return None;
         };
+        // Borrowed from the caller's store when it holds the file; read here,
+        // with the same containment and the same warnings, when it does not.
+        if let Some(text) = store.and_then(|s| s.get(path_lit.as_ref())) {
+            return Some(SqlText {
+                text: Cow::Borrowed(text),
+                provenance: SqlProvenance::File,
+                file: Some(path_lit),
+            });
+        }
         let dir_str = dir.to_string_lossy();
         match resolve_contained_path(dir_str.as_ref(), path_lit.as_ref()) {
             Ok(resolved) => match std::fs::read_to_string(&resolved) {
-                Ok(content) => return Some((Cow::Owned(content), SqlProvenance::File)),
+                Ok(content) => {
+                    return Some(SqlText {
+                        text: Cow::Owned(content),
+                        provenance: SqlProvenance::File,
+                        file: Some(path_lit),
+                    })
+                }
                 Err(e) => diags.warning(
                     None,
                     format!("{}: failed to read '{}'", context, path_lit),
@@ -261,8 +290,9 @@ mod tests {
         let vars = HashMap::new();
         let mut diags = Diagnostics::new();
         let expr = get_property_by_path(&t.resources[0].resource.properties, "sql").expect("sql");
-        let (text, prov) =
-            resolve_sql_text(expr, &vars, None, "r.sql", &mut diags).expect("resolved");
+        let (text, prov) = resolve_sql_text(expr, &vars, None, None, "r.sql", &mut diags)
+            .map(|t| (t.text, t.provenance))
+            .expect("resolved");
         assert_eq!(text, "SELECT 1");
         assert_eq!(prov, SqlProvenance::Inline);
     }
@@ -278,7 +308,9 @@ mod tests {
         let mut diags = Diagnostics::new();
         let expr = get_property_by_path(&t.resources[0].resource.properties, "sql").expect("sql");
         let (text, prov) =
-            resolve_sql_text(expr, &vars, Some(dir.path()), "r.sql", &mut diags).expect("resolved");
+            resolve_sql_text(expr, &vars, Some(dir.path()), None, "r.sql", &mut diags)
+                .map(|t| (t.text, t.provenance))
+                .expect("resolved");
         assert_eq!(text, "SELECT 2");
         assert_eq!(prov, SqlProvenance::File);
     }
@@ -292,7 +324,9 @@ mod tests {
         let vars = HashMap::new();
         let mut diags = Diagnostics::new();
         let expr = get_property_by_path(&t.resources[0].resource.properties, "sql").expect("sql");
-        assert!(resolve_sql_text(expr, &vars, Some(dir.path()), "r.sql", &mut diags).is_none());
+        assert!(
+            resolve_sql_text(expr, &vars, Some(dir.path()), None, "r.sql", &mut diags).is_none()
+        );
         assert!(diags.has_warnings());
     }
 

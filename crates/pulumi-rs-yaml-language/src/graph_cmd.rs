@@ -7,12 +7,17 @@
 //! pulumi-language-yaml graph --stack <s> [--organization <o>] [--dir <d>]
 //!                            [--format json|ndjson] [--out <dir>]
 //!                            [--lineage] [--default-bq-project <p>]
+//!                            [--sql-statements] [--compress gzip|none]
 //! ```
 //!
 //! With `--lineage`, the JSON document gains a `sql_lineage` root key
 //! (output without the flag is byte-identical to before), and ndjson
 //! mode additionally writes `lineage_nodes.ndjson` /
-//! `lineage_edges.ndjson`.
+//! `lineage_edges.ndjson`. `--sql-statements` (with `--lineage`) adds the
+//! statement layer -- every SQL statement's text, kind and position, and
+//! statement-level `reads`/`writes` edges -- as `statements` and
+//! `statement_occurrences` in JSON, and as `lineage_statements.ndjson` and
+//! `lineage_statement_occurrences.ndjson`.
 //!
 //! `json` (default) prints one pretty document to stdout. `ndjson`
 //! writes `nodes.ndjson` and `edges.ndjson` (one flat row per line) to
@@ -27,11 +32,11 @@ use std::path::PathBuf;
 use pulumi_rs_yaml_core::multi_file;
 use pulumi_rs_yaml_core::resource_graph::{export_resource_graph, GraphExportOptions};
 #[cfg(feature = "sql-lineage")]
-use pulumi_rs_yaml_core::sql_lineage::{export_sql_lineage, SqlLineageOptions};
+use pulumi_rs_yaml_core::sql_lineage::{export_sql_lineage, SqlLineageOptions, SqlSourceStore};
 
 const USAGE: &str = "usage: pulumi-language-yaml graph --stack <stack> \
     [--organization <org>] [--dir <project-dir>] [--format json|ndjson] [--out <dir>] \
-    [--lineage] [--default-bq-project <project>]";
+    [--lineage] [--default-bq-project <project>] [--sql-statements] [--compress gzip|none]";
 
 struct GraphArgs {
     stack: String,
@@ -44,6 +49,17 @@ struct GraphArgs {
     /// still validated in builds without the `sql-lineage` feature.
     #[cfg_attr(not(feature = "sql-lineage"), allow(dead_code))]
     default_bq_project: Option<String>,
+    #[cfg_attr(not(feature = "sql-lineage"), allow(dead_code))]
+    sql_statements: bool,
+    compress: Compression,
+}
+
+/// How NDJSON tables are written.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Compression {
+    None,
+    /// `*.ndjson.gz`; needs the `gzip` feature.
+    Gzip,
 }
 
 #[derive(PartialEq)]
@@ -60,6 +76,8 @@ fn parse_args(args: &[String]) -> Result<GraphArgs, String> {
     let mut out: Option<PathBuf> = None;
     let mut lineage = false;
     let mut default_bq_project: Option<String> = None;
+    let mut sql_statements = false;
+    let mut compress = Compression::None;
 
     let mut i = 0;
     while i < args.len() {
@@ -96,6 +114,24 @@ fn parse_args(args: &[String]) -> Result<GraphArgs, String> {
                 lineage = true;
                 i += 1;
             }
+            "--compress" => {
+                compress = match take_value(i)?.as_str() {
+                    "none" => Compression::None,
+                    "gzip" if cfg!(feature = "gzip") => Compression::Gzip,
+                    "gzip" => {
+                        return Err(format!(
+                            "--compress gzip requires the gzip feature (not built in)\n{}",
+                            USAGE
+                        ))
+                    }
+                    other => return Err(format!("unknown compression '{}'\n{}", other, USAGE)),
+                };
+                i += 2;
+            }
+            "--sql-statements" => {
+                sql_statements = true;
+                i += 1;
+            }
             "--default-bq-project" => {
                 default_bq_project = Some(take_value(i)?.clone());
                 i += 2;
@@ -109,6 +145,12 @@ fn parse_args(args: &[String]) -> Result<GraphArgs, String> {
             "--stack is required: exported node ids embed the stack name\n{}",
             USAGE
         ));
+    }
+    if sql_statements && !lineage {
+        return Err(format!("--sql-statements requires --lineage\n{}", USAGE));
+    }
+    if compress != Compression::None && format != OutputFormat::Ndjson {
+        return Err(format!("--compress applies to --format ndjson\n{}", USAGE));
     }
     if format == OutputFormat::Ndjson && out.is_none() {
         return Err(format!("--format ndjson requires --out <dir>\n{}", USAGE));
@@ -125,6 +167,8 @@ fn parse_args(args: &[String]) -> Result<GraphArgs, String> {
         out,
         lineage,
         default_bq_project,
+        sql_statements,
+        compress,
     })
 }
 
@@ -202,6 +246,12 @@ pub fn run_graph(args: &[String]) -> i32 {
         eprintln!("error: --lineage requires the sql-lineage feature (not built in)");
         return 1;
     }
+    // Every file the program reads SQL from, read once and held for as long
+    // as the lineage graph borrows from it.
+    #[cfg(feature = "sql-lineage")]
+    let sql_sources = parsed
+        .lineage
+        .then(|| SqlSourceStore::collect(&template, &parsed.dir));
     #[cfg(feature = "sql-lineage")]
     let lineage = if parsed.lineage {
         let lineage_opts = SqlLineageOptions {
@@ -212,6 +262,8 @@ pub fn run_graph(args: &[String]) -> i32 {
             default_bq_project: parsed.default_bq_project.as_deref(),
             source_map: Some(&source_map),
             extra_sql_sources: &[],
+            sql_sources: sql_sources.as_ref(),
+            include_statements: parsed.sql_statements,
         };
         let (lineage, lineage_diags) = export_sql_lineage(&template, &graph, &lineage_opts);
         for diag in lineage_diags.iter() {
@@ -268,13 +320,15 @@ pub fn run_graph(args: &[String]) -> i32 {
                 eprintln!("error: cannot create {}: {}", out_dir.display(), e);
                 return 1;
             }
-            if let Err(e) = write_ndjson(out_dir, &graph) {
+            if let Err(e) = write_ndjson(out_dir, &graph, parsed.compress) {
                 eprintln!("error: {}", e);
                 return 1;
             }
             #[cfg(feature = "sql-lineage")]
             if let Some(lineage) = &lineage {
-                if let Err(e) = write_lineage_ndjson(out_dir, lineage) {
+                if let Err(e) =
+                    write_lineage_ndjson(out_dir, lineage, parsed.sql_statements, parsed.compress)
+                {
                     eprintln!("error: {}", e);
                     return 1;
                 }
@@ -288,45 +342,131 @@ pub fn run_graph(args: &[String]) -> i32 {
 fn write_lineage_ndjson(
     out_dir: &std::path::Path,
     lineage: &pulumi_rs_yaml_core::sql_lineage::SqlLineageGraph<'_>,
+    statements: bool,
+    compress: Compression,
 ) -> Result<(), String> {
-    write_ndjson_rows(&out_dir.join("lineage_nodes.ndjson"), &lineage.nodes)?;
-    write_ndjson_rows(&out_dir.join("lineage_edges.ndjson"), &lineage.edges)?;
+    write_ndjson_rows(out_dir, "lineage_nodes", &lineage.nodes, compress)?;
+    write_ndjson_rows(out_dir, "lineage_edges", &lineage.edges, compress)?;
+    if statements {
+        write_ndjson_rows(out_dir, "lineage_statements", &lineage.statements, compress)?;
+        write_ndjson_rows(
+            out_dir,
+            "lineage_statement_occurrences",
+            &lineage.statement_occurrences,
+            compress,
+        )?;
+    }
     Ok(())
 }
 
 fn write_ndjson(
     out_dir: &std::path::Path,
     graph: &pulumi_rs_yaml_core::resource_graph::ResourceGraph<'_>,
+    compress: Compression,
 ) -> Result<(), String> {
-    write_ndjson_rows(&out_dir.join("nodes.ndjson"), &graph.nodes)?;
-    write_ndjson_rows(&out_dir.join("edges.ndjson"), &graph.edges)?;
+    write_ndjson_rows(out_dir, "nodes", &graph.nodes, compress)?;
+    write_ndjson_rows(out_dir, "edges", &graph.edges, compress)?;
     Ok(())
 }
 
-/// Streams one JSON row per line into `path`.
+/// Streams one JSON row per line into `{out_dir}/{table}.ndjson`, or
+/// `.ndjson.gz` through a gzip encoder.
 ///
 /// Rows used to be serialized into a `Vec<String>` -- the whole table held in
 /// memory twice over -- and then written to an unbuffered `File`, two write
 /// calls per row. Serializing straight into a buffered writer produces the
 /// same bytes (`to_string` is `to_writer` into a `Vec`) with one allocation
-/// for the buffer. The flush is explicit: `BufWriter`'s drop would swallow a
-/// failed final write, and a truncated table must be an error.
+/// for the buffer. Finishing is explicit: `BufWriter`'s drop would swallow a
+/// failed final write, and an encoder dropped unfinished leaves a truncated
+/// stream, and either must be an error rather than a short table.
 fn write_ndjson_rows<T: serde::Serialize>(
-    path: &std::path::Path,
+    out_dir: &std::path::Path,
+    table: &str,
     rows: &[T],
+    compress: Compression,
 ) -> Result<(), String> {
-    let file = std::fs::File::create(path)
+    let name = match compress {
+        Compression::None => format!("{table}.ndjson"),
+        Compression::Gzip => format!("{table}.ndjson.gz"),
+    };
+    let path = out_dir.join(name);
+    let file = std::fs::File::create(&path)
         .map_err(|e| format!("cannot create {}: {}", path.display(), e))?;
-    let mut w = std::io::BufWriter::new(file);
+    let mut sink = Sink::new(std::io::BufWriter::new(file), compress);
     for row in rows {
-        serde_json::to_writer(&mut w, row)
+        serde_json::to_writer(&mut sink, row)
             .map_err(|e| format!("serialize row for {}: {}", path.display(), e))?;
-        w.write_all(b"\n")
+        sink.write_all(b"\n")
             .map_err(|e| format!("write {}: {}", path.display(), e))?;
     }
-    w.into_inner()
-        .map_err(|e| format!("write {}: {}", path.display(), e.error()))?;
-    Ok(())
+    sink.finish()
+        .map_err(|e| format!("write {}: {}", path.display(), e))
+}
+
+/// Where rows go: straight to the buffered file, or through a gzip encoder
+/// in front of it. An enum rather than a boxed writer: the set is closed.
+enum Sink {
+    Plain(std::io::BufWriter<std::fs::File>),
+    #[cfg(feature = "gzip")]
+    Gzip(flate2::write::GzEncoder<std::io::BufWriter<std::fs::File>>),
+}
+
+impl Sink {
+    fn new(file: std::io::BufWriter<std::fs::File>, compress: Compression) -> Self {
+        match compress {
+            Compression::None => Sink::Plain(file),
+            #[cfg(feature = "gzip")]
+            Compression::Gzip => Sink::Gzip(flate2::write::GzEncoder::new(
+                file,
+                flate2::Compression::default(),
+            )),
+            // Refused at argument parsing when the feature is not built in.
+            #[cfg(not(feature = "gzip"))]
+            Compression::Gzip => Sink::Plain(file),
+        }
+    }
+
+    /// Flushes everything -- the gzip trailer included -- and reports any
+    /// failure, which a drop would hide.
+    // Without the `gzip` feature the enum has one variant.
+    #[allow(clippy::infallible_destructuring_match)]
+    fn finish(self) -> std::io::Result<()> {
+        let buffered = match self {
+            Sink::Plain(w) => w,
+            #[cfg(feature = "gzip")]
+            Sink::Gzip(encoder) => encoder.finish()?,
+        };
+        buffered
+            .into_inner()
+            .map(drop)
+            .map_err(std::io::IntoInnerError::into_error)
+    }
+}
+
+impl std::io::Write for Sink {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            Sink::Plain(w) => w.write(buf),
+            #[cfg(feature = "gzip")]
+            Sink::Gzip(w) => w.write(buf),
+        }
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        match self {
+            Sink::Plain(w) => w.write_all(buf),
+            #[cfg(feature = "gzip")]
+            Sink::Gzip(w) => w.write_all(buf),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            Sink::Plain(w) => w.flush(),
+            #[cfg(feature = "gzip")]
+            Sink::Gzip(w) => w.flush(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -480,6 +620,113 @@ mod tests {
         assert!(lineage_edges.contains("derives_from"));
     }
 
+    #[test]
+    fn compress_applies_to_ndjson_only() {
+        assert!(parse_args(&args(&["--stack", "dev", "--compress", "gzip"])).is_err());
+        assert!(parse_args(&args(&["--stack", "dev", "--compress", "zstd"])).is_err());
+        let ok = parse_args(&args(&[
+            "--stack",
+            "dev",
+            "--format",
+            "ndjson",
+            "--out",
+            "x",
+            "--compress",
+            "none",
+        ]));
+        assert!(ok.is_ok());
+    }
+
+    #[cfg(feature = "gzip")]
+    #[test]
+    fn gzip_tables_decompress_to_the_plain_bytes() {
+        use std::io::Read;
+        let dir = tempfile::tempdir().unwrap();
+        write_project(
+            dir.path(),
+            "name: proj\nruntime: yaml\nresources:\n  a:\n    type: t:m:A\n  b:\n    type: t:m:B\n    properties:\n      x: ${a.id}\n",
+        );
+        let run = |out: &std::path::Path, extra: &[&str]| {
+            let mut a = vec![
+                "--stack",
+                "dev",
+                "--dir",
+                dir.path().to_str().unwrap(),
+                "--format",
+                "ndjson",
+                "--out",
+                out.to_str().unwrap(),
+            ];
+            a.extend_from_slice(extra);
+            assert_eq!(run_graph(&args(&a)), 0);
+        };
+        let plain = dir.path().join("plain");
+        let gz = dir.path().join("gz");
+        run(&plain, &[]);
+        run(&gz, &["--compress", "gzip"]);
+        for table in ["nodes", "edges"] {
+            let expected = fs::read(plain.join(format!("{table}.ndjson"))).unwrap();
+            let mut decoded = Vec::new();
+            flate2::read::GzDecoder::new(
+                fs::File::open(gz.join(format!("{table}.ndjson.gz"))).unwrap(),
+            )
+            .read_to_end(&mut decoded)
+            .unwrap();
+            assert_eq!(decoded, expected, "{table}");
+            assert!(!gz.join(format!("{table}.ndjson")).exists());
+        }
+    }
+
+    #[test]
+    fn sql_statements_requires_lineage() {
+        assert!(parse_args(&args(&["--stack", "dev", "--sql-statements"])).is_err());
+        assert!(parse_args(&args(&["--stack", "dev", "--lineage", "--sql-statements"])).is_ok());
+    }
+
+    #[cfg(feature = "sql-lineage")]
+    #[test]
+    fn sql_statements_writes_the_statement_files() {
+        let dir = tempfile::tempdir().unwrap();
+        write_project(
+            dir.path(),
+            "name: proj\nruntime: yaml\nresources:\n  v:\n    type: gcp:bigquery:Table\n    properties:\n      project: data-proj\n      datasetId: marts\n      tableId: v1\n      view:\n        query: \"SELECT id FROM `data-proj.raw.events`\"\n",
+        );
+        let out = dir.path().join("export");
+        let run = |extra: &[&str]| {
+            let mut a = vec![
+                "--stack",
+                "dev",
+                "--dir",
+                dir.path().to_str().unwrap(),
+                "--lineage",
+                "--format",
+                "ndjson",
+                "--out",
+                out.to_str().unwrap(),
+            ];
+            a.extend_from_slice(extra);
+            run_graph(&args(&a))
+        };
+        assert_eq!(run(&[]), 0);
+        assert!(!out.join("lineage_statements.ndjson").exists());
+        assert_eq!(run(&["--sql-statements"]), 0);
+        let statements = fs::read_to_string(out.join("lineage_statements.ndjson")).unwrap();
+        let row: serde_json::Value =
+            serde_json::from_str(statements.lines().next().unwrap()).unwrap();
+        assert_eq!(row["statement_kind"], "select");
+        assert_eq!(row["text"], "SELECT id FROM `data-proj.raw.events`");
+        assert!(row["id"].as_str().unwrap().starts_with("sql:"));
+        let occurrences =
+            fs::read_to_string(out.join("lineage_statement_occurrences.ndjson")).unwrap();
+        let occ: serde_json::Value =
+            serde_json::from_str(occurrences.lines().next().unwrap()).unwrap();
+        assert_eq!(occ["carrier_id"], "bq://data-proj/marts/v1");
+        assert_eq!(occ["text_origin"], "literal");
+        let edges = fs::read_to_string(out.join("lineage_edges.ndjson")).unwrap();
+        assert!(edges.contains("\"has_statement\""));
+        assert!(edges.contains("\"reads\""));
+    }
+
     /// The streaming writer must produce exactly what the buffered one did:
     /// each row as `serde_json::to_string`, then one newline.
     #[test]
@@ -498,7 +745,7 @@ mod tests {
         };
         let (graph, _) = export_resource_graph(&template, &opts);
         let dir = tempfile::tempdir().unwrap();
-        write_ndjson(dir.path(), &graph).unwrap();
+        write_ndjson(dir.path(), &graph, Compression::None).unwrap();
         let expected = |rows: Vec<String>| rows.into_iter().map(|r| r + "\n").collect::<String>();
         let nodes = expected(
             graph

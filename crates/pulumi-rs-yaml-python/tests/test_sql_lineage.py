@@ -143,3 +143,47 @@ class TestStrInvokeDerivedIds:
             and e["target_id"] == "bq://data-proj/sales-eu/orders"
             for e in graph["edges"]
         )
+
+
+class TestStatementLayer:
+    VIEW = """\
+name: stmts
+runtime: yaml
+resources:
+  v:
+    type: gcp:bigquery:Table
+    properties:
+      project: p
+      datasetId: marts
+      tableId: v
+      view:
+        query:
+          fn::readFile: q.sql
+"""
+
+    def _project(self, tmp_project, tmp_path):
+        d = tmp_project(self.VIEW)
+        (tmp_path / "q.sql").write_text("SELECT id FROM `p.raw.events`\n")
+        return d
+
+    def test_absent_by_default(self, tmp_project, tmp_path):
+        g = export_sql_lineage(self._project(tmp_project, tmp_path), "prod", "org")
+        assert "statements" not in g
+        assert "statement_occurrences" not in g
+
+    def test_rows_and_edges(self, tmp_project, tmp_path):
+        g = export_sql_lineage(
+            self._project(tmp_project, tmp_path), "prod", "org", include_statements=True
+        )
+        [st] = g["statements"]
+        assert st["text"] == "SELECT id FROM `p.raw.events`"
+        assert st["statement_kind"] == "select"
+        assert st["id"].startswith("sql:") and len(st["id"]) == 4 + 64
+        [occ] = g["statement_occurrences"]
+        assert occ["carrier_id"] == "bq://p/marts/v"
+        assert occ["text_origin"] == "file"
+        assert occ["carrier_file"] == "q.sql"
+        kinds = {(e["source_id"], e["target_id"], e["relationship"]) for e in g["edges"]}
+        assert ("bq://p/marts/v", st["id"], "has_statement") in kinds
+        assert (st["id"], "bq://p/raw/events", "reads") in kinds
+        assert (st["id"], "bq://p/marts/v", "writes") in kinds
