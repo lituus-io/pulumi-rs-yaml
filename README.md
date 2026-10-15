@@ -4,7 +4,10 @@
 [![Security](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/security.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/security.yml)
 [![Fuzz](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/fuzz.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/fuzz.yml)
 [![Benchmark](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/benchmark.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/benchmark.yml)
-[![fuzz targets](https://img.shields.io/badge/fuzz%20targets-22-blue)](fuzz/fuzz_targets)
+[![Release](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/release.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/releases/latest)
+[![PyPI](https://img.shields.io/pypi/v/pulumi-rs-yaml?label=PyPI)](https://pypi.org/project/pulumi-rs-yaml/)
+[![Python](https://img.shields.io/badge/python-%E2%89%A53.9-blue)](https://pypi.org/project/pulumi-rs-yaml/)
+[![fuzz targets](https://img.shields.io/badge/fuzz%20targets-23-blue)](fuzz/fuzz_targets)
 [![security tests](https://img.shields.io/badge/security%20tests-174-blue)](crates/pulumi-rs-yaml-core/tests/security_tests.rs)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE)
 
