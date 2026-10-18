@@ -1,0 +1,2 @@
+outputs:
+{% include 'parts/outer.j2' %}

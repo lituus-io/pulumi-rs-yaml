@@ -1,0 +1,15 @@
+{% import 'parts/lib.j2' as lib -%}
+{% set tables = ['orders', 'customers', 'events', 'audit'] -%}
+{% set ns = namespace(kept=[]) -%}
+{% for t in tables -%}
+{% if t == 'audit' %}{% break %}{% endif -%}
+{% set ns.kept = ns.kept + [t] -%}
+{% endfor -%}
+outputs:
+{% include 'parts/common.j2' %}
+  kept: {{ ns.kept | tojson }}
+  reversed: {{ ns.kept[::-1] | tojson }}
+  labels: {{ lib.labels('data', 3) }}
+  names: {{ tables | map('upper') | join(',') | tojson }}
+  sizes: {{ 1536 | filesizeformat(true) | tojson }}
+  quoted: {{ 'a: b' | tojson }}

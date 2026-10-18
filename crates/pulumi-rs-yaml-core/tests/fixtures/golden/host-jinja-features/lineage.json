@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "jinja-features",
+  "stack": "golden",
+  "nodes": [],
+  "edges": []
+}

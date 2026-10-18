@@ -1,0 +1,2 @@
+outputs:
+  n: {% for a in range(1000) %}{% for b in range(1000) %}{% endfor %}{% endfor %}1

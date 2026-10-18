@@ -248,6 +248,14 @@ pub fn run_graph(args: &[String]) -> i32 {
             return 1;
         }
     };
+    // The same mode the language host renders this project with.
+    let undefined = match pulumi_rs_yaml_core::jinja::UndefinedMode::from_env() {
+        Ok(mode) => mode,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return 1;
+        }
+    };
     let jinja_ctx = pulumi_rs_yaml_core::jinja::JinjaContext {
         project_name: &project_name,
         stack_name: &parsed.stack,
@@ -256,7 +264,7 @@ pub fn run_graph(args: &[String]) -> i32 {
         root_directory: &dir_str,
         config: &config,
         project_dir: &dir_str,
-        undefined: pulumi_rs_yaml_core::jinja::UndefinedMode::Strict,
+        undefined,
         provider_templated_packages: &scoped,
         extra: &extra,
         limits,

@@ -1,0 +1,3 @@
+{% macro labels(team, n) -%}
+{{ {'team': team, 'count': n | string, 'stack': pulumi_stack} | tojson }}
+{%- endmacro %}

@@ -1,0 +1,117 @@
+{
+  "edges": [],
+  "nodes": [
+    {
+      "id": "stackoutput::org/jinja-features/golden::kept",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "kept",
+      "name": "kept",
+      "organization": "org",
+      "project": "jinja-features",
+      "source_file": "Pulumi.main.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/jinja-features/golden::labels",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "labels",
+      "name": "labels",
+      "organization": "org",
+      "project": "jinja-features",
+      "source_file": "Pulumi.main.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/jinja-features/golden::names",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "names",
+      "name": "names",
+      "organization": "org",
+      "project": "jinja-features",
+      "source_file": "Pulumi.main.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/jinja-features/golden::project",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "project",
+      "name": "project",
+      "organization": "org",
+      "project": "jinja-features",
+      "source_file": "Pulumi.main.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/jinja-features/golden::quoted",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "quoted",
+      "name": "quoted",
+      "organization": "org",
+      "project": "jinja-features",
+      "source_file": "Pulumi.main.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/jinja-features/golden::reversed",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "reversed",
+      "name": "reversed",
+      "organization": "org",
+      "project": "jinja-features",
+      "source_file": "Pulumi.main.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/jinja-features/golden::sizes",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "sizes",
+      "name": "sizes",
+      "organization": "org",
+      "project": "jinja-features",
+      "source_file": "Pulumi.main.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/jinja-features/golden::stackName",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "stackName",
+      "name": "stackName",
+      "organization": "org",
+      "project": "jinja-features",
+      "source_file": "Pulumi.main.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::jinja-features::pulumi:pulumi:Stack::jinja-features-golden",
+      "kind": "stack",
+      "literal_properties": {},
+      "logical_name": "stack",
+      "name": "jinja-features-golden",
+      "organization": "org",
+      "package": "pulumi",
+      "project": "jinja-features",
+      "stack": "golden",
+      "type_token": "pulumi:pulumi:Stack"
+    }
+  ],
+  "organization": "org",
+  "project": "jinja-features",
+  "schema_version": 1,
+  "sql_lineage": {
+    "edges": [],
+    "nodes": [],
+    "organization": "org",
+    "project": "jinja-features",
+    "schema_version": 1,
+    "stack": "golden"
+  },
+  "stack": "golden"
+}
