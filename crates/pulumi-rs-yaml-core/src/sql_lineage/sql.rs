@@ -60,13 +60,16 @@ enum Reply {
 struct Parser {
     jobs: std::sync::mpsc::Sender<Job>,
     replies: std::sync::mpsc::Receiver<Reply>,
+    /// The worker's thread, so reuse can be observed rather than assumed.
+    #[cfg_attr(not(test), allow(dead_code))]
+    worker: std::thread::ThreadId,
 }
 
 impl Parser {
     fn spawn() -> Result<Self, String> {
         let (job_tx, job_rx) = std::sync::mpsc::channel::<Job>();
         let (reply_tx, reply_rx) = std::sync::mpsc::channel::<Reply>();
-        std::thread::Builder::new()
+        let handle = std::thread::Builder::new()
             .stack_size(PARSER_STACK_BYTES)
             .name("sql-lineage-parser".to_string())
             .spawn(move || {
@@ -108,6 +111,7 @@ impl Parser {
         Ok(Parser {
             jobs: job_tx,
             replies: reply_rx,
+            worker: handle.thread().id(),
         })
     }
 
@@ -1180,6 +1184,54 @@ mod tests {
         assert!(out[0].is_ok(), "{:?}", out[0]);
         assert!(out[1].is_err(), "the oversized one is refused");
         assert!(out[2].is_ok(), "{:?}", out[2]);
+    }
+
+    /// The worker of this thread, if one is parked in its slot.
+    fn current_worker() -> Option<std::thread::ThreadId> {
+        PARSER.with(|c| c.borrow().as_ref().map(|p| p.worker))
+    }
+
+    /// One worker serves every call on a thread: the second parse reaches
+    /// the thread the first one spawned.
+    #[test]
+    fn the_parser_worker_is_reused_across_calls() {
+        assert!(statement_facts_for_all(&["SELECT 1"])[0].is_ok());
+        let first = current_worker().expect("a worker after the first parse");
+        for _ in 0..5 {
+            assert!(statement_facts_for_all(&["SELECT 2 FROM `p.d.t`"])[0].is_ok());
+        }
+        assert_eq!(
+            current_worker(),
+            Some(first),
+            "the same worker, not a new one per call"
+        );
+    }
+
+    /// A dead worker is cleared from its slot, so the next call spawns a
+    /// fresh one instead of failing forever.
+    #[test]
+    fn a_dead_parser_worker_is_cleared_and_replaced() {
+        let (jobs, rx) = std::sync::mpsc::channel::<Job>();
+        drop(rx); // the worker is gone: every send fails
+        let (_tx, replies) = std::sync::mpsc::channel::<Reply>();
+        let dead = std::thread::current().id();
+        PARSER.with(|c| {
+            *c.borrow_mut() = Some(Parser {
+                jobs,
+                replies,
+                worker: dead,
+            })
+        });
+        assert!(
+            statement_facts_for_all(&["SELECT 1"])[0].is_err(),
+            "the dead worker is reported"
+        );
+        assert!(current_worker().is_none(), "and cleared from the slot");
+        assert!(
+            statement_facts_for_all(&["SELECT 1"])[0].is_ok(),
+            "the next call spawns anew"
+        );
+        assert_ne!(current_worker(), Some(dead));
     }
 
     /// An empty batch spawns nothing at all.

@@ -417,6 +417,40 @@ mod tests {
         assert!(rt.has_function("uppercase"));
     }
 
+    /// `compile` is not a parse: it executes the module's top level, which
+    /// is how the `def` becomes a binding -- so top-level code runs when the
+    /// program loads, whether or not the function is ever invoked.
+    #[test]
+    fn compile_executes_the_module_top_level() {
+        let funcs = vec![make_func(
+            "f",
+            "fail('ran at load')\ndef f(s):\n    return s\n",
+        )];
+        let mut diags = Diagnostics::new();
+        let rt = StarlarkRuntime::compile(&funcs, &mut diags);
+        assert!(
+            diags.has_errors(),
+            "the top-level fail() ran during compile"
+        );
+        assert!(format!("{}", diags).contains("ran at load"), "{}", diags);
+        assert!(!rt.has_function("f"));
+    }
+
+    /// `has_function` answers for the DECLARED name, not for every `def` a
+    /// script happens to contain.
+    #[test]
+    fn has_function_keys_on_the_declared_name() {
+        let funcs = vec![make_func(
+            "outer",
+            "def helper(s):\n    return s\ndef outer(s):\n    return helper(s)\n",
+        )];
+        let mut diags = Diagnostics::new();
+        let rt = StarlarkRuntime::compile(&funcs, &mut diags);
+        assert!(!diags.has_errors(), "{}", diags);
+        assert!(rt.has_function("outer"));
+        assert!(!rt.has_function("helper"));
+    }
+
     #[test]
     fn test_compile_syntax_error() {
         let funcs = vec![make_func("bad", "def bad(:\n")];
