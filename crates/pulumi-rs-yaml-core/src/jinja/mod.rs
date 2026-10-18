@@ -109,6 +109,38 @@ pub struct RenderDiagnostic<'src> {
     pub expression: &'src str,
     pub message: String,
     pub suggestion: Option<&'static str>,
+    /// Where the fault actually lies when it arose inside an included or
+    /// imported template. The fields above then point at the `{% include %}`
+    /// in this file; this names the other file, its line and column, and
+    /// the chain of includes between the two. Boxed: rare, and kept off the
+    /// size of every diagnostic.
+    pub origin: Option<Box<IncludeOrigin>>,
+}
+
+/// One step of an include chain: a file, and the line in it that led on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IncludeStep {
+    pub file: String,
+    pub line: u32,
+}
+
+/// The place inside an included template where a render fault arose.
+///
+/// Owned, unlike the rest of a diagnostic: the text is the included file's,
+/// which the caller never held. `column`/`end_column` follow the same
+/// convention as [`RenderDiagnostic`]'s -- 1-based, or both `0` with an empty
+/// `expression` when the engine could not say where on the line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IncludeOrigin {
+    pub file: String,
+    pub line: u32,
+    pub column: u32,
+    pub end_column: u32,
+    pub source_line: String,
+    pub expression: String,
+    /// From the file being rendered to the one that failed, each with the
+    /// line of the include (or, last, of the fault).
+    pub chain: Vec<IncludeStep>,
 }
 
 impl fmt::Display for RenderDiagnostic<'_> {
@@ -127,6 +159,7 @@ impl fmt::Debug for RenderDiagnostic<'_> {
             .field("expression", &self.expression)
             .field("message", &self.message)
             .field("suggestion", &self.suggestion)
+            .field("origin", &self.origin)
             .finish()
     }
 }
@@ -144,29 +177,106 @@ impl RenderDiagnostic<'_> {
             "{}:{}:{}: error: {}",
             filename, self.line, self.column, self.message
         );
-        if !self.source_line.is_empty() {
-            let gutter = format!("  {} | ", self.line);
-            out.push('\n');
-            out.push_str(&gutter);
-            out.push_str(self.source_line);
-            if self.column > 0 {
-                let byte_col = (self.column - 1) as usize;
-                let pad = self
-                    .source_line
-                    .get(..byte_col)
-                    .map_or(byte_col, |prefix| prefix.chars().count());
-                let width = self.expression.chars().count().max(1);
-                out.push('\n');
-                out.push_str(&" ".repeat(gutter.len() - 2));
-                out.push_str("| ");
-                out.push_str(&" ".repeat(pad));
-                out.push_str(&"^".repeat(width));
-            }
+        excerpt(
+            &mut out,
+            self.line,
+            self.column,
+            self.source_line,
+            self.expression,
+        );
+        if let Some(origin) = &self.origin {
+            out.push_str(&format!(
+                "\n  --> in {}:{}:{}",
+                origin.file, origin.line, origin.column
+            ));
+            excerpt(
+                &mut out,
+                origin.line,
+                origin.column,
+                &origin.source_line,
+                &origin.expression,
+            );
+            let chain: Vec<String> = origin
+                .chain
+                .iter()
+                .map(|s| format!("{}:{}", s.file, s.line))
+                .collect();
+            out.push_str(&format!("\n  include chain: {}", chain.join(" -> ")));
         }
         if let Some(suggestion) = self.suggestion {
             out.push_str(&format!("\n  suggestion: {}", suggestion));
         }
         out
+    }
+
+    /// Removes every secret value from what this diagnostic would print.
+    ///
+    /// The message is rewritten in place. A source line is borrowed and
+    /// cannot be, so a line holding a secret is dropped, with its column and
+    /// expression -- the location survives, the value does not.
+    pub fn redact(&mut self, secrets: &[&str]) {
+        let secrets: Vec<&str> = secrets.iter().copied().filter(|s| !s.is_empty()).collect();
+        if secrets.is_empty() {
+            return;
+        }
+        let scrub = |text: &str| redact_secrets(text, &secrets).into_owned();
+        if secrets.iter().any(|s| self.message.contains(s)) {
+            self.message = scrub(&self.message);
+        }
+        if secrets
+            .iter()
+            .any(|s| self.source_line.contains(s) || self.expression.contains(s))
+        {
+            self.source_line = "";
+            self.expression = "";
+            self.column = 0;
+            self.end_column = 0;
+        }
+        if let Some(origin) = &mut self.origin {
+            origin.source_line = scrub(&origin.source_line);
+            origin.expression = scrub(&origin.expression);
+        }
+    }
+}
+
+/// `text` with every non-empty secret value replaced by `[secret]`;
+/// borrowed when there is nothing to replace.
+///
+/// For error text that may quote rendered output: a config value marked
+/// secret can be interpolated into a line the YAML gate then rejects, and
+/// that line is what an error excerpt shows.
+pub fn redact_secrets<'t>(text: &'t str, secrets: &[&str]) -> Cow<'t, str> {
+    let mut out = Cow::Borrowed(text);
+    for secret in secrets.iter().filter(|s| !s.is_empty()) {
+        if out.contains(secret) {
+            out = Cow::Owned(out.replace(secret, "[secret]"));
+        }
+    }
+    out
+}
+
+/// The source line under a gutter and, when the column is known, a caret
+/// row under the failing expression -- measured in characters, not bytes, so
+/// it lands under the token whatever precedes it.
+fn excerpt(out: &mut String, line: u32, column: u32, source_line: &str, expression: &str) {
+    if source_line.is_empty() {
+        return;
+    }
+    let gutter = format!("  {} | ", line);
+    out.push('\n');
+    out.push_str(&gutter);
+    out.push_str(source_line);
+    if column > 0 {
+        let byte_col = (column - 1) as usize;
+        let pad = source_line
+            .get(..byte_col)
+            .map_or(byte_col, |prefix| prefix.chars().count());
+        let width = expression.chars().count().max(1);
+        out.push('\n');
+        out.push_str(&" ".repeat(gutter.len() - 2));
+        out.push_str("| ");
+        out.push_str(&" ".repeat(pad));
+        out.push_str(&"^".repeat(width));
     }
 }
 
@@ -392,7 +502,7 @@ fn classify_yaml_error(msg: &str, line_content: &str) -> (RenderErrorKind, Optio
             RenderErrorKind::YamlIndentation,
             Some("Check indentation — list items may need more or fewer spaces"),
         )
-    } else if msg.contains("found duplicate key") {
+    } else if msg.contains("found duplicate key") || msg.contains("duplicate entry with key") {
         (
             RenderErrorKind::YamlDuplicateKey,
             Some("A Jinja loop may have generated duplicate resource names — use {{ loop.index }}"),
@@ -910,7 +1020,7 @@ impl JinjaPreprocessor<'_> {
 
         let compiled: &str = effective_source.as_ref();
         let fail = |e: &minijinja::Error| {
-            let mut diag = build_render_diagnostic(source, compiled, e);
+            let mut diag = build_render_diagnostic(source, compiled, filename, e);
             explain_limit(&mut diag, &limits);
             diag
         };
@@ -941,6 +1051,7 @@ impl JinjaPreprocessor<'_> {
             expression: "",
             message: "the render produced text that is not UTF-8".to_string(),
             suggestion: None,
+            origin: None,
         })?;
 
         // Put provider-templated blocks back before readFile markers are
@@ -987,6 +1098,7 @@ fn output_too_large<'src>(len: usize, limits: &JinjaLimits) -> RenderDiagnostic<
             OUTPUT_TAG, limits.output_bytes
         ),
         suggestion: Some(OUTPUT_SUGGESTION),
+        origin: None,
     }
 }
 
@@ -1129,7 +1241,7 @@ pub fn validate_jinja_syntax<'src>(
     // Use lenient undefined for syntax-only validation (we don't have context yet)
     env.set_undefined_behavior(minijinja::UndefinedBehavior::Lenient);
     env.add_template(filename, source)
-        .map_err(|e| build_render_diagnostic(source, source, &e))?;
+        .map_err(|e| build_render_diagnostic(source, source, filename, &e))?;
     Ok(())
 }
 
@@ -1160,6 +1272,7 @@ fn scope_diagnostic<'src>(
             "provider-templated block scalars are left unrendered; \
              move the SQL to a file and load it with fn::readFile if this cannot be fixed",
         ),
+        origin: None,
     }
 }
 
@@ -1179,19 +1292,58 @@ fn scope_diagnostic<'src>(
 fn build_render_diagnostic<'src>(
     source: &'src str,
     compiled: &str,
+    filename: &str,
     err: &minijinja::Error,
 ) -> RenderDiagnostic<'src> {
-    let line = err.line().unwrap_or(0) as u32;
+    // A fault inside an imported macro surfaces unwrapped, located in the
+    // macro's own file. Its line is not a line of this one, so this file's
+    // location is left unknown and the origin carries the real one.
+    let foreign = err.name().is_some_and(|n| n != filename);
+    let line = if foreign {
+        0
+    } else {
+        err.line().unwrap_or(0) as u32
+    };
     let source_line = source
         .lines()
         .nth(line.saturating_sub(1) as usize)
+        .filter(|_| line > 0)
         .unwrap_or("");
     let (kind, suggestion) = classify_jinja_error(err);
-    let (column, end_column, expression) = locate_expression(source_line, compiled, err);
-    let message = match err.detail() {
-        Some(detail) => detail.to_string(),
-        None => err.kind().to_string(),
+    let (column, end_column, expression) = if foreign {
+        (0, 0, "")
+    } else {
+        locate_expression(source_line, compiled, err)
     };
+
+    // The message is the root cause's, not the `error in "<name>"` wrapper
+    // an include puts round it.
+    let chain = error_chain(err);
+    let root = chain.last().copied().unwrap_or(err);
+    let origin = include_origin(&chain, filename);
+    let mut message = match root.detail() {
+        Some(detail) => detail.to_string(),
+        None => root.kind().to_string(),
+    };
+    if kind == RenderErrorKind::IncludeCycle {
+        let mut names: Vec<&str> = err.name().into_iter().collect();
+        for name in included_names(&chain) {
+            let repeat = names.contains(&name);
+            names.push(name);
+            if repeat {
+                break;
+            }
+        }
+        message = format!("include cycle: {}", names.join(" -> "));
+    } else if kind == RenderErrorKind::JinjaUndefinedVariable && message == "undefined value" {
+        // Name what was undefined: the engine says only that something was.
+        let what = origin
+            .as_ref()
+            .map_or(expression, |o| o.expression.as_str());
+        if !what.is_empty() {
+            message = format!("undefined value: `{}`", what);
+        }
+    }
 
     RenderDiagnostic {
         kind,
@@ -1202,7 +1354,58 @@ fn build_render_diagnostic<'src>(
         expression,
         message,
         suggestion,
+        origin,
     }
+}
+
+/// Where in an included template the root cause of `chain` lies, when it
+/// lies in one at all. `None` for a fault in the file being rendered.
+fn include_origin(chain: &[&minijinja::Error], filename: &str) -> Option<Box<IncludeOrigin>> {
+    let root = chain.last()?;
+    let file = root.name()?;
+    if file == filename {
+        return None;
+    }
+    let line = root.line().unwrap_or(0) as u32;
+    let text = root.template_source().unwrap_or("");
+    let source_line = text
+        .lines()
+        .nth(line.saturating_sub(1) as usize)
+        .unwrap_or("");
+    let (column, end_column, expression) = locate_expression(source_line, text, root);
+    // Every error in the chain names the template it arose in and the line
+    // there: for a wrapper that is the include statement, for the root the
+    // fault itself.
+    // A cycle repeats forever; the chain stops at the first file seen twice.
+    let mut steps: Vec<IncludeStep> = Vec::with_capacity(chain.len());
+    for e in chain {
+        if let Some(name) = e.name() {
+            let line = e.line().unwrap_or(0) as u32;
+            if steps
+                .last()
+                .is_some_and(|s| s.file == name && s.line == line)
+            {
+                continue;
+            }
+            let repeat = steps.iter().any(|s| s.file == name);
+            steps.push(IncludeStep {
+                file: name.to_string(),
+                line,
+            });
+            if repeat {
+                break;
+            }
+        }
+    }
+    Some(Box::new(IncludeOrigin {
+        file: file.to_string(),
+        line,
+        column,
+        end_column,
+        source_line: source_line.to_string(),
+        expression: expression.to_string(),
+        chain: steps,
+    }))
 }
 
 /// The failing expression on `source_line`, as `(column, end_column, slice)`,
@@ -1293,6 +1496,7 @@ pub fn validate_rendered_yaml_value<'src>(
                     filename, line, col, e
                 ),
                 suggestion,
+                origin: None,
             })
         }
     }
@@ -2481,6 +2685,7 @@ mod tests {
             expression: "",
             message: "syntax error".to_string(),
             suggestion: None,
+            origin: None,
         };
         let formatted = diag.format_rich("Pulumi.yaml");
         assert!(formatted.contains("Pulumi.yaml:5:3: error: syntax error"));
@@ -2499,6 +2704,7 @@ mod tests {
             expression: "",
             message: "undefined variable".to_string(),
             suggestion: Some("Check variable name"),
+            origin: None,
         };
         let formatted = diag.format_rich("test.yaml");
         assert!(formatted.contains("suggestion: Check variable name"));
@@ -2515,6 +2721,7 @@ mod tests {
             expression: "",
             message: "error".to_string(),
             suggestion: None,
+            origin: None,
         };
         let formatted = diag.format_rich("test.yaml");
         // Should not contain a source line section
@@ -2532,6 +2739,7 @@ mod tests {
             expression: "mapping",
             message: "undefined value".to_string(),
             suggestion: None,
+            origin: None,
         };
         let formatted = diag.format_rich("Pulumi.yaml");
         let lines: Vec<&str> = formatted.lines().collect();
@@ -2556,6 +2764,7 @@ mod tests {
             expression: "nope",
             message: "undefined value".to_string(),
             suggestion: None,
+            origin: None,
         };
         let formatted = diag.format_rich("t.yaml");
         let caret_row = formatted.lines().nth(2).unwrap_or("");
@@ -2603,7 +2812,8 @@ mod tests {
         assert_eq!((diag.line, diag.column, diag.end_column), (2, 10, 21));
         assert_eq!(diag.expression, "unknown_var");
         assert_eq!(diag.source_line, "name: {{ unknown_var }}");
-        assert_eq!(diag.message, "undefined value", "no location suffix");
+        // Named, and with no location suffix: the location is in the fields.
+        assert_eq!(diag.message, "undefined value: `unknown_var`");
     }
 
     #[test]
@@ -2668,7 +2878,7 @@ mod tests {
             .expect("registered")
             .render(minijinja::context! {})
             .expect_err("nope is undefined");
-        let diag = build_render_diagnostic(source, rewritten, &err);
+        let diag = build_render_diagnostic(source, rewritten, "t", &err);
         assert_eq!(diag.line, 2);
         assert_eq!((diag.column, diag.end_column), (0, 0));
         assert_eq!(diag.expression, "");
@@ -2678,7 +2888,7 @@ mod tests {
     #[test]
     fn an_error_with_no_range_has_no_column() {
         let err = minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, "x");
-        let diag = build_render_diagnostic("a: 1\n", "a: 1\n", &err);
+        let diag = build_render_diagnostic("a: 1\n", "a: 1\n", "t", &err);
         assert_eq!((diag.line, diag.column, diag.end_column), (0, 0, 0));
         assert_eq!(diag.expression, "");
         assert_eq!(diag.message, "x");
@@ -2687,7 +2897,7 @@ mod tests {
     #[test]
     fn a_message_without_detail_is_the_kind() {
         let err = minijinja::Error::from(minijinja::ErrorKind::UndefinedError);
-        let diag = build_render_diagnostic("", "", &err);
+        let diag = build_render_diagnostic("", "", "t", &err);
         assert_eq!(diag.message, "undefined value");
     }
 
@@ -3158,6 +3368,7 @@ mod tests {
             expression: "",
             message: "test message".to_string(),
             suggestion: None,
+            origin: None,
         };
         assert_eq!(format!("{}", diag), "test message");
     }

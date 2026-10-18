@@ -1,0 +1,4 @@
+Pulumi.yaml:2:7: error: YAML parse error after Jinja rendering at Pulumi.yaml:2:7: block sequence entries are not allowed in this context at line 2 column 7
+  2 | list: - b
+    |       ^
+  suggestion: Check indentation — list items may need more or fewer spaces

@@ -1,0 +1,3 @@
+Pulumi.yaml:2:0: error: unexpected end of input, expected end of block
+  2 | {% if true %}
+  suggestion: Check Jinja syntax: {{ var }}, {% block %}, {# comment #}

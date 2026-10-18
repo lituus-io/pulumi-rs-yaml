@@ -1,0 +1,3 @@
+Pulumi.yaml:2:0: error: the render ran out of fuel: more than 200 instructions
+  2 | {% for i in range(10) %}{% for j in range(10) %}{{ i }}{% endfor %}{% endfor %}
+  suggestion: a loop or recursion runs far longer than any real stack needs; look for an unbounded or nested loop. If the work is real, raise the budget with PULUMI_YAML_JINJA_LIMITS=fuel=<instructions>

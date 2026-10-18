@@ -258,6 +258,24 @@ fn preprocess_jinja_diag(
             d.set_item("source_line", diag.source_line)?;
             d.set_item("expression", diag.expression)?;
             d.set_item("suggestion", diag.suggestion)?;
+            // A fault inside an included or imported template: where it
+            // really lies, and the include chain that led there.
+            match &diag.origin {
+                Some(o) => {
+                    let od = PyDict::new(py);
+                    od.set_item("file", o.file.as_str())?;
+                    od.set_item("line", o.line)?;
+                    od.set_item("column", o.column)?;
+                    od.set_item("end_column", o.end_column)?;
+                    od.set_item("source_line", o.source_line.as_str())?;
+                    od.set_item("expression", o.expression.as_str())?;
+                    let chain: Vec<(String, u32)> =
+                        o.chain.iter().map(|s| (s.file.clone(), s.line)).collect();
+                    od.set_item("chain", chain)?;
+                    d.set_item("origin", od)?;
+                }
+                None => d.set_item("origin", py.None())?,
+            }
             out.set_item("diagnostic", d)?;
         }
     }

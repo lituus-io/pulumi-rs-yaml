@@ -1,0 +1,4 @@
+Pulumi.yaml:2:12: error: undefined value: `settings.region`
+  2 | region: {{ settings.region }}
+    |            ^^^^^^^^^^^^^^^
+  suggestion: Check variable name. Available context: config.*, pulumi_*, env.*

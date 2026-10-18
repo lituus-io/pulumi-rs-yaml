@@ -98,6 +98,14 @@ pub async fn run(
     // 3. Load template(s) — multi-file or single-file with Jinja source override.
     // `PULUMI_YAML_JINJA=off`: the caller rendered the files already, so they
     // are parsed as written and never rendered a second time.
+    // Error text can quote rendered lines; a secret config value
+    // interpolated into one must not reach the log.
+    let secrets: Vec<&str> = config_secret_keys
+        .iter()
+        .filter_map(|k| config.get(k).map(String::as_str))
+        .collect();
+    let redact =
+        |text: &str| pulumi_rs_yaml_core::jinja::redact_secrets(text, &secrets).into_owned();
     let jinja_source = std::env::var(crate::exec::JINJA_SOURCE_ENV).ok();
     let render = match load_mode(jinja_enabled(), jinja_source.is_some()) {
         Ok(render) => render,
@@ -120,6 +128,7 @@ pub async fn run(
                 // it here, as the non-exec path below does — otherwise the
                 // deploy stops with an empty resource list and no reason,
                 // which reads like an empty program rather than a failure.
+                let e = redact(&e);
                 eprintln!("error: failed to load template: {}", e);
                 return RunResult {
                     error: format!("failed to load template: {}", e),
@@ -134,7 +143,7 @@ pub async fn run(
         if load_diags.has_errors() {
             for diag in load_diags.iter() {
                 if diag.is_error() {
-                    eprintln!("error: {}", diag.summary);
+                    eprintln!("error: {}", redact(&diag.summary));
                 }
             }
             return RunResult {

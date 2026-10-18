@@ -1,0 +1,4 @@
+Pulumi.yaml:2:7: error: the render crossed the output limit of 64 bytes
+  2 | v: {{ 'x' * 100 }}
+    |       ^^^^^^^^^
+  suggestion: the template writes far more text than a stack needs; look for a loop or string repetition that multiplies output. If the size is real, raise it with PULUMI_YAML_JINJA_LIMITS=output=<bytes>

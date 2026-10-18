@@ -158,7 +158,8 @@ class TestPreprocessJinjaDiag:
         assert d["end_column"] == 21
         assert d["source_line"] == "name: {{ unknown_var }}"
         assert d["expression"] == "unknown_var"
-        assert d["message"] == "undefined value"
+        assert d["message"] == "undefined value: `unknown_var`"
+        assert d["origin"] is None
         assert "(in " not in d["message"], "the location is a field, not a suffix"
         assert d["suggestion"]
 
