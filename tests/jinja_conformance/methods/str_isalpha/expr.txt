@@ -1,0 +1,1 @@
+'abcé'.isalpha() and not 'ab1'.isalpha()

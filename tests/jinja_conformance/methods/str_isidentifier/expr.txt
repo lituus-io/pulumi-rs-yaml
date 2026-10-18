@@ -1,0 +1,1 @@
+'abc_1'.isidentifier() and not '1abc'.isidentifier()

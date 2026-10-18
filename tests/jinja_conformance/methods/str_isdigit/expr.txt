@@ -1,0 +1,1 @@
+'123'.isdigit() and not '12a'.isdigit() and not ''.isdigit()

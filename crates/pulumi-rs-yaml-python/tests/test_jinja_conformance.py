@@ -18,6 +18,7 @@ from pulumi_yaml_rs import preprocess_jinja, preprocess_jinja_diag
 
 CORPUS = pathlib.Path(__file__).resolve().parents[3] / "tests" / "jinja_conformance" / "cases"
 CASES = sorted(p for p in CORPUS.iterdir() if p.is_dir())
+METHODS = sorted(p for p in (CORPUS.parent / "methods").iterdir() if p.is_dir())
 
 CLASS = {
     "jinja_syntax": "syntax",
@@ -66,6 +67,38 @@ def test_case_renders_as_the_engine_pins(case):
         assert "diagnostic" in out, out
         got = CLASS.get(out["diagnostic"]["kind"], "runtime")
         assert got == want, out["diagnostic"]
+
+
+@pytest.mark.parametrize("case", METHODS, ids=[c.name for c in METHODS])
+def test_method_case_renders_as_the_engine_pins(case):
+    expr = (case / "expr.txt").read_text().rstrip("\n")
+    out = preprocess_jinja_diag("{{ " + expr + " }}", "m.j2", {})
+    kind, want = expected(case)
+    if kind == "text":
+        assert out.get("rendered") == want, out
+    else:
+        assert "diagnostic" in out, out
+        assert CLASS.get(out["diagnostic"]["kind"], "runtime") == want, out["diagnostic"]
+
+
+class TestMutationAndDates:
+    def test_a_list_built_in_the_template_is_shared_and_mutable(self):
+        out = preprocess_jinja(
+            "{% set a = [] %}{% set b = a %}{% do a.append('x') %}{{ b|join(',') }}", "t.yaml", {}
+        )
+        assert out == "x"
+
+    def test_a_context_value_is_read_only(self):
+        out = preprocess_jinja_diag("{% do config.update(a='b') %}", "t.yaml", {"config.a": "1"})
+        assert "read-only" in out["diagnostic"]["message"]
+
+    def test_dates(self):
+        out = preprocess_jinja(
+            "{{ (current_date|to_date + timedelta(days=1)).isoformat() }}",
+            "t.yaml",
+            {"current_date": "2026-12-31"},
+        )
+        assert out == "2027-01-01"
 
 
 class TestLimits:

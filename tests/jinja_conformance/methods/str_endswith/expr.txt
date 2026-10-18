@@ -1,0 +1,1 @@
+'abc'.endswith('bc') and 'abc'.endswith('b', 0, 2)

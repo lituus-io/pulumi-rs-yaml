@@ -1,0 +1,1 @@
+'  x  '.strip() + '|' + 'xxaxx'.strip('x')

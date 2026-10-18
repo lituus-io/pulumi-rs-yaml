@@ -1,0 +1,1 @@
+'banana'.count('a') + 'banana'.count('an', 2) * 10 + 'ab'.count('') * 100

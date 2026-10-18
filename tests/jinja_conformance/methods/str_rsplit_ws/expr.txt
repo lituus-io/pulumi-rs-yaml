@@ -1,0 +1,1 @@
+'|'.join('  a b  c '.rsplit(None, 1))

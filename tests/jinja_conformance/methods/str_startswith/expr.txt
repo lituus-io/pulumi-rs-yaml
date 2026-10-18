@@ -1,0 +1,1 @@
+'abc'.startswith('ab') and not 'abc'.startswith('b') and 'abc'.startswith('b', 1)
