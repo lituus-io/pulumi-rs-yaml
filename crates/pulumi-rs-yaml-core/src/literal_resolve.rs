@@ -165,6 +165,7 @@ impl<'src, 'c> Vars<'src, 'c> {
     }
 
     /// No variables and no config.
+    #[cfg(any(test, feature = "sql-lineage"))]
     pub(crate) fn empty() -> Self {
         Self::new(HashMap::new())
     }
