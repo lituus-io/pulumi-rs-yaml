@@ -14,6 +14,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 mod compat;
+mod limits;
+
+pub use limits::{JinjaLimits, RenderStats, LIMITS_ENV, MAX_RECURSION};
 
 // ---------------------------------------------------------------------------
 // GAT-based trait (B.1)
@@ -77,6 +80,16 @@ pub enum RenderErrorKind {
     /// with certainty. Refusing is deliberate: silently altering a model's SQL
     /// is worse than declining the file.
     ProviderScope,
+    /// The render executed more instructions than [`JinjaLimits::fuel`].
+    FuelExhausted,
+    /// Macro or include nesting went deeper than [`JinjaLimits::recursion`].
+    RecursionLimit,
+    /// The output grew past [`JinjaLimits::output_bytes`].
+    OutputTooLarge,
+    /// Templates include or import each other in a cycle.
+    IncludeCycle,
+    /// A `range()` call asked for more than [`JinjaLimits::range`] elements.
+    RangeTooLarge,
 }
 
 /// Rich diagnostic from template pre-processing.
@@ -248,37 +261,112 @@ impl fmt::Display for IncludeRefusal {
 // ---------------------------------------------------------------------------
 
 /// Classifies a minijinja error and returns a (kind, suggestion) pair.
+/// The error chain from the outermost failure -- the `{% include %}` or
+/// `{% import %}` in the file being rendered -- down to the root cause in
+/// whichever template it arose. A failure inside an include reaches the
+/// caller wrapped as `error in "<name>"` with the cause as its source; the
+/// cause, not the wrapper, says what went wrong.
+pub(crate) fn error_chain(err: &minijinja::Error) -> Vec<&minijinja::Error> {
+    let mut chain = vec![err];
+    let mut cur = err;
+    while let Some(next) =
+        std::error::Error::source(cur).and_then(|s| s.downcast_ref::<minijinja::Error>())
+    {
+        chain.push(next);
+        cur = next;
+    }
+    chain
+}
+
+/// The templates an include chain passes through, outermost first, read
+/// from the `error in "<name>"` wrappers the engine puts round a failure
+/// inside an include.
+fn included_names<'e>(chain: &[&'e minijinja::Error]) -> Vec<&'e str> {
+    chain
+        .iter()
+        .filter(|e| e.kind() == minijinja::ErrorKind::BadInclude)
+        .filter_map(|e| e.detail()?.strip_prefix("error in \"")?.strip_suffix('"'))
+        .collect()
+}
+
+/// Whether a chain passes through the same template twice: the include
+/// cycle that recursion exhaustion is the symptom of.
+fn chain_repeats(chain: &[&minijinja::Error]) -> bool {
+    let names = included_names(chain);
+    names
+        .iter()
+        .enumerate()
+        .any(|(i, n)| names[..i].contains(n))
+}
+
+/// Classifies a minijinja error -- by its root cause, through any include
+/// wrappers -- and returns a (kind, suggestion) pair.
 fn classify_jinja_error(err: &minijinja::Error) -> (RenderErrorKind, Option<&'static str>) {
-    let detail = err.detail().unwrap_or("");
+    let chain = error_chain(err);
+    let root = chain.last().copied().unwrap_or(err);
+    let detail = root.detail().unwrap_or("");
     if detail.contains("readFile:") {
         return (
             RenderErrorKind::JinjaFilterError,
             Some("Check the file path. Relative paths are resolved from the project directory."),
         );
     }
-    match err.kind() {
-        minijinja::ErrorKind::UndefinedError => (
+    if detail.starts_with(OUTPUT_TAG) {
+        return (RenderErrorKind::OutputTooLarge, Some(OUTPUT_SUGGESTION));
+    }
+    if detail.starts_with(limits::RANGE_TAG) {
+        return (RenderErrorKind::RangeTooLarge, Some(RANGE_SUGGESTION));
+    }
+    if detail.starts_with("recursion limit exceeded") {
+        return if chain_repeats(&chain) {
+            (RenderErrorKind::IncludeCycle, Some(CYCLE_SUGGESTION))
+        } else {
+            (RenderErrorKind::RecursionLimit, Some(RECURSION_SUGGESTION))
+        };
+    }
+    use minijinja::ErrorKind as K;
+    match root.kind() {
+        K::OutOfFuel => (RenderErrorKind::FuelExhausted, Some(FUEL_SUGGESTION)),
+        // The only writer a render has is the capped one.
+        K::WriteFailure => (RenderErrorKind::OutputTooLarge, Some(OUTPUT_SUGGESTION)),
+        K::UndefinedError | K::UnknownFunction => (
             RenderErrorKind::JinjaUndefinedVariable,
             Some("Check variable name. Available context: config.*, pulumi_*, env.*"),
         ),
-        minijinja::ErrorKind::TemplateNotFound => (
+        K::TemplateNotFound => (
             RenderErrorKind::JinjaTemplateNotFound,
             Some(
                 "the include was looked for relative to the stack directory and \
                  the render root; check the path, and that the file is in the tree",
             ),
         ),
-        minijinja::ErrorKind::BadInclude if detail.starts_with(IncludeRefusal::PREFIX) => (
+        K::BadInclude if detail.starts_with(IncludeRefusal::PREFIX) => (
             RenderErrorKind::JinjaTemplateNotFound,
             IncludeRefusal::suggestion_for(detail),
         ),
-        minijinja::ErrorKind::SyntaxError => (
+        K::SyntaxError | K::UnknownBlock | K::BadEscape => (
             RenderErrorKind::JinjaSyntax,
             Some("Check Jinja syntax: {{ var }}, {% block %}, {# comment #}"),
         ),
-        minijinja::ErrorKind::InvalidOperation => (
+        // Jinja2 rejects these when it compiles the template.
+        K::UnknownFilter | K::UnknownTest => (
+            RenderErrorKind::JinjaSyntax,
+            Some("Check the name: JINJA.md lists every filter and test"),
+        ),
+        K::InvalidOperation => (
             RenderErrorKind::JinjaFilterError,
             Some("Check filter arguments and types"),
+        ),
+        K::TooManyArguments
+        | K::MissingArgument
+        | K::UnknownMethod
+        | K::CannotUnpack
+        | K::NonKey
+        | K::NonPrimitive
+        | K::BadSerialization
+        | K::CannotDeserialize => (
+            RenderErrorKind::JinjaTypeError,
+            Some("Check the arguments, and the type of the value they apply to"),
         ),
         _ => (RenderErrorKind::JinjaSyntax, None),
     }
@@ -351,6 +439,8 @@ pub struct JinjaContext<'cfg> {
     /// Inserted into the Jinja context BEFORE built-in keys, so built-ins
     /// always win on collision (prevents override attacks).
     pub extra: &'cfg HashMap<String, String>,
+    /// Bounds on the render's time, depth and output; see [`JinjaLimits`].
+    pub limits: JinjaLimits,
 }
 
 /// Builds a minijinja context Value from borrowed references.
@@ -724,10 +814,28 @@ impl JinjaPreprocessor<'_> {
         source: &'src str,
         filename: &str,
     ) -> Result<Cow<'src, str>, RenderDiagnostic<'src>> {
+        self.render_with_stats(source, filename).map(|(out, _)| out)
+    }
+
+    /// [`render`](Self::render), also answering what the render cost.
+    ///
+    /// The counts are deterministic -- the same template and context always
+    /// use the same fuel -- which is what lets the performance tests assert
+    /// on work done rather than on a clock.
+    pub fn render_with_stats<'src>(
+        &self,
+        source: &'src str,
+        filename: &str,
+    ) -> Result<(Cow<'src, str>, RenderStats), RenderDiagnostic<'src>> {
         // Zero-copy fast path: no Jinja syntax → return borrowed reference
         if !has_jinja_syntax(source) {
-            return Ok(Cow::Borrowed(source));
+            let stats = RenderStats {
+                fuel: 0,
+                output_bytes: source.len(),
+            };
+            return Ok((Cow::Borrowed(source), stats));
         }
+        let limits = self.context.limits;
 
         // Scope out text addressed to a provider before anything else looks at
         // it. `Unchanged` is the default and costs nothing.
@@ -750,10 +858,39 @@ impl JinjaPreprocessor<'_> {
         // escape from the template name, and with its `json` feature on a
         // `.yaml` name would be JSON-escaped.
         env.set_auto_escape_callback(|_| minijinja::AutoEscape::None);
+        env.set_fuel(Some(limits.fuel));
+        env.set_recursion_limit(limits.recursion);
         register_custom_filters(&mut env);
+        // Every `{{ ... }}` is charged to the output budget before it is
+        // written, so a runaway expression stops at its own line.
+        let budget = Arc::new(limits::OutputBudget::new(limits.output_bytes));
+        let charged = Arc::clone(&budget);
+        env.set_formatter(move |out, state, value| {
+            let mut size = limits::CountingSink(0);
+            let _ = fmt::Write::write_fmt(&mut size, format_args!("{value}"));
+            if !charged.charge(size.0) {
+                return Err(minijinja::Error::new(
+                    minijinja::ErrorKind::InvalidOperation,
+                    OUTPUT_TAG,
+                ));
+            }
+            minijinja::escape_formatter(out, state, value)
+        });
+        let range_limit = limits.range;
+        env.add_function(
+            "range",
+            move |lower: i64, upper: Option<i64>, step: Option<i64>| {
+                limits::range(range_limit, lower, upper, step)
+            },
+        );
 
         let cache = Arc::new(Mutex::new(ReadFileCache::new()));
-        register_readfile_function(&mut env, self.context.project_dir, Arc::clone(&cache));
+        register_readfile_function(
+            &mut env,
+            self.context.project_dir,
+            limits.output_bytes,
+            Arc::clone(&cache),
+        );
 
         // Register filesystem template loader for {% import %} / {% include %}
         // Resolves paths relative to project_dir with path traversal protection.
@@ -764,17 +901,39 @@ impl JinjaPreprocessor<'_> {
         );
 
         let compiled: &str = effective_source.as_ref();
-        env.add_template(filename, compiled)
-            .map_err(|e| build_render_diagnostic(source, compiled, &e))?;
+        let fail = |e: &minijinja::Error| {
+            let mut diag = build_render_diagnostic(source, compiled, e);
+            explain_limit(&mut diag, &limits);
+            diag
+        };
+        env.add_template(filename, compiled).map_err(|e| fail(&e))?;
 
-        let tmpl = env
-            .get_template(filename)
-            .map_err(|e| build_render_diagnostic(source, compiled, &e))?;
+        let tmpl = env.get_template(filename).map_err(|e| fail(&e))?;
 
+        // Rendered into a writer that refuses to grow past the output limit,
+        // so an oversized render stops where it crosses the line rather than
+        // after it has filled memory.
         let mj_ctx = build_minijinja_context(self.context);
-        let rendered = tmpl
-            .render(&mj_ctx)
-            .map_err(|e| build_render_diagnostic(source, compiled, &e))?;
+        let mut out = limits::CappedWriter::new(Arc::clone(&budget), source.len() * 2);
+        let fuel = match tmpl.render_captured_to(&mj_ctx, &mut out) {
+            Ok(captured) => captured.state().fuel_levels().map_or(0, |(used, _)| used),
+            Err(e) => return Err(fail(&e)),
+        };
+        // Literal text alone crossed the line, with no expression after it
+        // to stop the render where it happened.
+        if budget.is_over() {
+            return Err(output_too_large(out.buf.len(), &limits));
+        }
+        let rendered = String::from_utf8(out.buf).map_err(|_| RenderDiagnostic {
+            kind: RenderErrorKind::JinjaSyntax,
+            line: 0,
+            column: 0,
+            end_column: 0,
+            source_line: "",
+            expression: "",
+            message: "the render produced text that is not UTF-8".to_string(),
+            suggestion: None,
+        })?;
 
         // Put provider-templated blocks back before readFile markers are
         // resolved, so a restored block cannot be mistaken for one.
@@ -782,15 +941,87 @@ impl JinjaPreprocessor<'_> {
             .map_err(|e| scope_diagnostic(source, &e))?;
 
         // Resolve readFile markers with auto-indentation
-        let final_output = match resolve_readfile_markers(
+        let final_output = match resolve_readfile_markers_capped(
             &restored,
             &cache.lock().unwrap_or_else(|e| e.into_inner()),
+            limits.output_bytes,
         ) {
-            Some(resolved) => resolved,
-            None => restored.into_owned(),
+            Ok(Some(resolved)) => resolved,
+            Ok(None) => restored.into_owned(),
+            Err(len) => return Err(output_too_large(len, &limits)),
         };
+        // `readFile()` contents land after the render, so the cap is checked
+        // again on what is actually handed back.
+        if final_output.len() > limits.output_bytes {
+            return Err(output_too_large(final_output.len(), &limits));
+        }
 
-        Ok(Cow::Owned(final_output))
+        let stats = RenderStats {
+            fuel,
+            output_bytes: final_output.len(),
+        };
+        Ok((Cow::Owned(final_output), stats))
+    }
+}
+
+/// The diagnostic for a render whose output crossed the limit after the
+/// engine finished (`readFile()` contents are spliced in afterwards).
+fn output_too_large<'src>(len: usize, limits: &JinjaLimits) -> RenderDiagnostic<'src> {
+    RenderDiagnostic {
+        kind: RenderErrorKind::OutputTooLarge,
+        line: 0,
+        column: 0,
+        end_column: 0,
+        source_line: "",
+        expression: "",
+        message: format!(
+            "{} of {} bytes ({len} bytes written)",
+            OUTPUT_TAG, limits.output_bytes
+        ),
+        suggestion: Some(OUTPUT_SUGGESTION),
+    }
+}
+
+/// The words every output-limit refusal starts with, read back by the
+/// classifier.
+const OUTPUT_TAG: &str = "the render crossed the output limit";
+
+const FUEL_SUGGESTION: &str = "a loop or recursion runs far longer than any real stack needs; \
+     look for an unbounded or nested loop. If the work is real, raise the budget with \
+     PULUMI_YAML_JINJA_LIMITS=fuel=<instructions>";
+const RECURSION_SUGGESTION: &str = "a macro or include calls itself without end; give the \
+     recursion a base case. If the nesting is real, PULUMI_YAML_JINJA_LIMITS=recursion=<n> \
+     raises it (at most 500)";
+const OUTPUT_SUGGESTION: &str = "the template writes far more text than a stack needs; look \
+     for a loop or string repetition that multiplies output. If the size is real, raise it \
+     with PULUMI_YAML_JINJA_LIMITS=output=<bytes>";
+const RANGE_SUGGESTION: &str = "iterate a shorter range, or raise the limit with \
+     PULUMI_YAML_JINJA_LIMITS=range=<n>";
+const CYCLE_SUGGESTION: &str = "the templates include each other in a cycle; break the cycle \
+     so that every include chain ends";
+
+/// Rewrites the message of a limit diagnostic to name the limit and its
+/// value -- the engine's own words ("engine ran out of fuel") say neither.
+fn explain_limit(diag: &mut RenderDiagnostic<'_>, limits: &JinjaLimits) {
+    match diag.kind {
+        RenderErrorKind::FuelExhausted => {
+            diag.message = format!(
+                "the render ran out of fuel: more than {} instructions",
+                limits.fuel
+            );
+        }
+        RenderErrorKind::RecursionLimit => {
+            diag.message = format!(
+                "recursion limit exceeded: nesting deeper than {} (a macro call costs about 4, an include 10)",
+                limits.recursion
+            );
+        }
+        RenderErrorKind::OutputTooLarge
+            if diag.message == OUTPUT_TAG || !diag.message.starts_with(OUTPUT_TAG) =>
+        {
+            diag.message = format!("{} of {} bytes", OUTPUT_TAG, limits.output_bytes);
+        }
+        _ => {}
     }
 }
 
@@ -1067,17 +1298,24 @@ pub fn validate_rendered_yaml_value<'src>(
 /// Each entry is indexed by a marker ID.
 struct ReadFileCache {
     entries: Vec<String>,
+    /// The id each file was given, so a file read in a loop is held once.
+    by_path: HashMap<PathBuf, usize>,
+    /// Bytes held across all entries, bounded by the output limit.
+    bytes: usize,
 }
 
 impl ReadFileCache {
     fn new() -> Self {
         Self {
             entries: Vec::new(),
+            by_path: HashMap::new(),
+            bytes: 0,
         }
     }
 
     fn add(&mut self, content: String) -> usize {
         let id = self.entries.len();
+        self.bytes += content.len();
         self.entries.push(content);
         id
     }
@@ -1177,9 +1415,21 @@ fn replace_inline_markers(line: &str, cache: &ReadFileCache) -> String {
 /// - **Fast path:** if no NUL bytes are present, returns the input as-is.
 /// - **Standalone markers** (only non-whitespace on the line) get auto-indented.
 /// - **Inline markers** get simple text replacement.
+#[cfg(test)]
 fn resolve_readfile_markers(rendered: &str, cache: &ReadFileCache) -> Option<String> {
+    resolve_readfile_markers_capped(rendered, cache, usize::MAX).unwrap_or(None)
+}
+
+/// [`resolve_readfile_markers`], stopping with the length reached once the
+/// result passes `cap` -- one file read in a loop expands once per marker,
+/// so the expansion is bounded as it is built, not after.
+fn resolve_readfile_markers_capped(
+    rendered: &str,
+    cache: &ReadFileCache,
+    cap: usize,
+) -> Result<Option<String>, usize> {
     if !rendered.contains('\x00') {
-        return None;
+        return Ok(None);
     }
 
     let mut result = String::with_capacity(rendered.len());
@@ -1220,8 +1470,11 @@ fn resolve_readfile_markers(rendered: &str, cache: &ReadFileCache) -> Option<Str
             result.push_str(&replace_inline_markers(line, cache));
         }
         result.push_str(term);
+        if result.len() > cap {
+            return Err(result.len());
+        }
     }
-    Some(result)
+    Ok(Some(result))
 }
 
 /// SECURITY: resolves `path` relative to `project_dir` with containment.
@@ -1280,6 +1533,7 @@ pub(crate) fn resolve_contained_path(
 fn register_readfile_function(
     env: &mut minijinja::Environment<'_>,
     project_dir: &str,
+    max_bytes: usize,
     cache: Arc<Mutex<ReadFileCache>>,
 ) {
     let project_dir = project_dir.to_string();
@@ -1289,6 +1543,19 @@ fn register_readfile_function(
             let resolved = resolve_contained_path(&project_dir, &path).map_err(|msg| {
                 minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, msg)
             })?;
+            let mut cache = cache.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(&id) = cache.by_path.get(&resolved) {
+                return Ok(readfile_marker(id));
+            }
+            // Sized before it is read: what every file read so far holds,
+            // plus this one, may not pass the output limit.
+            let size = std::fs::metadata(&resolved).map(|m| m.len()).unwrap_or(0);
+            if (cache.bytes as u64).saturating_add(size) > max_bytes as u64 {
+                return Err(minijinja::Error::new(
+                    minijinja::ErrorKind::InvalidOperation,
+                    format!("{} of {} bytes reading {:?}", OUTPUT_TAG, max_bytes, path),
+                ));
+            }
 
             let content = std::fs::read_to_string(&resolved).map_err(|e| {
                 minijinja::Error::new(
@@ -1297,7 +1564,8 @@ fn register_readfile_function(
                 )
             })?;
 
-            let id = cache.lock().unwrap_or_else(|e| e.into_inner()).add(content);
+            let id = cache.add(content);
+            cache.by_path.insert(resolved, id);
             Ok(readfile_marker(id))
         },
     );
@@ -2301,6 +2569,7 @@ mod tests {
             undefined: UndefinedMode::Strict,
             provider_templated_packages: &[],
             extra,
+            limits: crate::jinja::JinjaLimits::default(),
         }
     }
 
@@ -2970,6 +3239,7 @@ mod tests {
             undefined: UndefinedMode::Strict,
             provider_templated_packages: &[],
             extra: &HashMap::new(),
+            limits: crate::jinja::JinjaLimits::default(),
         };
         let preprocessor = JinjaPreprocessor::new(&ctx);
         let source = "name: test\nruntime: yaml\n";
@@ -2991,6 +3261,7 @@ mod tests {
             undefined: UndefinedMode::Strict,
             provider_templated_packages: &[],
             extra: &HashMap::new(),
+            limits: crate::jinja::JinjaLimits::default(),
         };
         let preprocessor = JinjaPreprocessor::new(&ctx);
         let source = "name: {{ pulumi_project }}\n";
@@ -3019,6 +3290,7 @@ mod tests {
             undefined: UndefinedMode::Strict,
             provider_templated_packages: &[],
             extra: &extra,
+            limits: crate::jinja::JinjaLimits::default(),
         };
         match JinjaPreprocessor::new(&ctx).preprocess(source, "test.yaml") {
             Ok(c) => Ok(c.into_owned()),
@@ -3095,6 +3367,7 @@ mod tests {
             undefined: UndefinedMode::Strict,
             provider_templated_packages: &[],
             extra: &HashMap::new(),
+            limits: crate::jinja::JinjaLimits::default(),
         };
         let preprocessor = JinjaPreprocessor::new(&ctx);
         let source = "name: {{ nonexistent }}\n";
@@ -3118,6 +3391,7 @@ mod tests {
             undefined: UndefinedMode::Strict,
             provider_templated_packages: &[],
             extra: &HashMap::new(),
+            limits: crate::jinja::JinjaLimits::default(),
         };
         let preprocessor = JinjaPreprocessor::new(&ctx);
         let source = "{% for %}\n";
@@ -3142,6 +3416,7 @@ mod tests {
             undefined: UndefinedMode::Strict,
             provider_templated_packages: &[],
             extra: &HashMap::new(),
+            limits: crate::jinja::JinjaLimits::default(),
         };
         let preprocessor = JinjaPreprocessor::new(&ctx);
         // Jinja {{ }} gets processed but Pulumi ${} passes through
@@ -3315,6 +3590,7 @@ mod tests {
             undefined: UndefinedMode::Strict,
             provider_templated_packages: &[],
             extra: &HashMap::new(),
+            limits: crate::jinja::JinjaLimits::default(),
         };
         let preprocessor = JinjaPreprocessor::new(&ctx);
         let result = preprocessor.preprocess(source, "Pulumi.yaml").unwrap();
@@ -3338,6 +3614,7 @@ mod tests {
             undefined: UndefinedMode::Strict,
             provider_templated_packages: &[],
             extra: &HashMap::new(),
+            limits: crate::jinja::JinjaLimits::default(),
         };
         let preprocessor = JinjaPreprocessor::new(&ctx);
         let result = preprocessor.preprocess(source, "Pulumi.yaml").unwrap();

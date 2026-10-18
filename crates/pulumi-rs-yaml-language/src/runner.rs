@@ -70,6 +70,16 @@ pub async fn run(
     let scoped_packages = pulumi_rs_yaml_core::provider_scope::effective_packages(&project_source);
     let scoped_packages: Vec<&str> = scoped_packages.iter().map(String::as_str).collect();
 
+    let limits = match pulumi_rs_yaml_core::jinja::JinjaLimits::from_env() {
+        Ok(limits) => limits,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return RunResult {
+                error: e,
+                bail: true,
+            };
+        }
+    };
     let empty_extra = HashMap::new();
     let jinja_ctx = JinjaContext {
         project_name: project,
@@ -82,6 +92,7 @@ pub async fn run(
         undefined: undefined_mode,
         provider_templated_packages: &scoped_packages,
         extra: &empty_extra,
+        limits,
     };
 
     // 3. Load template(s) — multi-file or single-file with Jinja source override.

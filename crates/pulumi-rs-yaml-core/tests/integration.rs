@@ -6520,6 +6520,7 @@ resources:
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &extra,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let rendered = JinjaPreprocessor::new(&ctx)
         .preprocess(template, "Pulumi.yaml")

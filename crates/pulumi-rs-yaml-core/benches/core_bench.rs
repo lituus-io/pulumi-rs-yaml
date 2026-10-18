@@ -258,6 +258,7 @@ outputs:
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
 
     c.bench_function("jinja_preprocessor_fast_path", |b| {
@@ -295,6 +296,7 @@ resources:
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
 
     c.bench_function("jinja_preprocessor_render_10_resources", |b| {
@@ -330,6 +332,7 @@ fn bench_jinja_render_fails(c: &mut Criterion) {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     c.bench_function("jinja_preprocessor_render_fails_undefined", |b| {
         let preprocessor = JinjaPreprocessor::new(&ctx);
@@ -371,6 +374,7 @@ fn bench_jinja_include_at_cap(c: &mut Criterion) {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let source = "a: '{% include \"cap.txt\" %}'\n";
     c.bench_function("jinja_preprocessor_include_at_cap", |b| {
@@ -542,6 +546,7 @@ fn bench_jinja_preprocess_multi_file(c: &mut Criterion) {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
 
     let path = dir.path().to_path_buf();
@@ -1314,6 +1319,7 @@ fn bench_string_filters(c: &mut Criterion) {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &extra,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
 
     let mut bench = |name: &str, source: &'static str| {

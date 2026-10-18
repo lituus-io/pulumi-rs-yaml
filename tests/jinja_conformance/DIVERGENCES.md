@@ -15,7 +15,6 @@ Classes:
 
 | case | class | reason |
 |---|---|---|
-| `err_macro_too_many_args` | gap | a call with too many arguments is classed as a syntax error, Jinja2 a runtime TypeError |
 | `expr_dict_methods` | intended | a list or map renders JSON-style (`["a"]`, `{"k": 1}`; pairs as lists) where Jinja2 prints Python reprs (`['a']`, `('k', 1)`); the values are identical, both are valid YAML flow, and stacks already deploy the JSON spelling -- use `tojson` for portable text |
 | `expr_div_zero_error` | gap | `1 / 0` renders `inf`; Jinja2 raises ZeroDivisionError |
 | `expr_filter_pipeline` | extension | pulumi-rs-yaml only; Jinja2 does not define the name |

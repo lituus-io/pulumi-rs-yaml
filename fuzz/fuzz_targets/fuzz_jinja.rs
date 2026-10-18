@@ -84,6 +84,7 @@ fuzz_target!(|data: &[u8]| {
             undefined: UndefinedMode::Strict,
             provider_templated_packages: &[],
             extra: &extra,
+            limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
         };
         // Any text read back as a refusal detail answers without panicking.
         let _ = IncludeRefusal::suggestion_for(input);

@@ -99,6 +99,7 @@ fn export_one(name: &str) {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &extra,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let (merged, load_diags) = load_project(&dir, Some(&ctx));
     if load_diags.has_errors() {

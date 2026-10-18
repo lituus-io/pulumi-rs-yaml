@@ -148,6 +148,7 @@ fn render_jinja<'src>(
     source: &'src str,
     filename: &str,
     ctx_map: &HashMap<String, String>,
+    limits: pulumi_rs_yaml_core::jinja::JinjaLimits,
 ) -> Result<String, pulumi_rs_yaml_core::jinja::RenderDiagnostic<'src>> {
     // Build owned strings, then borrow for JinjaContext
     let project_name = ctx_map.get("project_name").cloned().unwrap_or_default();
@@ -191,11 +192,18 @@ fn render_jinja<'src>(
         undefined: pulumi_rs_yaml_core::jinja::UndefinedMode::Strict,
         provider_templated_packages: &scoped,
         extra: &extra,
+        limits,
     };
 
     pulumi_rs_yaml_core::jinja::JinjaPreprocessor::new(&jinja_ctx)
         .render(source, filename)
         .map(Cow::into_owned)
+}
+
+/// The render limits for this process: `PULUMI_YAML_JINJA_LIMITS` over the
+/// defaults. A malformed value is a `ValueError`, never a silent default.
+fn jinja_limits() -> PyResult<pulumi_rs_yaml_core::jinja::JinjaLimits> {
+    pulumi_rs_yaml_core::jinja::JinjaLimits::from_env().map_err(PyValueError::new_err)
 }
 
 /// Preprocess a YAML source with Jinja rendering.
@@ -210,7 +218,8 @@ fn preprocess_jinja(
     context: &Bound<'_, PyDict>,
 ) -> PyResult<String> {
     let ctx_map = py_dict_to_string_map(context)?;
-    match py.detach(|| render_jinja(source, filename, &ctx_map)) {
+    let limits = jinja_limits()?;
+    match py.detach(|| render_jinja(source, filename, &ctx_map, limits)) {
         Ok(result) => Ok(result),
         Err(e) => Err(PyValueError::new_err(format!(
             "Jinja preprocessing error: {}",
@@ -235,8 +244,9 @@ fn preprocess_jinja_diag(
     context: &Bound<'_, PyDict>,
 ) -> PyResult<Py<PyAny>> {
     let ctx_map = py_dict_to_string_map(context)?;
+    let limits = jinja_limits()?;
     let out = PyDict::new(py);
-    match py.detach(|| render_jinja(source, filename, &ctx_map)) {
+    match py.detach(|| render_jinja(source, filename, &ctx_map, limits)) {
         Ok(rendered) => out.set_item("rendered", rendered)?,
         Err(diag) => {
             let d = PyDict::new(py);
@@ -267,6 +277,11 @@ fn render_error_kind_name(kind: pulumi_rs_yaml_core::jinja::RenderErrorKind) -> 
         K::YamlIndentation => "yaml_indentation",
         K::YamlDuplicateKey => "yaml_duplicate_key",
         K::ProviderScope => "provider_scope",
+        K::FuelExhausted => "fuel_exhausted",
+        K::RecursionLimit => "recursion_limit",
+        K::OutputTooLarge => "output_too_large",
+        K::IncludeCycle => "include_cycle",
+        K::RangeTooLarge => "range_too_large",
     }
 }
 
@@ -663,6 +678,7 @@ fn create_execution_plan(
         undefined: pulumi_rs_yaml_core::jinja::UndefinedMode::Strict,
         provider_templated_packages: &scoped,
         extra: &extra_map,
+        limits: jinja_limits()?,
     };
 
     // Reload with Jinja preprocessing (handles both {{ }} and {% %} via full rendering)
@@ -1587,6 +1603,7 @@ fn load_graph_project(
         undefined: pulumi_rs_yaml_core::jinja::UndefinedMode::Strict,
         provider_templated_packages: &scoped,
         extra: &extra_map,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::from_env()?,
     };
     let jinja_opt = if has_jinja { Some(&jinja_ctx) } else { None };
     let (merged, load_diags) = pulumi_rs_yaml_core::multi_file::load_project(path, jinja_opt);

@@ -72,6 +72,7 @@ fn render_case(dir: &Path) -> Outcome {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &extra,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     match JinjaPreprocessor::new(&ctx).render(&source, "template.j2") {
         Ok(text) => Outcome::Text(text.into_owned()),
@@ -267,6 +268,7 @@ fn engine_has(kind: &str, name: &str) -> bool {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &extra,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     JinjaPreprocessor::new(&ctx)
         .render(&probe, "probe.j2")

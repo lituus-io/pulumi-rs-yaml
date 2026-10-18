@@ -2119,6 +2119,7 @@ mod bom_security {
             undefined: UndefinedMode::Strict,
             provider_templated_packages: &[],
             extra,
+            limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
         }
     }
 
@@ -2312,6 +2313,7 @@ mod render_diagnostic_security {
             undefined: UndefinedMode::Strict,
             provider_templated_packages: &[],
             extra,
+            limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
         }
     }
 
@@ -2676,6 +2678,7 @@ mod string_filter_security {
             undefined: UndefinedMode::Strict,
             provider_templated_packages: &[],
             extra: &extra,
+            limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
         };
         JinjaPreprocessor::new(&ctx)
             .preprocess(body, "Pulumi.yaml")
@@ -3490,5 +3493,212 @@ mod host_option_security {
             .to_json()
             .expect("c");
         assert!(!c.contains("_uri"), "{c}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Jinja resource limits: every denial-of-service shape a template can take
+// ends in a typed error that names its line, quickly, and never in a hang or
+// an out-of-memory. Each case below hung or grew without bound before 0.5.40
+// (three nested `range(100000)` loops extrapolated to days; a repeated 50 MB
+// string reached 150 MB of output in 40 ms with no ceiling).
+// ---------------------------------------------------------------------------
+mod jinja_limits_security {
+    use pulumi_rs_yaml_core::jinja::{
+        JinjaContext, JinjaLimits, JinjaPreprocessor, RenderErrorKind, UndefinedMode,
+    };
+    use std::collections::HashMap;
+    use std::time::{Duration, Instant};
+
+    /// Every DoS case must be refused well inside this, on a debug build.
+    const PROMPT: Duration = Duration::from_secs(20);
+
+    fn render_in(
+        dir: &std::path::Path,
+        source: &str,
+        limits: JinjaLimits,
+    ) -> Result<String, (RenderErrorKind, u32, String)> {
+        let config = HashMap::new();
+        let extra = HashMap::new();
+        let d = dir.to_string_lossy();
+        let ctx = JinjaContext {
+            project_name: "app",
+            stack_name: "dev",
+            cwd: &d,
+            organization: "org",
+            root_directory: &d,
+            config: &config,
+            project_dir: &d,
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits,
+        };
+        JinjaPreprocessor::new(&ctx)
+            .render(source, "Pulumi.yaml")
+            .map(|c| c.into_owned())
+            .map_err(|d| (d.kind, d.line, d.message))
+    }
+
+    fn refused(source: &str, files: &[(&str, &str)], want: RenderErrorKind, line: u32) -> String {
+        let dir = tempfile::tempdir().unwrap();
+        for (name, body) in files {
+            let path = dir.path().join(name);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, body).unwrap();
+        }
+        let start = Instant::now();
+        let got = render_in(dir.path(), source, JinjaLimits::default());
+        let took = start.elapsed();
+        assert!(
+            took < PROMPT,
+            "took {took:?}: the limit must stop it promptly"
+        );
+        match got {
+            Err((kind, at, message)) => {
+                assert_eq!(kind, want, "{message}");
+                assert_eq!(at, line, "{message}");
+                message
+            }
+            Ok(out) => panic!("rendered {} bytes; expected {want:?}", out.len()),
+        }
+    }
+
+    #[test]
+    fn nested_range_loops_run_out_of_fuel() {
+        let msg = refused(
+            "a: 1\n{% for a in range(100000) %}{% for b in range(100000) %}{% for c in range(100000) %}{% endfor %}{% endfor %}{% endfor %}\n",
+            &[],
+            RenderErrorKind::FuelExhausted,
+            2,
+        );
+        assert!(msg.contains("100000 instructions"), "{msg}");
+    }
+
+    #[test]
+    fn a_namespace_loop_doubling_a_string_is_stopped() {
+        // Geometric growth through a namespace, one statement per step: the
+        // string would pass 1 GB after 30 doublings. Output and fuel cannot
+        // see a value that is never emitted, so the doubling is emitted
+        // once per step to make the cap reachable -- and it is.
+        refused(
+            "{% set ns = namespace(s='xxxxxxxx') %}{% for i in range(40) %}{% set ns.s = ns.s ~ ns.s %}{{ ns.s }}{% endfor %}",
+            &[],
+            RenderErrorKind::OutputTooLarge,
+            1,
+        );
+    }
+
+    #[test]
+    fn a_repeated_large_string_hits_the_output_cap() {
+        let msg = refused(
+            "{% set s = 'x' * 50000000 %}\n{% for i in range(3) %}{{ s }}{% endfor %}\n",
+            &[],
+            RenderErrorKind::OutputTooLarge,
+            2,
+        );
+        assert!(msg.contains("16777216 bytes"), "{msg}");
+    }
+
+    #[test]
+    fn a_range_bomb_is_refused_by_size_before_allocating() {
+        let msg = refused(
+            "{{ range(100000000)|length }}",
+            &[],
+            RenderErrorKind::RangeTooLarge,
+            1,
+        );
+        assert!(msg.contains("100000000 elements"), "{msg}");
+    }
+
+    #[test]
+    fn infinite_macro_recursion_hits_the_recursion_limit() {
+        refused(
+            "x: 1\ny: {% macro r(n) %}{{ r(n + 1) }}{% endmacro %}{{ r(0) }}\n",
+            &[],
+            RenderErrorKind::RecursionLimit,
+            2,
+        );
+    }
+
+    #[test]
+    fn an_include_cycle_is_named_as_one() {
+        refused(
+            "{% include 'inc/a.j2' %}",
+            &[
+                ("inc/a.j2", "a{% include 'inc/b.j2' %}"),
+                ("inc/b.j2", "b{% include 'inc/a.j2' %}"),
+            ],
+            RenderErrorKind::IncludeCycle,
+            1,
+        );
+    }
+
+    #[test]
+    fn a_self_include_is_a_cycle() {
+        refused(
+            "{% include 'self.j2' %}",
+            &[("self.j2", "{% include 'self.j2' %}")],
+            RenderErrorKind::IncludeCycle,
+            1,
+        );
+    }
+
+    #[test]
+    fn readfile_in_a_loop_cannot_multiply_past_the_cap() {
+        // One 1 MiB file, spliced 40 times: held once, and the expansion
+        // stops as it crosses 16 MiB rather than after.
+        let big = "y".repeat(1024 * 1024);
+        refused(
+            "{% for i in range(40) %}\n{{ readFile('big.txt') }}\n{% endfor %}\n",
+            &[("big.txt", &big)],
+            RenderErrorKind::OutputTooLarge,
+            0,
+        );
+    }
+
+    #[test]
+    fn a_file_larger_than_the_cap_is_refused_before_it_is_read() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("big.txt"), "z".repeat(4096)).unwrap();
+        let limits = JinjaLimits {
+            output_bytes: 1024,
+            ..JinjaLimits::default()
+        };
+        let (kind, line, message) =
+            render_in(dir.path(), "a: 1\nb: {{ readFile('big.txt') }}\n", limits).unwrap_err();
+        assert_eq!(kind, RenderErrorKind::OutputTooLarge);
+        assert_eq!(line, 2);
+        assert!(message.contains("big.txt"), "{message}");
+    }
+
+    #[test]
+    fn the_limits_cost_no_legitimate_stack_anything() {
+        // A 200-resource loop with filters, the shape of the heaviest real
+        // stacks, renders under the defaults with room to spare.
+        let src = "resources:\n{% for i in range(200) %}\n  b{{ i }}:\n    type: gcp:storage:Bucket\n    properties:\n      name: {{ ('bucket-' ~ i) | upper | replace('-', '_') | tojson }}\n      labels: {{ {'idx': i|string, 'env': 'dev'} | tojson }}\n{% endfor %}\n";
+        let config = HashMap::new();
+        let extra = HashMap::new();
+        let ctx = JinjaContext {
+            project_name: "app",
+            stack_name: "dev",
+            cwd: ".",
+            organization: "org",
+            root_directory: ".",
+            config: &config,
+            project_dir: ".",
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits: JinjaLimits::default(),
+        };
+        let (_, stats) = JinjaPreprocessor::new(&ctx)
+            .render_with_stats(src, "Pulumi.yaml")
+            .unwrap();
+        eprintln!("200-resource loop: {stats:?}");
+        assert!(
+            stats.fuel * 2 < JinjaLimits::DEFAULT_FUEL,
+            "a 200-resource stack must use under half the default fuel: {stats:?}"
+        );
     }
 }

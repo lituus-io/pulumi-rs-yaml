@@ -98,6 +98,7 @@ fn jinja_preprocessed_project() {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &extra,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let (graph, diags) = export_project(dir.path(), Some(&ctx));
     assert!(!diags.has_errors(), "{}", diags);

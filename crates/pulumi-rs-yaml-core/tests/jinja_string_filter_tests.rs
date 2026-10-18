@@ -60,6 +60,7 @@ fn render(expr: &str) -> Result<String, String> {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &extra,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     // The marker keeps the rendered value on a line of its own, so a filter
     // that emits newlines is compared whole rather than truncated at the first.

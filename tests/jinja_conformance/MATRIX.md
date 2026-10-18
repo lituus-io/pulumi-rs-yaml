@@ -11,10 +11,10 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 
 ## Totals
 
-- cases: 258 (196 byte-identical to Jinja2, 62 listed divergences)
+- cases: 258 (197 byte-identical to Jinja2, 61 listed divergences)
 - rows extension: 15
-- rows partial: 37
-- rows supported: 190
+- rows partial: 36
+- rows supported: 191
 - rows unsupported: 10
 
 ## Filters
@@ -150,7 +150,7 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `err_call_non_callable` | supported | - |
 | `err_endfor_mismatch` | supported | - |
 | `err_iterate_int` | supported | - |
-| `err_macro_too_many_args` | partial | gap (err_macro_too_many_args) |
+| `err_macro_too_many_args` | supported | - |
 | `err_syntax_bad_expr` | supported | - |
 | `err_syntax_unclosed_block` | supported | - |
 | `err_syntax_unknown_tag` | supported | - |

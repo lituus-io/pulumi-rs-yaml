@@ -29,6 +29,7 @@ fn render(source: &str, packages: &[&str], mode: UndefinedMode) -> Result<String
         undefined: mode,
         provider_templated_packages: packages,
         extra: &extra,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     JinjaPreprocessor::new(&ctx)
         .preprocess(source, "Pulumi.yaml")
