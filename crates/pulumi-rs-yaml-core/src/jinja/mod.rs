@@ -182,6 +182,9 @@ impl RenderDiagnostic<'_> {
 pub enum IncludeRefusal {
     /// Absolute paths are never served, wherever they point.
     AbsolutePath { name: String },
+    /// A name holding a NUL or another control character: no file in a
+    /// project is named that way, and the platform would cut or reject it.
+    BadName { name: String },
     /// A candidate exists but canonicalizes outside both roots.
     EscapesSandbox { name: String },
     /// The file is inside the tree but is not UTF-8 text.
@@ -201,6 +204,7 @@ impl IncludeRefusal {
     /// reads back — one spelling here, one reader there.
     pub const PREFIX: &'static str = "include refused";
     pub const TAG_ABSOLUTE: &'static str = "[absolute]";
+    pub const TAG_BAD_NAME: &'static str = "[bad name]";
     pub const TAG_ESCAPE: &'static str = "[escape]";
     pub const TAG_BINARY: &'static str = "[binary]";
     pub const TAG_TOO_LARGE: &'static str = "[too large]";
@@ -208,6 +212,7 @@ impl IncludeRefusal {
     fn tag(&self) -> &'static str {
         match self {
             Self::AbsolutePath { .. } => Self::TAG_ABSOLUTE,
+            Self::BadName { .. } => Self::TAG_BAD_NAME,
             Self::EscapesSandbox { .. } => Self::TAG_ESCAPE,
             Self::NotText { .. } => Self::TAG_BINARY,
             Self::TooLarge { .. } => Self::TAG_TOO_LARGE,
@@ -221,6 +226,8 @@ impl IncludeRefusal {
         }
         if detail.contains(Self::TAG_ABSOLUTE) {
             Some("use a path relative to the stack directory or the render root")
+        } else if detail.contains(Self::TAG_BAD_NAME) {
+            Some("an include name cannot hold a NUL or a control character")
         } else if detail.contains(Self::TAG_ESCAPE) {
             Some(
                 "the file resolves outside both the stack directory and the \
@@ -248,6 +255,7 @@ impl fmt::Display for IncludeRefusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let name = match self {
             Self::AbsolutePath { name }
+            | Self::BadName { name }
             | Self::EscapesSandbox { name }
             | Self::NotText { name }
             | Self::TooLarge { name } => name,
@@ -1660,6 +1668,11 @@ fn register_template_loader(
     }
 
     env.set_loader(move |name: &str| {
+        if name.chars().any(char::is_control) {
+            return Err(refuse(IncludeRefusal::BadName {
+                name: name.to_string(),
+            }));
+        }
         if is_rooted(name) {
             return Err(refuse(IncludeRefusal::AbsolutePath {
                 name: name.to_string(),

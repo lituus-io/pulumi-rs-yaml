@@ -3702,3 +3702,236 @@ mod jinja_limits_security {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Include/import containment: every spelling of "a file outside the tree"
+// is refused or not found, and the outside file's bytes never reach the
+// output or the error. The sentinel below sits beside the render root; a
+// test that ever sees it has read outside the sandbox.
+// ---------------------------------------------------------------------------
+mod jinja_loader_security {
+    use pulumi_rs_yaml_core::jinja::{
+        IncludeRefusal, JinjaContext, JinjaLimits, JinjaPreprocessor, RenderErrorKind,
+        UndefinedMode,
+    };
+    use std::collections::HashMap;
+    use std::path::Path;
+
+    const SENTINEL: &str = "OUTSIDE-SENTINEL-7f3a";
+
+    /// `<tmp>/outside/secret.j2` (the sentinel) beside `<tmp>/repo`, with a
+    /// stack at `<tmp>/repo/stacks/app`.
+    struct Tree {
+        tmp: tempfile::TempDir,
+    }
+
+    impl Tree {
+        fn new() -> Self {
+            let tmp = tempfile::tempdir().unwrap();
+            for d in ["outside", "repo/stacks/app", "repo/shared"] {
+                std::fs::create_dir_all(tmp.path().join(d)).unwrap();
+            }
+            std::fs::write(tmp.path().join("outside/secret.j2"), SENTINEL).unwrap();
+            std::fs::write(tmp.path().join("repo/shared/env.j2"), "shared-ok").unwrap();
+            Tree { tmp }
+        }
+
+        fn path(&self, rel: &str) -> std::path::PathBuf {
+            self.tmp.path().join(rel)
+        }
+
+        /// Renders `source` as the stack's project file.
+        fn render(&self, source: &str) -> Result<String, (RenderErrorKind, String)> {
+            let stack = self.path("repo/stacks/app");
+            let root = self.path("repo");
+            let (stack, root) = (stack.to_string_lossy(), root.to_string_lossy());
+            let config = HashMap::new();
+            let extra = HashMap::new();
+            let ctx = JinjaContext {
+                project_name: "app",
+                stack_name: "dev",
+                cwd: &stack,
+                organization: "org",
+                root_directory: &root,
+                config: &config,
+                project_dir: &stack,
+                undefined: UndefinedMode::Strict,
+                provider_templated_packages: &[],
+                extra: &extra,
+                limits: JinjaLimits::default(),
+            };
+            JinjaPreprocessor::new(&ctx)
+                .render(source, "Pulumi.yaml")
+                .map(|c| c.into_owned())
+                .map_err(|d| {
+                    (
+                        d.kind,
+                        format!("{}\n{}", d.message, d.format_rich("Pulumi.yaml")),
+                    )
+                })
+        }
+
+        /// The include is refused or absent, and the sentinel is nowhere.
+        fn never_served(&self, name: &str) -> (RenderErrorKind, String) {
+            // A Jinja string literal: backslashes escaped, every other
+            // character -- control characters included -- as it is.
+            let lit = format!("'{}'", name.replace('\\', "\\\\"));
+            for stmt in ["include", "import"] {
+                let src = if stmt == "include" {
+                    format!("v: {{% include {lit} %}}")
+                } else {
+                    format!("{{% import {lit} as m %}}v: 1")
+                };
+                match self.render(&src) {
+                    Ok(out) => panic!("{stmt} {name:?} was served: {out:?}"),
+                    Err((kind, text)) => {
+                        assert!(!text.contains(SENTINEL), "{stmt} {name:?} leaked: {text}");
+                        assert_eq!(
+                            kind,
+                            RenderErrorKind::JinjaTemplateNotFound,
+                            "{name:?}: {text}"
+                        );
+                    }
+                }
+            }
+            self.render(&format!("v: {{% include {lit} %}}"))
+                .unwrap_err()
+        }
+    }
+
+    #[test]
+    fn traversal_out_of_the_render_root_is_refused_in_every_spelling() {
+        let t = Tree::new();
+        for name in [
+            "../../../outside/secret.j2",
+            "./../../../outside/secret.j2",
+            "shared/../../outside/secret.j2",
+            "../../shared/../../outside/secret.j2",
+        ] {
+            let (_, text) = t.never_served(name);
+            assert!(text.contains(IncludeRefusal::TAG_ESCAPE), "{name}: {text}");
+        }
+        // One level too far names nothing at all: absent, not escaped.
+        let (_, text) = t.never_served("../../../../outside/secret.j2");
+        assert!(text.contains("non-existing template"), "{text}");
+    }
+
+    #[test]
+    fn traversal_that_stays_inside_is_served() {
+        // The documented pattern: a nested stack reaching shared templates.
+        let t = Tree::new();
+        assert_eq!(
+            t.render("{% include '../../shared/env.j2' %}").unwrap(),
+            "shared-ok"
+        );
+        assert_eq!(
+            t.render("{% include 'shared/env.j2' %}").unwrap(),
+            "shared-ok"
+        );
+    }
+
+    #[test]
+    fn a_symlinked_directory_pointing_outside_is_refused() {
+        let t = Tree::new();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(t.path("outside"), t.path("repo/stacks/app/link")).unwrap();
+        #[cfg(windows)]
+        if std::os::windows::fs::symlink_dir(t.path("outside"), t.path("repo/stacks/app/link"))
+            .is_err()
+        {
+            return; // creating symlinks needs a privilege CI may lack
+        }
+        let (_, text) = t.never_served("link/secret.j2");
+        assert!(text.contains(IncludeRefusal::TAG_ESCAPE), "{text}");
+    }
+
+    #[test]
+    fn a_symlinked_file_pointing_outside_is_refused() {
+        let t = Tree::new();
+        let link = t.path("repo/shared/innocent.j2");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(t.path("outside/secret.j2"), &link).unwrap();
+        #[cfg(windows)]
+        if std::os::windows::fs::symlink_file(t.path("outside/secret.j2"), &link).is_err() {
+            return;
+        }
+        let (_, text) = t.never_served("shared/innocent.j2");
+        assert!(text.contains(IncludeRefusal::TAG_ESCAPE), "{text}");
+    }
+
+    #[test]
+    fn rooted_names_are_refused_by_name_on_every_platform() {
+        let t = Tree::new();
+        let abs = t.path("outside/secret.j2").to_string_lossy().into_owned();
+        let (_, text) = t.never_served(&abs);
+        assert!(text.contains(IncludeRefusal::TAG_ABSOLUTE), "{text}");
+        let (_, text) = t.never_served("/etc/passwd");
+        assert!(text.contains(IncludeRefusal::TAG_ABSOLUTE), "{text}");
+    }
+
+    #[test]
+    fn windows_name_forms_are_never_served() {
+        // On Windows each of these is rooted and refused by name; elsewhere
+        // each is one odd relative file name that does not exist. Neither
+        // reaches the sentinel.
+        let t = Tree::new();
+        for name in [
+            "C:\\outside\\secret.j2",
+            "C:outside\\secret.j2",
+            "\\\\server\\share\\secret.j2",
+            "\\\\?\\C:\\outside\\secret.j2",
+            "\\outside\\secret.j2",
+            "..\\..\\..\\outside\\secret.j2",
+            "..\\..\\../outside/secret.j2",
+        ] {
+            let (_, text) = t.never_served(name);
+            if cfg!(windows) && !name.starts_with("..") {
+                assert!(
+                    text.contains(IncludeRefusal::TAG_ABSOLUTE),
+                    "{name}: {text}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn control_characters_in_a_name_are_refused_by_name() {
+        let t = Tree::new();
+        for name in [
+            "shared/env.j2\u{0}../../../outside/secret.j2",
+            "shared/env.j2\u{0}",
+            "shared/\nenv.j2",
+            "shared/\u{1b}env.j2",
+            "shared/env.j2\u{7f}",
+        ] {
+            let (_, text) = t.never_served(name);
+            assert!(
+                text.contains(IncludeRefusal::TAG_BAD_NAME),
+                "{name:?}: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_case_variant_spelling_never_escapes() {
+        // On a case-insensitive file system `../OUTSIDE` is the same
+        // directory; canonicalisation sees through it either way.
+        let t = Tree::new();
+        let (_, text) = t.never_served("../../../OUTSIDE/secret.j2");
+        if Path::new(&t.path("OUTSIDE")).exists() {
+            assert!(text.contains(IncludeRefusal::TAG_ESCAPE), "{text}");
+        }
+    }
+
+    #[test]
+    fn readfile_obeys_the_same_containment() {
+        let t = Tree::new();
+        for name in ["../../../outside/secret.j2", "/etc/passwd"] {
+            let (kind, text) = t
+                .render(&format!("v: {{{{ readFile({name:?}) }}}}"))
+                .unwrap_err();
+            assert_eq!(kind, RenderErrorKind::JinjaFilterError, "{text}");
+            assert!(!text.contains(SENTINEL), "{text}");
+        }
+    }
+}
