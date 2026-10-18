@@ -206,19 +206,33 @@ fn jinja_limits() -> PyResult<pulumi_rs_yaml_core::jinja::JinjaLimits> {
     pulumi_rs_yaml_core::jinja::JinjaLimits::from_env().map_err(PyValueError::new_err)
 }
 
+/// The limits for one render: `limits` when given (the same
+/// `fuel=..,recursion=..,output=..,range=..` spelling as the variable), the
+/// process's otherwise. Malformed either way is a `ValueError`.
+fn jinja_limits_for(limits: Option<&str>) -> PyResult<pulumi_rs_yaml_core::jinja::JinjaLimits> {
+    match limits {
+        Some(spec) => {
+            pulumi_rs_yaml_core::jinja::JinjaLimits::parse(spec).map_err(PyValueError::new_err)
+        }
+        None => jinja_limits(),
+    }
+}
+
 /// Preprocess a YAML source with Jinja rendering.
 ///
 /// The string surface: rendered text, or a `ValueError` whose message is
 /// the diagnostic formatted for a log. The GIL is released for the render.
 #[pyfunction]
+#[pyo3(signature = (source, filename, context, limits=None))]
 fn preprocess_jinja(
     py: Python<'_>,
     source: &str,
     filename: &str,
     context: &Bound<'_, PyDict>,
+    limits: Option<&str>,
 ) -> PyResult<String> {
     let ctx_map = py_dict_to_string_map(context)?;
-    let limits = jinja_limits()?;
+    let limits = jinja_limits_for(limits)?;
     match py.detach(|| render_jinja(source, filename, &ctx_map, limits)) {
         Ok(result) => Ok(result),
         Err(e) => Err(PyValueError::new_err(format!(
@@ -232,19 +246,23 @@ fn preprocess_jinja(
 ///
 /// `{"rendered": str}` on success. On failure `{"diagnostic": {...}}` with
 /// `kind`, `line`, `column`, `end_column`, `message`, `source_line`,
-/// `expression` and `suggestion` — the same facts `preprocess_jinja` folds
+/// `expression`, `suggestion` and `origin` (the included file, line,
+/// column, excerpt and include `chain` when the fault lies in another
+/// template, else `None`) — the same facts `preprocess_jinja` folds
 /// into its error text, handed over as fields so a caller can place a caret
 /// rather than parse a sentence. Never raises for a template fault; only a
 /// context that is not a mapping of strings is an error of this call.
 #[pyfunction]
+#[pyo3(signature = (source, filename, context, limits=None))]
 fn preprocess_jinja_diag(
     py: Python<'_>,
     source: &str,
     filename: &str,
     context: &Bound<'_, PyDict>,
+    limits: Option<&str>,
 ) -> PyResult<Py<PyAny>> {
     let ctx_map = py_dict_to_string_map(context)?;
-    let limits = jinja_limits()?;
+    let limits = jinja_limits_for(limits)?;
     let out = PyDict::new(py);
     match py.detach(|| render_jinja(source, filename, &ctx_map, limits)) {
         Ok(rendered) => out.set_item("rendered", rendered)?,

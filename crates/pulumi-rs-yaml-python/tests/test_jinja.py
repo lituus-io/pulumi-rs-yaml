@@ -219,7 +219,8 @@ class TestPreprocessJinjaDiag:
             time.sleep(0.05)
             before = counter
             started = time.perf_counter()
-            out = preprocess_jinja_diag(source, "t.yaml", self.CTX)
+            # 200,000 iterations: far past the default fuel, on purpose.
+            out = preprocess_jinja_diag(source, "t.yaml", self.CTX, limits="fuel=100000000")
             elapsed = time.perf_counter() - started
             during = counter - before
             # The same length of time with the GIL certainly released.
