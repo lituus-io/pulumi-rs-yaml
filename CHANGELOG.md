@@ -3,6 +3,85 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.40
+
+Jinja is now a measured, bounded, documented capability. **[JINJA.md](JINJA.md)**
+is the reference; every example in it is executed by the test suite.
+
+### Conformance with reference Jinja2
+
+A corpus of 263 cases -- every statement, expression form, whitespace rule
+and error class, and one case per filter, test and global Jinja2 3.1.6 ships
+-- renders through the runtime and must equal pinned Jinja2's output byte for
+byte. 201 do; the 62 that differ are listed with reasons in
+`tests/jinja_conformance/DIVERGENCES.md` (value formatting deployed stacks
+already depend on, extensions, refusals by design), with the runtime's own
+output pinned. `MATRIX.md` is generated from the corpus and both registries.
+A CI job regenerates the goldens from the hash-pinned reference
+(`scripts/jinja_conformance/`, the only use of Python Jinja2) and fails on
+drift; the Python binding runs the same corpus.
+
+Gaps closed: `int`/`float` defaults and `base`, `round` methods and
+ties-to-even, `replace` count, `attribute=` on `join`/`sum`/`max`/`min`,
+`sum` start, case-insensitive `max`/`min`, positional `dictsort`, Jinja2's
+`title`; new `wordcount`, `filesizeformat`, `urlencode`, `callable`,
+`cycler`, `joiner`, Python string methods, and `break`/`continue`;
+`sequence` is true for strings and maps. Rendering 4,583 real project files
+before and after gives byte-identical output.
+
+### Resource limits
+
+Every render runs under `JinjaLimits`: fuel 100,000 instructions (the
+heaviest real file measured used 6,575), recursion 500, output 16 MiB
+(`readFile()` included), `range()` 100,000 elements. Each refusal is its own
+`RenderErrorKind` -- `FuelExhausted`, `RecursionLimit`, `OutputTooLarge`,
+`IncludeCycle`, `RangeTooLarge` -- at the offending line, never a hang or an
+out-of-memory. Override with `PULUMI_YAML_JINJA_LIMITS=fuel=..,recursion=..,
+output=..,range=..` or the Python `limits=` argument; a malformed value is
+refused by name. `render_with_stats` reports the fuel used.
+
+### Two engine crashes, found by fuzzing
+
+minijinja 2.24 panics on a negative-step slice of an empty list or string
+(`{{ [][::-1] }}`), and overflows the stack printing a namespace that holds
+itself (`{% set ns.v = ns %}`); release builds abort, taking the language
+host or the Python process with them. Backwards slices are now computed as
+Python computes them; a namespace assigned a value holding a namespace is
+refused at the assignment. minijinja is pinned to `=2.24.0` (the parser this
+needs is not semver-stable).
+
+### Errors
+
+A fault inside an included or imported template names that file, line and
+column, with its excerpt and the include chain (`origin` on
+`RenderDiagnostic`, and in `preprocess_jinja_diag`); the excerpt was missing
+from release builds. Errors are classified by their root cause; an undefined
+name is named (`undefined value: \`x\``); `YamlDuplicateKey` is produced
+again. The language host removes secret config values from error text. Every
+kind's exact text is golden-tested.
+
+### Policy and hardening
+
+- Every render is strict; `PULUMI_YAML_JINJA_UNDEFINED` takes `strict` or
+  `passthrough` and refuses anything else (it silently read typos as
+  strict). `graph` honours it as the host does.
+- `tojson`/`to_json` escape the characters YAML misreads (DEL, C1 controls,
+  U+0085, U+2028/2029, BOM), so a quoted value always round-trips.
+- Include names holding control characters are refused (`[bad name]`);
+  containment is proven against every spelling of "outside".
+- Auto-escaping is stated (none: output is YAML); the `debug()` global,
+  which dumped the context into the output, is removed.
+
+### Tests
+
+Unit (limits at their boundaries, policies, prepass), conformance (263
+cases, Rust and Python), integration (`host-jinja-features` deployed with a
+real `pulumi up`; one stack per limit and an include chain through `graph`
+and `pulumi preview`), security (DoS shapes, containment, engine crashes,
+secret redaction), fuzz (`fuzz_jinja_template`, `fuzz_jinja_loader`,
+`fuzz_jinja_conformance`), performance (typical stack, large loop,
+include-heavy benches; fuel counted, not timed).
+
 ## 0.5.39
 
 ### Already-rendered projects: `PULUMI_YAML_JINJA=off`
