@@ -11,11 +11,11 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 
 ## Totals
 
-- cases: 258 (177 byte-identical to Jinja2, 81 listed divergences)
+- cases: 258 (196 byte-identical to Jinja2, 62 listed divergences)
 - rows extension: 15
-- rows partial: 49
-- rows supported: 172
-- rows unsupported: 16
+- rows partial: 37
+- rows supported: 190
+- rows unsupported: 10
 
 ## Filters
 
@@ -33,34 +33,34 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `count` | supported | filter_count | - |
 | `d` | supported | filter_d | - |
 | `default` | supported | filter_default | - |
-| `dictsort` | partial | filter_dictsort, filter_dictsort_case_sensitive | intended (filter_dictsort); gap (filter_dictsort_case_sensitive) |
+| `dictsort` | partial | filter_dictsort, filter_dictsort_case_sensitive | intended (filter_dictsort); intended (filter_dictsort_case_sensitive) |
 | `e` | supported | filter_e | - |
 | `escape` | partial | filter_escape | intended (filter_escape) |
-| `filesizeformat` | unsupported | filter_filesizeformat | gap (filter_filesizeformat) |
+| `filesizeformat` | supported | filter_filesizeformat | - |
 | `first` | supported | filter_first | - |
-| `float` | partial | filter_float | gap (filter_float) |
+| `float` | supported | filter_float | - |
 | `forceescape` | unsupported | filter_forceescape | unsupported (filter_forceescape) |
 | `format` | supported | filter_format | - |
 | `groupby` | supported | filter_groupby, filter_groupby_tuple | - |
 | `indent` | supported | filter_indent, filter_indent_kwargs | - |
-| `int` | partial | filter_int | gap (filter_int) |
+| `int` | supported | filter_int | - |
 | `items` | partial | filter_items | intended (filter_items) |
-| `join` | partial | filter_join | gap (filter_join) |
+| `join` | supported | filter_join | - |
 | `last` | supported | filter_last | - |
 | `length` | supported | filter_length | - |
 | `lines` | extension | ext_filter_lines | extension (ext_filter_lines) |
 | `list` | partial | filter_list | intended (filter_list) |
 | `lower` | supported | filter_lower | - |
 | `map` | partial | filter_map_attribute, filter_map_filter | intended (filter_map_filter) |
-| `max` | partial | filter_max | gap (filter_max) |
+| `max` | partial | filter_max | intended (filter_max) |
 | `min` | supported | filter_min | - |
 | `pprint` | partial | filter_pprint | intended (filter_pprint) |
 | `random` | unsupported | filter_random | unsupported (filter_random) |
 | `reject` | supported | filter_reject | - |
 | `rejectattr` | supported | filter_rejectattr | - |
-| `replace` | partial | filter_replace | gap (filter_replace) |
+| `replace` | supported | filter_replace | - |
 | `reverse` | supported | filter_reverse | - |
-| `round` | partial | filter_round | gap (filter_round) |
+| `round` | supported | filter_round | - |
 | `safe` | supported | filter_safe | - |
 | `select` | partial | filter_select | intended (filter_select) |
 | `selectattr` | partial | filter_selectattr | intended (filter_selectattr) |
@@ -69,8 +69,8 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `split` | extension | ext_filter_split | extension (ext_filter_split) |
 | `string` | supported | filter_string | - |
 | `striptags` | unsupported | filter_striptags | unsupported (filter_striptags) |
-| `sum` | partial | filter_sum | gap (filter_sum) |
-| `title` | partial | filter_title | gap (filter_title) |
+| `sum` | supported | filter_sum | - |
+| `title` | supported | filter_title | - |
 | `to_json` | extension | ext_filter_to_json | extension (ext_filter_to_json) |
 | `to_yaml` | extension | ext_filter_to_yaml | extension (ext_filter_to_yaml) |
 | `tojson` | partial | filter_tojson, filter_tojson_indent | intended (filter_tojson) |
@@ -78,9 +78,9 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `truncate` | supported | filter_truncate | - |
 | `unique` | partial | filter_unique | intended (filter_unique) |
 | `upper` | supported | filter_upper | - |
-| `urlencode` | unsupported | filter_urlencode | gap (filter_urlencode) |
+| `urlencode` | supported | filter_urlencode | - |
 | `urlize` | unsupported | filter_urlize | unsupported (filter_urlize) |
-| `wordcount` | unsupported | filter_wordcount | gap (filter_wordcount) |
+| `wordcount` | supported | filter_wordcount | - |
 | `wordwrap` | supported | filter_wordwrap | - |
 | `xmlattr` | unsupported | filter_xmlattr | unsupported (filter_xmlattr) |
 | `zip` | extension | ext_filter_zip | extension (ext_filter_zip) |
@@ -96,7 +96,7 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `>` | supported | test_op_gt | - |
 | `>=` | supported | test_op_ge | - |
 | `boolean` | supported | test_boolean | - |
-| `callable` | unsupported | test_callable | gap (test_callable) |
+| `callable` | supported | test_callable | - |
 | `defined` | supported | test_defined | - |
 | `divisibleby` | supported | test_divisibleby | - |
 | `endingwith` | extension | ext_test_endingwith | extension (ext_test_endingwith) |
@@ -123,7 +123,7 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `number` | supported | test_number | - |
 | `odd` | supported | test_odd | - |
 | `sameas` | supported | test_sameas | - |
-| `sequence` | partial | test_sequence | gap (test_sequence) |
+| `sequence` | supported | test_sequence | - |
 | `startingwith` | extension | ext_test_startingwith | extension (ext_test_startingwith) |
 | `string` | supported | test_string | - |
 | `test` | supported | test_test | - |
@@ -135,9 +135,9 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 
 | name | status | cases | divergence |
 |---|---|---|---|
-| `cycler` | unsupported | global_cycler | gap (global_cycler) |
+| `cycler` | supported | global_cycler | - |
 | `dict` | partial | global_dict | intended (global_dict) |
-| `joiner` | unsupported | global_joiner | gap (global_joiner) |
+| `joiner` | supported | global_joiner | - |
 | `lipsum` | unsupported | global_lipsum | unsupported (global_lipsum) |
 | `namespace` | supported | global_namespace | - |
 | `range` | supported | global_range, global_range_in_for | - |
@@ -186,12 +186,12 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `expr_percent_format` | unsupported | unsupported (expr_percent_format) |
 | `expr_precedence` | supported | - |
 | `expr_slice` | supported | - |
-| `expr_str_format_named` | partial | gap (expr_str_format_named) |
-| `expr_str_methods` | partial | gap (expr_str_methods) |
-| `expr_str_methods_more` | partial | gap (expr_str_methods_more) |
+| `expr_str_format_named` | supported | - |
+| `expr_str_methods` | partial | intended (expr_str_methods) |
+| `expr_str_methods_more` | supported | - |
 | `expr_str_methods_predicates` | partial | intended (expr_str_methods_predicates) |
 | `expr_str_methods_split_ws` | partial | intended (expr_str_methods_split_ws) |
-| `expr_str_title_method` | partial | gap (expr_str_title_method) |
+| `expr_str_title_method` | supported | - |
 | `expr_string_mul` | supported | - |
 | `expr_string_plus` | supported | - |
 | `expr_string_plus_int_error` | supported | - |
@@ -201,7 +201,7 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `expr_unicode` | supported | - |
 | `ext_ctx_config` | extension | extension (ext_ctx_config) |
 | `ext_ctx_pulumi` | extension | extension (ext_ctx_pulumi) |
-| `ext_global_debug_removed` | extension | gap (ext_global_debug_removed) |
+| `ext_global_debug_removed` | extension | - |
 | `stmt_autoescape_block` | supported | - |
 | `stmt_block_scoped` | supported | - |
 | `stmt_call_with_args` | supported | - |
@@ -214,7 +214,7 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `stmt_filter_block` | supported | - |
 | `stmt_filter_block_chain` | supported | - |
 | `stmt_for_basic` | supported | - |
-| `stmt_for_break_continue` | partial | gap (stmt_for_break_continue) |
+| `stmt_for_break_continue` | supported | - |
 | `stmt_for_dict_items` | partial | intended (stmt_for_dict_items) |
 | `stmt_for_dict_iter_keys` | partial | intended (stmt_for_dict_iter_keys) |
 | `stmt_for_else` | supported | - |

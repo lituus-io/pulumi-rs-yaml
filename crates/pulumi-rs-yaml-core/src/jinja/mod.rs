@@ -13,6 +13,8 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+mod compat;
+
 // ---------------------------------------------------------------------------
 // GAT-based trait (B.1)
 // ---------------------------------------------------------------------------
@@ -744,6 +746,10 @@ impl JinjaPreprocessor<'_> {
         // Slow path: render through minijinja
         let mut env = minijinja::Environment::new();
         env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
+        // Output is YAML, never HTML. Said explicitly: minijinja picks an
+        // escape from the template name, and with its `json` feature on a
+        // `.yaml` name would be JSON-escaped.
+        env.set_auto_escape_callback(|_| minijinja::AutoEscape::None);
         register_custom_filters(&mut env);
 
         let cache = Arc::new(Mutex::new(ReadFileCache::new()));
@@ -1500,10 +1506,9 @@ fn register_custom_filters(env: &mut minijinja::Environment<'_>) {
     env.add_filter("center", center_compat);
     env.add_filter("wordwrap", wordwrap_compat);
 
-    // Jinja2 method calls on dicts/strings (`vars.items()`), which minijinja
-    // exposes only as filters. A non-capturing `fn` keeps this monomorphised —
-    // no boxed trait object, no captured state, trivially Send + Sync.
-    env.set_unknown_method_callback(jinja2_method_compat);
+    // Jinja2's own filters, tests, globals and methods where minijinja's
+    // differ or are missing; registered last so they replace the builtins.
+    compat::register(env);
 }
 
 /// Jinja2's `tojson`, including its optional `indent`.
@@ -2060,66 +2065,6 @@ fn last_hyphen_before(s: &str, limit: usize) -> Option<usize> {
         }
     }
     found
-}
-
-/// Python-style methods Jinja2 templates call on values minijinja treats as
-/// plain maps/sequences/strings.
-///
-/// Borrows the receiver and arguments throughout — no clone of the underlying
-/// container. Unknown names fall through to minijinja's own error so typos are
-/// still reported as unknown methods.
-fn jinja2_method_compat(
-    _state: &minijinja::State<'_, '_>,
-    value: &minijinja::Value,
-    method: &str,
-    args: &[minijinja::Value],
-) -> Result<minijinja::Value, minijinja::Error> {
-    let no_args = |name: &str| -> Result<(), minijinja::Error> {
-        if args.is_empty() {
-            Ok(())
-        } else {
-            Err(minijinja::Error::new(
-                minijinja::ErrorKind::TooManyArguments,
-                format!("{} takes no arguments", name),
-            ))
-        }
-    };
-
-    match method {
-        "items" => {
-            no_args("items")?;
-            minijinja::filters::items(value)
-        }
-        "keys" => {
-            no_args("keys")?;
-            let pairs = minijinja::filters::items(value)?;
-            let keys = pairs
-                .try_iter()?
-                .filter_map(|pair| pair.get_item_by_index(0).ok())
-                .collect::<Vec<_>>();
-            Ok(minijinja::Value::from(keys))
-        }
-        "values" => {
-            no_args("values")?;
-            let pairs = minijinja::filters::items(value)?;
-            let values = pairs
-                .try_iter()?
-                .filter_map(|pair| pair.get_item_by_index(1).ok())
-                .collect::<Vec<_>>();
-            Ok(minijinja::Value::from(values))
-        }
-        "get" => {
-            let key = args.first().ok_or_else(|| {
-                minijinja::Error::new(minijinja::ErrorKind::MissingArgument, "get requires a key")
-            })?;
-            let found = value.get_item(key).ok().filter(|v| !v.is_undefined());
-            // Python's dict.get returns None when absent and no default given.
-            Ok(found
-                .or_else(|| args.get(1).cloned())
-                .unwrap_or_else(|| minijinja::Value::from(())))
-        }
-        _ => Err(minijinja::Error::from(minijinja::ErrorKind::UnknownMethod)),
-    }
 }
 
 // ---------------------------------------------------------------------------

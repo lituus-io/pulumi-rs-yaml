@@ -351,25 +351,42 @@ fn build_matrix(run: &Run) -> (String, Vec<String>) {
         reg.jinja2
     ));
 
-    let groups: [(&str, &str, &str, &Vec<String>, &[&str]); 3] = [
-        (
-            "Filters",
-            "filter",
-            "filter",
-            &reg.filters,
-            EXTENSION_FILTERS,
-        ),
-        ("Tests", "test", "test", &reg.tests, EXTENSION_TESTS),
-        (
-            "Globals",
-            "global",
-            "global",
-            &reg.globals,
-            EXTENSION_GLOBALS,
-        ),
+    /// One registry section: its title, the kind probed, and the names.
+    struct Group<'a> {
+        title: &'a str,
+        kind: &'a str,
+        names: &'a [String],
+        extensions: &'a [&'a str],
+    }
+    let groups = [
+        Group {
+            title: "Filters",
+            kind: "filter",
+            names: &reg.filters,
+            extensions: EXTENSION_FILTERS,
+        },
+        Group {
+            title: "Tests",
+            kind: "test",
+            names: &reg.tests,
+            extensions: EXTENSION_TESTS,
+        },
+        Group {
+            title: "Globals",
+            kind: "global",
+            names: &reg.globals,
+            extensions: EXTENSION_GLOBALS,
+        },
     ];
     let mut body = String::new();
-    for (title, kind, prefix, names, extensions) in groups {
+    for Group {
+        title,
+        kind,
+        names,
+        extensions,
+    } in groups
+    {
+        let prefix = kind;
         body.push_str(&format!(
             "\n## {title}\n\n| name | status | cases | divergence |\n|---|---|---|---|\n"
         ));
