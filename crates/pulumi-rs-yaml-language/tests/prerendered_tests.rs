@@ -99,6 +99,14 @@ fn graph_parses_rendered_text_as_written_when_the_pass_is_off() {
     );
 }
 
+/// A `file://` backend URL Pulumi accepts on every OS. A Windows path
+/// written raw (`file://C:\\x`) is no URL at all, and Pulumi then falls back
+/// to its cloud backend and asks for a login; forward slashes after the
+/// drive (`file://C:/x`) are what it parses.
+fn file_url(path: &Path) -> String {
+    format!("file://{}", path.display().to_string().replace('\\', "/"))
+}
+
 fn pulumi(dir: &Path, home: &Path, jinja: Option<&str>, args: &[&str]) -> Output {
     let host_dir = Path::new(HOST).parent().unwrap();
     let path = std::env::join_paths(std::iter::once(host_dir.to_path_buf()).chain(
@@ -111,10 +119,7 @@ fn pulumi(dir: &Path, home: &Path, jinja: Option<&str>, args: &[&str]) -> Output
         .current_dir(dir)
         .env("PATH", path)
         .env("PULUMI_HOME", home.join("home"))
-        .env(
-            "PULUMI_BACKEND_URL",
-            format!("file://{}", home.join("state").display()),
-        )
+        .env("PULUMI_BACKEND_URL", file_url(&home.join("state")))
         .env("PULUMI_CONFIG_PASSPHRASE", "")
         .env("PULUMI_SKIP_UPDATE_CHECK", "1")
         .env_remove(JINJA_ENV)
