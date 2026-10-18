@@ -613,47 +613,77 @@ pub fn split_statement_spans(script: &str) -> Vec<Range<usize>> {
     let base = body_span.start;
     let body = &script[body_span];
     let bytes = body.as_bytes();
+    let n = bytes.len();
     let mut out = Vec::new();
     let mut start = 0usize;
     let mut i = 0usize;
-    let mut quote: Option<u8> = None;
-    while i < bytes.len() {
+    // A byte that is not a delimiter costs one table lookup. A quoted
+    // string or a comment is crossed by a search for its terminator, which
+    // reads a short span inline and hands a long one to memchr, so neither
+    // dense statements nor long literals pay for the other's case.
+    while let Some(off) = bytes[i..].iter().position(|&b| SPLIT_STOP[b as usize]) {
+        i += off;
         let b = bytes[i];
-        match quote {
-            Some(q) => {
-                if b == q {
-                    quote = None;
-                }
-                i += 1;
+        i = match b {
+            b'\'' | b'"' | b'`' => find_byte(b, &bytes[i + 1..]).map_or(n, |k| i + k + 2),
+            b'-' if bytes.get(i + 1) == Some(&b'-') => {
+                find_byte(b'\n', &bytes[i + 2..]).map_or(n, |k| i + 2 + k)
             }
-            None => match b {
-                b'\'' | b'"' | b'`' => {
-                    quote = Some(b);
-                    i += 1;
-                }
-                b'-' if bytes.get(i + 1) == Some(&b'-') => {
-                    while i < bytes.len() && bytes[i] != b'\n' {
-                        i += 1;
-                    }
-                }
-                b'/' if bytes.get(i + 1) == Some(&b'*') => {
-                    i += 2;
-                    while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
-                        i += 1;
-                    }
-                    i = (i + 2).min(bytes.len());
-                }
-                b';' => {
-                    push_trimmed(body, base, start..i, &mut out);
-                    start = i + 1;
-                    i += 1;
-                }
-                _ => i += 1,
-            },
-        }
+            b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                find_comment_close(&bytes[i + 2..]).map_or(n, |k| i + k + 4)
+            }
+            b';' => {
+                push_trimmed(body, base, start..i, &mut out);
+                start = i + 1;
+                i + 1
+            }
+            _ => i + 1,
+        };
     }
-    push_trimmed(body, base, start..bytes.len(), &mut out);
+    push_trimmed(body, base, start..n, &mut out);
     out
+}
+
+/// The bytes [`split_statement_spans`] must stop at outside a quote or a
+/// comment: quote openers, the first byte of both comment openers, and `;`.
+static SPLIT_STOP: [bool; 256] = {
+    let mut t = [false; 256];
+    t[b'\'' as usize] = true;
+    t[b'"' as usize] = true;
+    t[b'`' as usize] = true;
+    t[b'-' as usize] = true;
+    t[b'/' as usize] = true;
+    t[b';' as usize] = true;
+    t
+};
+
+/// Spans shorter than this are searched inline: below it a call into
+/// memchr costs more than the bytes it would skip.
+const INLINE_SCAN: usize = 16;
+
+/// The first `needle` in `hay`. The head is read inline, where most
+/// terminators in ordinary SQL sit; the rest goes to memchr's vector scan.
+#[inline(always)]
+fn find_byte(needle: u8, hay: &[u8]) -> Option<usize> {
+    let head = hay.len().min(INLINE_SCAN);
+    if let Some(k) = hay[..head].iter().position(|&c| c == needle) {
+        return Some(k);
+    }
+    memchr::memchr(needle, &hay[head..]).map(|k| k + head)
+}
+
+/// The offset of the first `*/` in `hay`.
+#[inline(always)]
+fn find_comment_close(hay: &[u8]) -> Option<usize> {
+    let mut j = 0;
+    while let Some(k) = find_byte(b'*', &hay[j..]) {
+        let p = j + k;
+        if hay.get(p + 1) == Some(&b'/') {
+            return Some(p);
+        }
+        j = p + 1;
+    }
+    None
 }
 
 /// Pushes `body[r]`, trimmed, as a range offset by `base` -- unless it is
@@ -1315,6 +1345,109 @@ mod tests {
             out.push(tail);
         }
         out
+    }
+
+    /// The splitter as it shipped through 0.5.38: a byte-at-a-time state
+    /// machine. Kept only until the table-and-memchr scan is proven equal.
+    fn split_statement_spans_0_5_38(script: &str) -> Vec<Range<usize>> {
+        let body_span = strip_begin_end_span(script);
+        let base = body_span.start;
+        let body = &script[body_span];
+        let bytes = body.as_bytes();
+        let mut out = Vec::new();
+        let mut start = 0usize;
+        let mut i = 0usize;
+        let mut quote: Option<u8> = None;
+        while i < bytes.len() {
+            let b = bytes[i];
+            match quote {
+                Some(q) => {
+                    if b == q {
+                        quote = None;
+                    }
+                    i += 1;
+                }
+                None => match b {
+                    b'\'' | b'"' | b'`' => {
+                        quote = Some(b);
+                        i += 1;
+                    }
+                    b'-' if bytes.get(i + 1) == Some(&b'-') => {
+                        while i < bytes.len() && bytes[i] != b'\n' {
+                            i += 1;
+                        }
+                    }
+                    b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                        i += 2;
+                        while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                            i += 1;
+                        }
+                        i = (i + 2).min(bytes.len());
+                    }
+                    b';' => {
+                        push_trimmed(body, base, start..i, &mut out);
+                        start = i + 1;
+                        i += 1;
+                    }
+                    _ => i += 1,
+                },
+            }
+        }
+        push_trimmed(body, base, start..bytes.len(), &mut out);
+        out
+    }
+
+    /// Differential: the table-and-memchr scan returns exactly the ranges the
+    /// byte-at-a-time splitter did, on random scripts dense in delimiters,
+    /// comment openers, CRLF, `BEGIN`/`END` wrappers and multi-byte text,
+    /// with quotes and comments both shorter and longer than the inline scan.
+    #[test]
+    fn spans_match_the_byte_at_a_time_splitter_on_random_scripts() {
+        use rand::{Rng, SeedableRng};
+        const ATOMS: &[&str] = &[
+            "'",
+            "\"",
+            "`",
+            "-",
+            "--",
+            "/",
+            "/*",
+            "*/",
+            "*",
+            ";",
+            ";;",
+            "\n",
+            "\r\n",
+            " ",
+            "\t",
+            "a",
+            "SELECT 1",
+            "x",
+            "BEGIN",
+            "begin ",
+            "END",
+            " end;",
+            "İ",
+            "\u{212A}",
+            "é",
+            "日本",
+            "\u{3000}",
+            "\u{a0}",
+            "a long run of plain text past the inline scan",
+        ];
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0x0005_0039);
+        for _ in 0..200_000 {
+            let len = rng.gen_range(0..40);
+            let mut script = String::new();
+            for _ in 0..len {
+                script.push_str(ATOMS[rng.gen_range(0..ATOMS.len())]);
+            }
+            assert_eq!(
+                split_statement_spans(&script),
+                split_statement_spans_0_5_38(&script),
+                "script {script:?}"
+            );
+        }
     }
 
     #[test]

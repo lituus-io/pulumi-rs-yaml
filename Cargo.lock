@@ -1748,6 +1748,7 @@ dependencies = [
  "base64",
  "criterion",
  "hcl-rs",
+ "memchr",
  "minijinja",
  "polyglot-sql",
  "pretty_assertions",
