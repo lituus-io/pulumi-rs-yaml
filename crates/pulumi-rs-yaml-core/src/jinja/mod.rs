@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 
 mod compat;
 mod limits;
+mod slice;
 
 pub use limits::{JinjaLimits, RenderStats, LIMITS_ENV, MAX_RECURSION};
 
@@ -1034,6 +1035,7 @@ impl JinjaPreprocessor<'_> {
             }
             minijinja::escape_formatter(out, state, value)
         });
+        env.add_function(slice::SLICE_FN, slice::slice);
         let range_limit = limits.range;
         env.add_function(
             "range",
@@ -1058,7 +1060,10 @@ impl JinjaPreprocessor<'_> {
             self.context.root_directory,
         );
 
-        let compiled: &str = effective_source.as_ref();
+        // Slices that could step backwards go through a safe implementation;
+        // see `slice`. Borrowed unless the template has one.
+        let rewritten = slice::rewrite(effective_source.as_ref(), filename);
+        let compiled: &str = rewritten.as_ref();
         // Compiling this file involves no other template.
         env.add_template(filename, compiled)
             .map_err(|e| build_render_diagnostic(source, compiled, filename, &e))?;
@@ -1977,7 +1982,13 @@ fn register_template_loader(
         let mut escaped = false;
         for candidate in candidates.into_iter().flatten() {
             match resolve(candidate) {
-                Candidate::Content(content) => return Ok(Some(content)),
+                Candidate::Content(content) => {
+                    // The same slice rewrite the file being rendered gets.
+                    return Ok(Some(match slice::rewrite(&content, name) {
+                        Cow::Borrowed(_) => content,
+                        Cow::Owned(rewritten) => rewritten,
+                    }));
+                }
                 Candidate::NotText => {
                     return Err(refuse(IncludeRefusal::NotText {
                         name: name.to_string(),

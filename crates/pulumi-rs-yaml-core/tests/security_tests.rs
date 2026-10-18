@@ -3935,3 +3935,91 @@ mod jinja_loader_security {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Engine panics: inputs that panic inside minijinja 2.24 must never reach
+// it. A panic aborts a release build (panic = "abort"): the language host
+// or the Python process rendering the file dies with it.
+// ---------------------------------------------------------------------------
+mod jinja_engine_panic_security {
+    use pulumi_rs_yaml_core::jinja::{
+        JinjaContext, JinjaLimits, JinjaPreprocessor, RenderErrorKind, UndefinedMode,
+    };
+    use std::collections::HashMap;
+
+    fn render(source: &str) -> Result<String, RenderErrorKind> {
+        let (config, extra) = (HashMap::new(), HashMap::new());
+        let ctx = JinjaContext {
+            project_name: "app",
+            stack_name: "dev",
+            cwd: ".",
+            organization: "org",
+            root_directory: ".",
+            config: &config,
+            project_dir: ".",
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits: JinjaLimits::default(),
+        };
+        JinjaPreprocessor::new(&ctx)
+            .render(source, "Pulumi.yaml")
+            .map(|c| c.into_owned())
+            .map_err(|d| d.kind)
+    }
+
+    #[test]
+    fn a_negative_step_slice_of_an_empty_value_does_not_panic() {
+        // Each of these panicked in minijinja's backwards range: an index
+        // past the end of an empty list, string or range.
+        for src in [
+            "{{ [][::-1] }}",
+            "{{ ''[::-1] }}",
+            "{{ range(0)[::-2] | list }}",
+            "{% for a in range(-960051514)[::-77] %}x{% endfor %}",
+            "{% set items = [] %}{{ items[::-1] | join(',') }}",
+        ] {
+            assert!(render(src).is_ok(), "{src}");
+        }
+    }
+
+    #[test]
+    fn a_negative_step_with_the_stop_past_the_start_does_not_panic() {
+        // An unsigned subtraction overflow in debug builds.
+        assert_eq!(render("{{ [1, 2, 3][0:2:-1] }}").unwrap(), "[]");
+        assert_eq!(render("{{ 'abc'[0:2:-1] }}").unwrap(), "");
+    }
+
+    #[test]
+    fn a_slice_inside_an_include_is_routed_too() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("rev.j2"), "{{ [][::-1] }}|{{ 'ab'[::-1] }}").unwrap();
+        let d = dir.path().to_string_lossy();
+        let (config, extra) = (HashMap::new(), HashMap::new());
+        let ctx = JinjaContext {
+            project_name: "app",
+            stack_name: "dev",
+            cwd: &d,
+            organization: "org",
+            root_directory: &d,
+            config: &config,
+            project_dir: &d,
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits: JinjaLimits::default(),
+        };
+        let out = JinjaPreprocessor::new(&ctx)
+            .render("{% include 'rev.j2' %}", "Pulumi.yaml")
+            .unwrap();
+        assert_eq!(out, "[]|ba");
+    }
+
+    #[test]
+    fn a_zero_step_is_an_error_not_a_panic() {
+        assert_eq!(
+            render("{% set s = 0 %}{{ 'abc'[::s] }}"),
+            Err(RenderErrorKind::JinjaFilterError)
+        );
+    }
+}

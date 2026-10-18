@@ -11,10 +11,10 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 
 ## Totals
 
-- cases: 258 (197 byte-identical to Jinja2, 61 listed divergences)
+- cases: 262 (201 byte-identical to Jinja2, 61 listed divergences)
 - rows extension: 15
 - rows partial: 36
-- rows supported: 191
+- rows supported: 195
 - rows unsupported: 10
 
 ## Filters
@@ -186,6 +186,10 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `expr_percent_format` | unsupported | unsupported (expr_percent_format) |
 | `expr_precedence` | supported | - |
 | `expr_slice` | supported | - |
+| `expr_slice_dynamic_step` | supported | - |
+| `expr_slice_negative_bounds` | supported | - |
+| `expr_slice_negative_empty` | supported | - |
+| `expr_slice_step_zero_error` | supported | - |
 | `expr_str_format_named` | supported | - |
 | `expr_str_methods` | partial | intended (expr_str_methods) |
 | `expr_str_methods_more` | supported | - |
