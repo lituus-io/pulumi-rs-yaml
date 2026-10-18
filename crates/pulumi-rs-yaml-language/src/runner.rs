@@ -58,9 +58,15 @@ pub async fn run(
     }
 
     // 2. Build Jinja context for preprocessing
-    let undefined_mode = match std::env::var("PULUMI_YAML_JINJA_UNDEFINED").as_deref() {
-        Ok("passthrough") => UndefinedMode::Passthrough,
-        _ => UndefinedMode::Strict,
+    let undefined_mode = match UndefinedMode::from_env() {
+        Ok(mode) => mode,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return RunResult {
+                error: e,
+                bail: true,
+            };
+        }
     };
     // Packages whose block scalars this runtime must leave alone. Read from the
     // project file textually, because rendering has to precede parsing and this

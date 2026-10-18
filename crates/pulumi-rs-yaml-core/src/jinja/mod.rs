@@ -521,18 +521,58 @@ fn classify_yaml_error(msg: &str, line_content: &str) -> (RenderErrorKind, Optio
 // Zero-Copy Jinja Context (B.4)
 // ---------------------------------------------------------------------------
 
-/// Controls how unknown Jinja variables are handled.
+/// How a render treats a name it cannot resolve.
 ///
-/// - `Strict` (default): all `{{ expr }}` must resolve or error.
-/// - `Passthrough`: expressions whose root identifier is NOT a known Pulumi
-///   context variable are wrapped in `{% raw %}` before rendering, allowing
-///   dbt-style `{{ ref('model') }}`, `{{ config(materialized='view') }}`, etc.
-///   Known roots (`config`, `env`, `pulumi_*`, `readFile`) are still evaluated.
+/// There is one rule: **every render is strict**. A name that does not
+/// resolve is an error naming it, never an empty string -- an empty bucket
+/// name or region rendered silently into a program is a deploy that does the
+/// wrong thing, where an error is a deploy that does nothing. Jinja2's
+/// default lenient `Undefined` is therefore not offered.
+///
+/// - `Strict` (default): every `{{ expr }}` must resolve or the render fails.
+/// - `Passthrough`: for text addressed to another Jinja engine (dbt models):
+///   expressions whose root is NOT a name this runtime defines are wrapped in
+///   `{% raw %}` before rendering and come out verbatim, so `{{ ref('m') }}`
+///   reaches dbt untouched. The render itself is still strict: a typo in a
+///   name this runtime does define (`config.regoin`) is still an error.
+///
+/// `validate_jinja_syntax` compiles without rendering, so no mode applies
+/// there: nothing is evaluated, and an undefined name cannot be seen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum UndefinedMode {
     #[default]
     Strict,
     Passthrough,
+}
+
+/// Selects the mode for the language host: `strict` or `passthrough`.
+pub const UNDEFINED_ENV: &str = "PULUMI_YAML_JINJA_UNDEFINED";
+
+impl UndefinedMode {
+    /// The mode named by a value of [`UNDEFINED_ENV`]. Unset or empty is
+    /// `Strict`; any value other than `strict` or `passthrough` is an error
+    /// naming it -- a misspelt mode must not silently become another.
+    pub fn from_env_value(value: Option<&str>) -> Result<Self, String> {
+        match value {
+            None | Some("") | Some("strict") => Ok(Self::Strict),
+            Some("passthrough") => Ok(Self::Passthrough),
+            Some(other) => Err(format!(
+                "{}={:?}: expected \"strict\" or \"passthrough\"",
+                UNDEFINED_ENV, other
+            )),
+        }
+    }
+
+    /// [`from_env_value`](Self::from_env_value) on this process's environment.
+    pub fn from_env() -> Result<Self, String> {
+        match std::env::var(UNDEFINED_ENV) {
+            Ok(v) => Self::from_env_value(Some(&v)),
+            Err(std::env::VarError::NotPresent) => Ok(Self::Strict),
+            Err(std::env::VarError::NotUnicode(_)) => {
+                Err(format!("{} is not valid UTF-8", UNDEFINED_ENV))
+            }
+        }
+    }
 }
 
 /// Jinja rendering context. Borrows ALL data — no cloning, no Arc.
@@ -1237,9 +1277,10 @@ pub fn validate_jinja_syntax<'src>(
     if !has_jinja_syntax(source) {
         return Ok(());
     }
+    // Compiled, never rendered: nothing is evaluated, so there is no
+    // undefined behaviour to choose -- a name that will not resolve is the
+    // render's to report, with the context in hand.
     let mut env = minijinja::Environment::new();
-    // Use lenient undefined for syntax-only validation (we don't have context yet)
-    env.set_undefined_behavior(minijinja::UndefinedBehavior::Lenient);
     env.add_template(filename, source)
         .map_err(|e| build_render_diagnostic(source, source, filename, &e))?;
     Ok(())
