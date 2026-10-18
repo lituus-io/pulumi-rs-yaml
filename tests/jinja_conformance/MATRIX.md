@@ -11,9 +11,9 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 
 ## Totals
 
-- cases: 262 (201 byte-identical to Jinja2, 61 listed divergences)
+- cases: 263 (201 byte-identical to Jinja2, 62 listed divergences)
 - rows extension: 15
-- rows partial: 36
+- rows partial: 37
 - rows supported: 195
 - rows unsupported: 10
 
@@ -258,6 +258,7 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `stmt_macro_scope` | supported | - |
 | `stmt_macro_varargs` | unsupported | unsupported (stmt_macro_varargs) |
 | `stmt_namespace` | supported | - |
+| `stmt_namespace_self_reference` | partial | intended (stmt_namespace_self_reference) |
 | `stmt_raw` | supported | - |
 | `stmt_set_block` | supported | - |
 | `stmt_set_block_filter` | supported | - |

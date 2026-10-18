@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 
 mod compat;
 mod limits;
-mod slice;
+mod prepass;
 
 pub use limits::{JinjaLimits, RenderStats, LIMITS_ENV, MAX_RECURSION};
 
@@ -429,6 +429,9 @@ fn classify_jinja_error(err: &minijinja::Error) -> (RenderErrorKind, Option<&'st
             RenderErrorKind::JinjaFilterError,
             Some("Check the file path. Relative paths are resolved from the project directory."),
         );
+    }
+    if detail.starts_with(prepass::NAMESPACE_TAG) {
+        return (RenderErrorKind::JinjaTypeError, Some(NAMESPACE_SUGGESTION));
     }
     if detail.starts_with(OUTPUT_TAG) {
         return (RenderErrorKind::OutputTooLarge, Some(OUTPUT_SUGGESTION));
@@ -1035,7 +1038,7 @@ impl JinjaPreprocessor<'_> {
             }
             minijinja::escape_formatter(out, state, value)
         });
-        env.add_function(slice::SLICE_FN, slice::slice);
+        env.add_function(prepass::SLICE_FN, prepass::slice);
         let range_limit = limits.range;
         env.add_function(
             "range",
@@ -1062,7 +1065,10 @@ impl JinjaPreprocessor<'_> {
 
         // Slices that could step backwards go through a safe implementation;
         // see `slice`. Borrowed unless the template has one.
-        let rewritten = slice::rewrite(effective_source.as_ref(), filename);
+        let rewritten = match prepass::prepare(effective_source.as_ref(), filename) {
+            Ok(rewritten) => rewritten,
+            Err(refusal) => return Err(prepass_refusal(source, refusal)),
+        };
         let compiled: &str = rewritten.as_ref();
         // Compiling this file involves no other template.
         env.add_template(filename, compiled)
@@ -1134,6 +1140,27 @@ impl JinjaPreprocessor<'_> {
         Ok((Cow::Owned(final_output), stats))
     }
 }
+
+/// The diagnostic for a template the pre-pass refused before it compiled.
+fn prepass_refusal<'src>(source: &'src str, refusal: prepass::Refusal) -> RenderDiagnostic<'src> {
+    RenderDiagnostic {
+        kind: RenderErrorKind::JinjaTypeError,
+        line: refusal.line,
+        column: 0,
+        end_column: 0,
+        source_line: source
+            .lines()
+            .nth(refusal.line.saturating_sub(1) as usize)
+            .unwrap_or(""),
+        expression: "",
+        message: refusal.message,
+        suggestion: Some(NAMESPACE_SUGGESTION),
+        origin: None,
+    }
+}
+
+const NAMESPACE_SUGGESTION: &str = "store the values you need in the namespace's attributes, \
+     not the namespace itself";
 
 /// The diagnostic for a render whose output crossed the limit after the
 /// engine finished (`readFile()` contents are spliced in afterwards).
@@ -1984,10 +2011,14 @@ fn register_template_loader(
             match resolve(candidate) {
                 Candidate::Content(content) => {
                     // The same slice rewrite the file being rendered gets.
-                    return Ok(Some(match slice::rewrite(&content, name) {
-                        Cow::Borrowed(_) => content,
-                        Cow::Owned(rewritten) => rewritten,
-                    }));
+                    return match prepass::prepare(&content, name) {
+                        Ok(Cow::Borrowed(_)) => Ok(Some(content)),
+                        Ok(Cow::Owned(rewritten)) => Ok(Some(rewritten)),
+                        Err(refusal) => Err(minijinja::Error::new(
+                            minijinja::ErrorKind::InvalidOperation,
+                            format!("{} (in {}, line {})", refusal.message, name, refusal.line),
+                        )),
+                    };
                 }
                 Candidate::NotText => {
                     return Err(refuse(IncludeRefusal::NotText {

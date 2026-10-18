@@ -73,6 +73,7 @@ Classes:
 | `stmt_include_without_context` | gap | `without context` is ignored; the include still sees the caller's variables |
 | `stmt_macro_kwargs` | unsupported | a macro cannot take keyword arguments it does not declare (`kwargs`) |
 | `stmt_macro_varargs` | unsupported | a macro cannot take more positional arguments than it declares (`varargs`) |
+| `stmt_namespace_self_reference` | intended | a namespace attribute may not be assigned a value holding a namespace: printing one that contains itself recursed until the stack overflowed, so it is refused at the assignment |
 | `ws_crlf` | intended | line endings are preserved byte for byte; Jinja2 rewrites CRLF to LF |
 | `ws_trailing_newline_stripped` | intended | text with no Jinja syntax is returned exactly as written (the zero-copy fast path), keeping its final newline |
 | `ws_two_trailing_newlines` | intended | text with no Jinja syntax is returned exactly as written (the zero-copy fast path) |

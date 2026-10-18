@@ -1,29 +1,33 @@
 // Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 
-//! Slices with a step, made safe and made Python's.
+//! A pass over a template before it compiles, for the two template shapes
+//! that crash minijinja 2.24 rather than fail. Release builds abort on panic
+//! and nothing catches a stack overflow, so each took down the language host
+//! or the Python process rendering the file. Both were found by
+//! `fuzz_jinja_template`; 2.24 is the last 2.x release.
 //!
-//! minijinja 2.24 panics on a negative-step slice of an empty list or string
-//! (`{{ [][::-1] }}`: an index past the end in its backwards range), and in
-//! debug builds also when the stop lies past the start (`[1, 2][0:1:-1]`,
-//! an unsigned subtraction overflow). Release builds abort on panic, so one
-//! such expression took down the language host or the Python process
-//! rendering it. Found by `fuzz_jinja_template`; 2.24 is the last 2.x
-//! release.
+//! **Backwards slices.** A negative-step slice of an empty list or string
+//! (`{{ [][::-1] }}`) indexes past the end in minijinja's backwards range,
+//! and in debug builds a stop past the start (`[1, 2][0:1:-1]`) overflows an
+//! unsigned subtraction. Every slice whose step is not a positive integer
+//! literal is rewritten into a call of [`slice`], which computes it exactly
+//! as Python's `slice.indices` does. The rewrite keeps every newline, so
+//! line numbers in errors are unchanged.
 //!
-//! The engine is not patched. Before a template is compiled, every slice
-//! whose step is not a positive integer literal is rewritten into a call of
-//! [`slice`], which computes the slice exactly as Python does
-//! (`slice.indices`). Slices without a step, or with a literal positive one,
-//! never reach the faulty path and are left alone, so the rewrite costs
-//! nothing for templates that do not slice backwards: a byte scan rules them
-//! out before anything is parsed.
+//! **A namespace holding itself.** `{% set ns.v = ns %}` builds a value that
+//! contains itself; printing it, serialising it or comparing it then
+//! recurses without end. A namespace attribute assigned a value that holds a
+//! namespace -- the same one by name, or any name bound to one -- is refused
+//! with the line of the assignment. Reading an attribute (`ns.total + 1`)
+//! holds nothing and is untouched.
 //!
-//! The rewrite keeps every newline, so line numbers in errors are unchanged;
-//! a column on a rewritten line is reported as unknown rather than wrong.
+//! Both are found with minijinja's own parser. A byte scan rules out
+//! templates with neither shape before anything is parsed, so the common
+//! case costs nothing.
 
 use std::borrow::Cow;
 
-use minijinja::machinery::ast::{CallArg, Expr, Stmt};
+use minijinja::machinery::ast::{BinOpKind, CallArg, Expr, Stmt};
 use minijinja::machinery::{parse, WhitespaceConfig};
 use minijinja::value::{Value, ValueKind};
 use minijinja::{Error, ErrorKind};
@@ -59,6 +63,22 @@ fn may_have_stepped_slice(source: &str) -> bool {
             }
         }
         i = open + 1;
+    }
+    false
+}
+
+/// Whether `source` may assign a namespace attribute: `set`, a name, a dot.
+fn may_set_attribute(source: &str) -> bool {
+    let mut rest = source;
+    while let Some(at) = rest.find("set ") {
+        let after = rest[at + 4..].trim_start();
+        let name_len = after
+            .find(|c: char| !(c.is_alphanumeric() || c == '_'))
+            .unwrap_or(after.len());
+        if name_len > 0 && after[name_len..].starts_with('.') {
+            return true;
+        }
+        rest = &rest[at + 4..];
     }
     false
 }
@@ -295,12 +315,24 @@ fn emit(source: &str, sites: &[&Site], from: usize, to: usize, out: &mut String)
     out.push_str(&source[at..to]);
 }
 
-/// `source` with every slice that could take a negative step routed through
-/// [`slice`]; borrowed when there is none. A template that does not parse is
+/// The detail a namespace refusal carries, read back by the classifier.
+pub(super) const NAMESPACE_TAG: &str = "a namespace would hold itself";
+
+/// A template refused before it compiled: the line, and why.
+pub(super) struct Refusal {
+    pub(super) line: u32,
+    pub(super) message: String,
+}
+
+/// `source` ready to compile: every slice that could take a negative step
+/// routed through [`slice`] (borrowed when there is none), or a refusal for
+/// a namespace that would hold itself. A template that does not parse is
 /// returned as it is, for the compiler to report.
-pub(super) fn rewrite<'s>(source: &'s str, name: &str) -> Cow<'s, str> {
-    if !may_have_stepped_slice(source) {
-        return Cow::Borrowed(source);
+pub(super) fn prepare<'s>(source: &'s str, name: &str) -> Result<Cow<'s, str>, Refusal> {
+    let slices = may_have_stepped_slice(source);
+    let attributes = may_set_attribute(source);
+    if !slices && !attributes {
+        return Ok(Cow::Borrowed(source));
     }
     let Ok(ast) = parse(
         source,
@@ -308,18 +340,190 @@ pub(super) fn rewrite<'s>(source: &'s str, name: &str) -> Cow<'s, str> {
         minijinja::syntax::SyntaxConfig,
         WhitespaceConfig::default(),
     ) else {
-        return Cow::Borrowed(source);
+        return Ok(Cow::Borrowed(source));
     };
+    if attributes {
+        if let Some(refusal) = namespace_cycle(&ast) {
+            return Err(refusal);
+        }
+    }
     let mut sites = Vec::new();
-    walk_stmt(&ast, &mut sites);
+    if slices {
+        walk_stmt(&ast, &mut sites);
+    }
     if sites.is_empty() {
-        return Cow::Borrowed(source);
+        return Ok(Cow::Borrowed(source));
     }
     sites.sort_by(|a, b| a.whole.0.cmp(&b.whole.0).then(b.whole.1.cmp(&a.whole.1)));
     let refs: Vec<&Site> = sites.iter().collect();
     let mut out = String::with_capacity(source.len() + sites.len() * 24);
     emit(source, &refs, 0, source.len(), &mut out);
-    Cow::Owned(out)
+    Ok(Cow::Owned(out))
+}
+
+#[cfg(test)]
+fn rewrite<'s>(source: &'s str, name: &str) -> Cow<'s, str> {
+    prepare(source, name).unwrap_or(Cow::Borrowed(source))
+}
+
+// ---------------------------------------------------------------------------
+// Namespaces that would hold themselves
+// ---------------------------------------------------------------------------
+
+/// Every statement of a template, depth first, with a callback.
+fn each_stmt<'a, F: FnMut(&'a Stmt<'a>)>(stmts: &'a [Stmt<'a>], f: &mut F) {
+    for s in stmts {
+        f(s);
+        match s {
+            Stmt::Template(t) => each_stmt(&t.children, f),
+            Stmt::ForLoop(l) => {
+                each_stmt(&l.body, f);
+                each_stmt(&l.else_body, f);
+            }
+            Stmt::IfCond(c) => {
+                each_stmt(&c.true_body, f);
+                each_stmt(&c.false_body, f);
+            }
+            Stmt::WithBlock(w) => each_stmt(&w.body, f),
+            Stmt::SetBlock(b) => each_stmt(&b.body, f),
+            Stmt::AutoEscape(a) => each_stmt(&a.body, f),
+            Stmt::FilterBlock(b) => each_stmt(&b.body, f),
+            Stmt::Block(b) => each_stmt(&b.body, f),
+            Stmt::Macro(m) => each_stmt(&m.body, f),
+            Stmt::CallBlock(c) => each_stmt(&c.macro_decl.body, f),
+            _ => {}
+        }
+    }
+}
+
+/// Whether evaluating `e` can yield a value that holds a variable named in
+/// `names` -- the variable itself, or a container or call result built from
+/// it. Reading an attribute or item of it, testing or comparing it, holds
+/// nothing.
+fn holds(e: &Expr<'_>, names: &[&str]) -> bool {
+    match e {
+        Expr::Var(v) => names.contains(&v.id),
+        Expr::Const(_) | Expr::GetAttr(_) | Expr::GetItem(_) | Expr::Slice(_) => false,
+        Expr::Test(_) | Expr::Compare(_) | Expr::UnaryOp(_) => false,
+        Expr::BinOp(b) => match b.op {
+            BinOpKind::Eq
+            | BinOpKind::Ne
+            | BinOpKind::Lt
+            | BinOpKind::Lte
+            | BinOpKind::Gt
+            | BinOpKind::Gte
+            | BinOpKind::In => false,
+            _ => holds(&b.left, names) || holds(&b.right, names),
+        },
+        Expr::IfExpr(i) => {
+            holds(&i.true_expr, names) || i.false_expr.as_ref().is_some_and(|f| holds(f, names))
+        }
+        Expr::Filter(f) => {
+            f.expr.as_ref().is_some_and(|x| holds(x, names)) || args_hold(&f.args, names)
+        }
+        Expr::Call(c) => args_hold(&c.args, names),
+        Expr::List(l) => l.items.iter().any(|x| holds(x, names)),
+        Expr::Map(m) => m.keys.iter().chain(&m.values).any(|x| holds(x, names)),
+    }
+}
+
+fn args_hold(args: &[CallArg<'_>], names: &[&str]) -> bool {
+    args.iter().any(|a| match a {
+        CallArg::Pos(e) | CallArg::Kwarg(_, e) | CallArg::PosSplat(e) | CallArg::KwargSplat(e) => {
+            holds(e, names)
+        }
+    })
+}
+
+/// Whether `e` creates a namespace: a call of `namespace(...)`.
+fn makes_namespace(e: &Expr<'_>) -> bool {
+    match e {
+        Expr::Call(c) => matches!(&c.expr, Expr::Var(v) if v.id == "namespace"),
+        Expr::IfExpr(i) => {
+            makes_namespace(&i.true_expr) || i.false_expr.as_ref().is_some_and(makes_namespace)
+        }
+        _ => false,
+    }
+}
+
+/// The names a binding target introduces.
+fn target_names<'a>(e: &'a Expr<'a>, out: &mut Vec<&'a str>) {
+    match e {
+        Expr::Var(v) => out.push(v.id),
+        Expr::List(l) => l.items.iter().for_each(|x| target_names(x, out)),
+        _ => {}
+    }
+}
+
+/// Adds the names `target` binds when `value` holds one of `names`.
+fn bind<'a>(target: &'a Expr<'a>, value: &Expr<'_>, names: &[&str], found: &mut Vec<&'a str>) {
+    if holds(value, names) {
+        let mut t = Vec::new();
+        target_names(target, &mut t);
+        found.extend(t.into_iter().filter(|n| !names.contains(n)));
+    }
+}
+
+/// The first assignment that would make a namespace hold one.
+fn namespace_cycle<'a>(ast: &'a Stmt<'a>) -> Option<Refusal> {
+    let all = std::slice::from_ref(ast);
+    // Every name that may be bound to a namespace: created by `namespace()`,
+    // then (to a fixed point) any name bound from an expression holding one.
+    let mut names: Vec<&'a str> = Vec::new();
+    each_stmt(all, &mut |s| {
+        if let Stmt::Set(x) = s {
+            if makes_namespace(&x.expr) {
+                target_names(&x.target, &mut names);
+            }
+        }
+    });
+    loop {
+        let before = names.len();
+        let mut found: Vec<&'a str> = Vec::new();
+        each_stmt(all, &mut |s| match s {
+            Stmt::Set(x) => bind(&x.target, &x.expr, &names, &mut found),
+            Stmt::ForLoop(l) => bind(&l.target, &l.iter, &names, &mut found),
+            Stmt::WithBlock(w) => w
+                .assignments
+                .iter()
+                .for_each(|(t, v)| bind(t, v, &names, &mut found)),
+            _ => {}
+        });
+        found.sort_unstable();
+        found.dedup();
+        names.extend(found);
+        if names.len() == before {
+            break;
+        }
+    }
+    let mut refusal = None;
+    each_stmt(all, &mut |s| {
+        if refusal.is_some() {
+            return;
+        }
+        let Stmt::Set(x) = s else { return };
+        let Expr::GetAttr(target) = &x.target else {
+            return;
+        };
+        let Expr::Var(root) = &target.expr else {
+            return;
+        };
+        // The namespace itself, by any name, or any name bound to one.
+        let mut held: Vec<&str> = names.clone();
+        held.push(root.id);
+        if holds(&x.expr, &held) {
+            refusal = Some(Refusal {
+                line: u32::from(x.target.span().start_line),
+                message: format!(
+                    "{NAMESPACE_TAG}: `{}.{}` is assigned a value holding a namespace, and \
+                     printing or serialising a namespace that contains itself recurses \
+                     without end",
+                    root.id, target.name
+                ),
+            });
+        }
+    });
+    refusal
 }
 
 /// Python's `slice.indices(len)`: the first index, the bound, and the step.
@@ -453,6 +657,57 @@ mod tests {
         );
         // Unparseable input is left for the compiler to report.
         assert!(matches!(rewrite("{{ x[::-1 }}", "t"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn the_attribute_scan() {
+        assert!(may_set_attribute("{% set ns.v = 1 %}"));
+        assert!(may_set_attribute("{%- set  ns_2.v = 1 %}"));
+        assert!(!may_set_attribute("{% set v = 1 %}"));
+        assert!(!may_set_attribute("reset: 1\nset x = y.z"));
+    }
+
+    fn refused(src: &str) -> bool {
+        prepare(src, "t").is_err()
+    }
+
+    #[test]
+    fn a_namespace_holding_itself_is_refused() {
+        for src in [
+            "{% set ns = namespace() %}{% set ns.v = ns %}",
+            "{% set ns = namespace() %}{% set ns.v = [ns] %}",
+            "{% set ns = namespace() %}{% set ns.v = {'k': ns} %}",
+            "{% set ns = namespace() %}{% set a = ns %}{% set ns.v = a %}",
+            "{% set ns = namespace() %}{% for x in [ns] %}{% set ns.v = x %}{% endfor %}",
+            "{% set ns = namespace() %}{% set ns.v = ns if true else 1 %}",
+            "{% set ns = namespace(items=[]) %}{% set ns.items = ns.items + [ns] %}",
+            "{% macro m(n) %}{% set n.v = n %}{% endmacro %}",
+            "{% set a = namespace() %}{% set b = namespace() %}{% set a.v = b %}",
+        ] {
+            assert!(refused(src), "{src}");
+        }
+    }
+
+    #[test]
+    fn reading_a_namespace_is_not_holding_it() {
+        for src in [
+            "{% set ns = namespace(total=0) %}{% set ns.total = ns.total + 1 %}",
+            "{% set ns = namespace(items=[]) %}{% set ns.items = ns.items + ['x'] %}",
+            "{% set ns = namespace(seen=false) %}{% set ns.seen = ns.seen or 'x' in ns.items %}",
+            "{% set ns = namespace(n=0) %}{% set ns.n = ns.n if ns is defined else 0 %}",
+            "{% set ns = namespace() %}{% set ns.v = 'ns' %}",
+        ] {
+            assert!(!refused(src), "{src}");
+        }
+    }
+
+    #[test]
+    fn a_refusal_names_the_line() {
+        let Err(r) = prepare("a\n{% set ns = namespace() %}\n\n{% set ns.v = ns %}", "t") else {
+            panic!("refused")
+        };
+        assert_eq!(r.line, 4);
+        assert!(r.message.starts_with(NAMESPACE_TAG) && r.message.contains("`ns.v`"));
     }
 
     #[test]

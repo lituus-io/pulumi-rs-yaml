@@ -4016,6 +4016,55 @@ mod jinja_engine_panic_security {
     }
 
     #[test]
+    fn a_namespace_that_would_hold_itself_is_refused_at_its_line() {
+        // Printing such a namespace recursed until the stack overflowed: a
+        // crash nothing catches. It is refused where it would be built.
+        for src in [
+            "{% set ns = namespace(v=0) %}\n{% set ns.v = ns %}{{ ns }}",
+            "{% set ns = namespace(v=0) %}\n{% set ns.v = [ns] %}{{ ns | tojson }}",
+            "{% set ns = namespace(v=0) %}{% set a = ns %}\n{% set ns.v = a %}{{ ns }}",
+        ] {
+            assert_eq!(render(src), Err(RenderErrorKind::JinjaTypeError), "{src}");
+        }
+        // The everyday namespace patterns are untouched.
+        assert_eq!(
+            render("{% set ns = namespace(total=0, items=[]) %}{% for i in [1, 2] %}{% set ns.total = ns.total + i %}{% set ns.items = ns.items + [i] %}{% endfor %}{{ ns.total }} {{ ns.items }}")
+                .unwrap(),
+            "3 [1, 2]"
+        );
+    }
+
+    #[test]
+    fn a_namespace_cycle_inside_an_include_is_refused_too() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("cyc.j2"),
+            "{% set ns = namespace() %}\n{% set ns.me = ns %}{{ ns }}",
+        )
+        .unwrap();
+        let d = dir.path().to_string_lossy();
+        let (config, extra) = (HashMap::new(), HashMap::new());
+        let ctx = JinjaContext {
+            project_name: "app",
+            stack_name: "dev",
+            cwd: &d,
+            organization: "org",
+            root_directory: &d,
+            config: &config,
+            project_dir: &d,
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits: JinjaLimits::default(),
+        };
+        let diag = JinjaPreprocessor::new(&ctx)
+            .render("{% include 'cyc.j2' %}", "Pulumi.yaml")
+            .unwrap_err();
+        assert_eq!(diag.kind, RenderErrorKind::JinjaTypeError);
+        assert!(diag.message.contains("cyc.j2, line 2"), "{}", diag.message);
+    }
+
+    #[test]
     fn a_zero_step_is_an_error_not_a_panic() {
         assert_eq!(
             render("{% set s = 0 %}{{ 'abc'[::s] }}"),
