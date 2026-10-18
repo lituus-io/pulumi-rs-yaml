@@ -164,3 +164,8 @@ doc = false
 name = "fuzz_jinja_conformance"
 path = "fuzz_targets/fuzz_jinja_conformance.rs"
 doc = false
+
+[[bin]]
+name = "fuzz_jinja_methods"
+path = "fuzz_targets/fuzz_jinja_methods.rs"
+doc = false

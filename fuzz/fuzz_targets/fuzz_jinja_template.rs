@@ -29,21 +29,113 @@ use std::fmt::Write;
 
 const VARS: &[&str] = &["a", "b", "c", "d", "loop", "missing", "config", "ns"];
 const FILTERS: &[&str] = &[
-    "abs", "attr", "batch", "capitalize", "center", "count", "d", "default", "dictsort", "e",
-    "escape", "filesizeformat", "first", "float", "format", "groupby", "indent", "int", "items",
-    "join", "last", "length", "list", "lower", "map", "max", "min", "pprint", "reject",
-    "rejectattr", "replace", "reverse", "round", "safe", "select", "selectattr", "slice", "sort",
-    "string", "sum", "title", "tojson", "trim", "truncate", "unique", "upper", "urlencode",
-    "wordcount", "wordwrap", "split", "lines", "chain", "zip", "bool", "to_json", "to_yaml",
-    "base64_encode", "base64_decode",
+    "abs",
+    "attr",
+    "batch",
+    "capitalize",
+    "center",
+    "count",
+    "d",
+    "default",
+    "dictsort",
+    "e",
+    "escape",
+    "filesizeformat",
+    "first",
+    "float",
+    "format",
+    "groupby",
+    "indent",
+    "int",
+    "items",
+    "join",
+    "last",
+    "length",
+    "list",
+    "lower",
+    "map",
+    "max",
+    "min",
+    "pprint",
+    "reject",
+    "rejectattr",
+    "replace",
+    "reverse",
+    "round",
+    "safe",
+    "select",
+    "selectattr",
+    "slice",
+    "sort",
+    "string",
+    "sum",
+    "title",
+    "tojson",
+    "trim",
+    "truncate",
+    "unique",
+    "upper",
+    "urlencode",
+    "wordcount",
+    "wordwrap",
+    "split",
+    "lines",
+    "chain",
+    "zip",
+    "bool",
+    "to_json",
+    "to_yaml",
+    "base64_encode",
+    "base64_decode",
 ];
 const TESTS: &[&str] = &[
-    "defined", "undefined", "none", "number", "string", "sequence", "mapping", "iterable", "odd",
-    "even", "divisibleby", "eq", "lt", "in", "callable", "true", "false", "startingwith",
+    "defined",
+    "undefined",
+    "none",
+    "number",
+    "string",
+    "sequence",
+    "mapping",
+    "iterable",
+    "odd",
+    "even",
+    "divisibleby",
+    "eq",
+    "lt",
+    "in",
+    "callable",
+    "true",
+    "false",
+    "startingwith",
 ];
 const METHODS: &[&str] = &[
-    "upper", "lower", "strip", "split", "replace", "startswith", "join", "title", "format",
-    "items", "keys", "values", "get", "count", "find", "zfill", "next", "reset",
+    "upper",
+    "lower",
+    "strip",
+    "split",
+    "replace",
+    "startswith",
+    "join",
+    "title",
+    "format",
+    "items",
+    "keys",
+    "values",
+    "get",
+    "count",
+    "find",
+    "zfill",
+    "next",
+    "reset",
+    "append",
+    "pop",
+    "sort",
+    "update",
+    "setdefault",
+    "rsplit",
+    "partition",
+    "ljust",
+    "isoformat",
 ];
 const OPS: &[&str] = &[
     "+", "-", "*", "/", "//", "%", "**", "~", "==", "!=", "<", ">=", "and", "or", "in", "not in",
@@ -354,7 +446,11 @@ fn node(n: &Node, depth: usize, out: &mut String) {
             out.push_str("{% endcall %}");
         }
         Node::FilterBlock(f, body) => {
-            let _ = write!(out, "{{% filter {} %}}", pick(&["upper", "trim", "lower", "title"], *f));
+            let _ = write!(
+                out,
+                "{{% filter {} %}}",
+                pick(&["upper", "trim", "lower", "title"], *f)
+            );
             nodes(body, d, out);
             out.push_str("{% endfilter %}");
         }
@@ -437,7 +533,11 @@ fuzz_target!(|input: Input| {
             let located = a.line > 0
                 || a.origin.is_some()
                 || matches!(a.kind, RenderErrorKind::OutputTooLarge);
-            assert!(located, "unlocated {:?} error for {source:?}: {}", a.kind, a.message);
+            assert!(
+                located,
+                "unlocated {:?} error for {source:?}: {}",
+                a.kind, a.message
+            );
             let _ = a.format_rich("fuzz.yaml");
         }
         _ => panic!("one render failed and the other did not: {source:?}"),

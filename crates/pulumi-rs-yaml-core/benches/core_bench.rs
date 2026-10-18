@@ -1575,6 +1575,24 @@ fn bench_jinja_include_heavy(c: &mut Criterion) {
     });
 }
 
+fn bench_jinja_methods(c: &mut Criterion) {
+    // 200 resources named through string methods, collected into a list
+    // that is sorted, with a date per resource: methods, mutation and dates
+    // on the render path at once.
+    let source = "{% set names = [] %}{% set day = '2026-10-18'|to_date %}resources:\n{% for i in range(200) %}{% set n = 'Table {}'.format(i).lower().replace(' ', '_').zfill(12) %}{% do names.append(n) %}  {{ n }}:\n    expires: {{ (day + timedelta(days=i)).isoformat() }}\n{% endfor %}{% do names.sort(reverse=true) %}first: {{ names[0] }}\n";
+    let (config, extra) = (HashMap::new(), HashMap::new());
+    let ctx = bench_ctx(
+        &config,
+        &extra,
+        ".",
+        pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
+    );
+    c.bench_function("jinja_render_methods_mutation_dates_200", |b| {
+        let pre = JinjaPreprocessor::new(&ctx);
+        b.iter(|| black_box(pre.render(black_box(source), "Pulumi.yaml").unwrap()))
+    });
+}
+
 criterion_group!(
     benches,
     bench_parse_simple,
@@ -1598,6 +1616,7 @@ criterion_group!(
     bench_jinja_typical_stack,
     bench_jinja_large_loop,
     bench_jinja_include_heavy,
+    bench_jinja_methods,
     bench_sql_lineage_export,
     bench_sql_lineage_routine_script,
     bench_sql_statement_layer,

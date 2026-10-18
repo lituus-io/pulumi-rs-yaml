@@ -42,12 +42,17 @@ fn tree() -> &'static Tree {
         }
         std::fs::write(outside.join("secret.j2"), SENTINEL).unwrap();
         std::fs::write(outside.join("secret.yaml"), SENTINEL).unwrap();
-        std::fs::write(root.join("shared/env.j2"), "{% macro m() %}ok{% endmacro %}env").unwrap();
+        std::fs::write(
+            root.join("shared/env.j2"),
+            "{% macro m() %}ok{% endmacro %}env",
+        )
+        .unwrap();
         std::fs::write(stack.join("local.j2"), "local").unwrap();
         #[cfg(unix)]
         {
             let _ = std::os::unix::fs::symlink(&outside, stack.join("out-dir"));
-            let _ = std::os::unix::fs::symlink(outside.join("secret.j2"), root.join("shared/link.j2"));
+            let _ =
+                std::os::unix::fs::symlink(outside.join("secret.j2"), root.join("shared/link.j2"));
         }
         Tree {
             root: root.to_string_lossy().into_owned(),
@@ -164,7 +169,10 @@ fuzz_target!(|input: Input| {
         Ok(out) => assert!(!out.contains(SENTINEL), "served from outside: {source:?}"),
         Err(diag) => {
             let text = diag.format_rich("Pulumi.yaml");
-            assert!(!text.contains(SENTINEL), "leaked from outside: {source:?}\n{text}");
+            assert!(
+                !text.contains(SENTINEL),
+                "leaked from outside: {source:?}\n{text}"
+            );
         }
     }
 });
