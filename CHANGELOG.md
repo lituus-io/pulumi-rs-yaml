@@ -3,6 +3,38 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.39
+
+### Already-rendered projects: `PULUMI_YAML_JINJA=off`
+
+A caller that renders a project with this crate and hands the language host
+the result could not deploy text a `{% raw %}` block produced: the host
+rendered the file a second time and read the literal `{{ x }}` as an
+expression ("undefined value"). `PULUMI_YAML_JINJA=off` turns the runtime's
+own pass off: the language host, `exec` and `graph` parse every project file
+as written. Unset, empty or `on` is the old behaviour, byte for byte; any
+other value is refused with the value named; `off` with `exec`'s
+`PULUMI_YAML_JINJA_SOURCE` is refused as a contradiction. New:
+`jinja::JINJA_ENV`, `jinja::jinja_enabled`, `jinja::jinja_enabled_from`.
+Proven through a real `pulumi up` on a local backend
+(`tests/acceptance/host-prerendered-raw`).
+
+### Resource keys for three more shapes
+
+- `gcp:cloudrun:Service` (Cloud Run v1): the provider id
+  `locations/{l}/namespaces/{p}/services/{s}` keys as the v2 service it is,
+  `//run.googleapis.com/projects/{p}/locations/{l}/services/{s}`. A namespace
+  that is a project number gives no key.
+- `gcp:bigquery:Job`: the provider id `projects/{p}/jobs/{j}` holds no
+  location. `resource_key_with_properties(type, provider_id, props)` (new,
+  Python too) takes it from the `location` property, giving the key
+  `bq_job_resource_key` builds; no location, no key.
+- `gcp:serviceaccount:Account` from properties: `accountId` + `project` give
+  `{accountId}@{p}.iam.gserviceaccount.com`, the same key as the provider id.
+- `KeyTemplate` gains `id_form` (`IdForm`), how a type's provider id spells
+  its relative name. Every id segment is still validated before it is
+  written; a property-built key is held to the same rule.
+
 ## 0.5.38
 
 ### Where a referenced stack really is
