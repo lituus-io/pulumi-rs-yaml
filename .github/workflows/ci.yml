@@ -223,6 +223,28 @@ jobs:
       - name: Check musl aarch64
         run: cargo zigbuild --workspace --exclude pulumi-rs-yaml-python --target aarch64-unknown-linux-musl --release
 
+  # The engine is held to pinned reference Jinja2. The goldens are committed,
+  # so every test job already compares against them; this job regenerates
+  # them from the pinned reference and fails on any drift, so a golden can
+  # never be edited by hand into agreement with the engine.
+  jinja-conformance:
+    name: Jinja conformance (reference Jinja2)
+    runs-on: ubuntu-latest
+    needs: fmt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the pinned reference
+        run: pip install --require-hashes --no-binary markupsafe -r scripts/jinja_conformance/requirements.txt
+      - name: Regenerate the goldens and fail on drift
+        run: python scripts/jinja_conformance/generate.py --check
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Render the corpus and check the matrix
+        run: cargo test -p pulumi-rs-yaml-core --test jinja_conformance
+
   benchmark-regression:
     name: Benchmark Regression Check
     if: github.event_name == 'pull_request'
@@ -332,6 +354,7 @@ jobs:
       - no-default-features
       - binary-size
       - python-test
+      - jinja-conformance
       - cross-check
       - benchmark-regression
     steps:

@@ -1,0 +1,1 @@
+{% set rows = [{'k': 'a'}, {'k': 'b'}] %}{% for key, items in rows|groupby('k') %}{{ key }}{{ items|length }} {% endfor %}

@@ -1,0 +1,15 @@
+resources:
+
+  bucket-alpha:
+    type: gcp:storage:Bucket
+    properties:
+      location: EU
+      labels:
+        idx: "1"
+
+  bucket-beta:
+    type: gcp:storage:Bucket
+    properties:
+      location: EU
+      labels:
+        idx: "2"

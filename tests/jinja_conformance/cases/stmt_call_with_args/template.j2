@@ -1,0 +1,1 @@
+{% macro each(items) %}{% for i in items %}{{ caller(i) }}{% endfor %}{% endmacro %}{% call(x) each([1,2]) %}<{{ x }}>{% endcall %}

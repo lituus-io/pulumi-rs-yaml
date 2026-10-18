@@ -1,0 +1,1 @@
+{{ [{'a': true, 'n': 1}, {'a': false, 'n': 2}]|rejectattr('a')|map(attribute='n')|list }}

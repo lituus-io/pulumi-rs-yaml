@@ -1,0 +1,1 @@
+{% set tree = [{'n': 'a', 'c': [{'n': 'b', 'c': []}, {'n': 'c', 'c': [{'n': 'd', 'c': []}]}]}] %}{% for node in tree recursive %}{{ node.n }}@{{ loop.depth }}/{{ loop.depth0 }}{% if node.c %}[{{ loop(node.c) }}]{% endif %}{% endfor %}
