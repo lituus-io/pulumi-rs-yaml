@@ -25,6 +25,45 @@ tests = [
 
 [[entry]]
 version = "0.5.40"
+heading = "Python methods on values"
+tests = [
+    "crates/pulumi-rs-yaml-core/tests/jinja_method_oracle.rs::every_method_agrees_with_jinja2_and_starlark_or_is_listed",
+    "crates/pulumi-rs-yaml-core/tests/jinja_method_oracle.rs::every_str_method_in_the_table_has_a_case",
+    "crates/pulumi-rs-yaml-core/src/jinja/methods.rs::every_table_is_sorted_and_unique",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_growing_method_is_refused_before_it_allocates",
+]
+
+[[entry]]
+version = "0.5.40"
+heading = "Lists and dicts a template can change"
+tests = [
+    "crates/pulumi-rs-yaml-core/tests/jinja_conformance.rs::every_case_matches_jinja2_or_is_a_listed_divergence",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::the_programs_inputs_cannot_be_changed",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_container_cannot_change_while_a_loop_walks_it",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_container_grown_in_a_loop_runs_out_of_fuel",
+    "crates/pulumi-rs-yaml-python/tests/test_jinja_conformance.py::test_a_list_built_in_the_template_is_shared_and_mutable",
+]
+
+[[entry]]
+version = "0.5.40"
+heading = "Dates"
+tests = [
+    "crates/pulumi-rs-yaml-core/src/jinja/dates.rs::ordinals_round_trip_and_match_python",
+    "crates/pulumi-rs-yaml-core/src/jinja/dates.rs::iso_parsing",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::dates_are_bounded_to_python_s_calendar",
+    "crates/pulumi-rs-yaml-language/tests/jinja_host_tests.rs::the_language_host_deploys_the_features_stack",
+]
+
+[[entry]]
+version = "0.5.40"
+heading = "A capability ledger"
+tests = [
+    "crates/pulumi-rs-yaml-core/tests/capability_ledger.rs::every_changelog_entry_maps_to_a_live_test",
+    "crates/pulumi-rs-yaml-core/tests/ci_contract_tests.rs::the_fuzz_lockfile_matches_the_product_lockfile",
+]
+
+[[entry]]
+version = "0.5.40"
 heading = "Resource limits"
 tests = [
   "crates/pulumi-rs-yaml-core/tests/jinja_limits_tests.rs::fuel_at_the_boundary",

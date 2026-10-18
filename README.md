@@ -7,9 +7,9 @@
 [![Release](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/release.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/releases/latest)
 [![PyPI](https://img.shields.io/pypi/v/pulumi-rs-yaml?label=PyPI)](https://pypi.org/project/pulumi-rs-yaml/)
 [![Python](https://img.shields.io/badge/python-%E2%89%A53.9-blue)](https://pypi.org/project/pulumi-rs-yaml/)
-[![fuzz targets](https://img.shields.io/badge/fuzz%20targets-28-blue)](fuzz/fuzz_targets)
-[![security tests](https://img.shields.io/badge/security%20tests-203-blue)](crates/pulumi-rs-yaml-core/tests/security_tests.rs)
-[![Jinja conformance](https://img.shields.io/badge/jinja2%20conformance-263%20cases-blue)](tests/jinja_conformance/MATRIX.md)
+[![fuzz targets](https://img.shields.io/badge/fuzz%20targets-29-blue)](fuzz/fuzz_targets)
+[![security tests](https://img.shields.io/badge/security%20tests-209-blue)](crates/pulumi-rs-yaml-core/tests/security_tests.rs)
+[![Jinja conformance](https://img.shields.io/badge/jinja2%20conformance-365%20cases-blue)](tests/jinja_conformance/MATRIX.md)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE)
 
 Rust implementation of the [Pulumi](https://www.pulumi.com/) YAML language runtime. Drop-in replacement for the Go-based `pulumi-yaml` with 1:1 compatibility.
@@ -79,8 +79,8 @@ limits (`PULUMI_YAML_JINJA_LIMITS`), where includes may reach, the error
 format, and every difference from Python Jinja2. Its examples are executed
 by the test suite.
 
-The engine is held to pinned reference Jinja2 by a conformance corpus of 263
-cases ([MATRIX.md](tests/jinja_conformance/MATRIX.md),
+The engine is held to pinned reference Jinja2 by a conformance corpus of 292
+cases and 73 method cases (the methods also against the embedded Starlark) ([MATRIX.md](tests/jinja_conformance/MATRIX.md),
 [DIVERGENCES.md](tests/jinja_conformance/DIVERGENCES.md)); CI regenerates the
 goldens from the reference and fails on any drift.
 
@@ -181,7 +181,8 @@ and a strict render), `fuzz_jinja_template` (structure-aware: generated
 templates and contexts, asserting no panic, limits respected, deterministic
 output and located errors), `fuzz_jinja_loader` (hostile include, import and
 `readFile()` names; a sentinel file outside the render root must never
-surface) and `fuzz_jinja_conformance` (mutations of the conformance corpus).
+surface), `fuzz_jinja_conformance` (mutations of the conformance corpus) and
+`fuzz_jinja_methods` (every method with arbitrary receivers and arguments).
 
 Provider-scope targets, which check the extent detection above:
 `fuzz_scope_roundtrip` (protect and restore are exact inverses),
@@ -191,7 +192,7 @@ Provider-scope targets, which check the extent detection above:
 `fuzz_scope_settings` (the option reader cannot over-read),
 `fuzz_scope_never_panics`.
 
-Twenty-eight targets in all — the three lists here together are exactly the
+Twenty-nine targets in all — the three lists here together are exactly the
 `[[bin]]` entries in `fuzz/Cargo.toml`. A CI job holds the workflow matrix, these
 lists and the badge to that count, and the security-tests badge to the `#[test]`
 count in `security_tests.rs`. `scope_grammar.rs` sits alongside them as a shared input

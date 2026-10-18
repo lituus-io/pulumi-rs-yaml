@@ -10,10 +10,10 @@ is the reference; every example in it is executed by the test suite.
 
 ### Conformance with reference Jinja2
 
-A corpus of 263 cases -- every statement, expression form, whitespace rule
+A corpus of 292 cases -- every statement, expression form, whitespace rule
 and error class, and one case per filter, test and global Jinja2 3.1.6 ships
 -- renders through the runtime and must equal pinned Jinja2's output byte for
-byte. 201 do; the 62 that differ are listed with reasons in
+byte. 231 do; the 61 that differ are listed with reasons in
 `tests/jinja_conformance/DIVERGENCES.md` (value formatting deployed stacks
 already depend on, extensions, refusals by design), with the runtime's own
 output pinned. `MATRIX.md` is generated from the corpus and both registries.
@@ -28,6 +28,42 @@ ties-to-even, `replace` count, `attribute=` on `join`/`sum`/`max`/`min`,
 `cycler`, `joiner`, Python string methods, and `break`/`continue`;
 `sequence` is true for strings and maps. Rendering 4,583 real project files
 before and after gives byte-identical output.
+
+### Python methods on values
+
+Every `str`, list, dict and number method a template reaches for -- case
+mapping, strip/replace, find/index/count with bounds, split/rsplit/
+splitlines/partition, the padding family, the `is*` predicates,
+removeprefix/suffix, join, and `str.format` with the format-spec
+mini-language -- from one static, sorted table per receiver kind (no
+allocation to dispatch, no trait objects). 0.5.39 had `items`, `keys`,
+`values` and `get`. A method that can grow a value checks the output limit
+before allocating. 73 method cases are held three ways: to pinned Jinja2, to
+this runtime's own Starlark, and to each other (`methods/DIVERGENCES.md`
+lists the Starlark gaps and two sorted-map differences).
+
+### Lists and dicts a template can change
+
+`{% do xs.append(x) %}`, `d.update(...)`, `setdefault`, `pop`, `sort`, and
+the rest of the list and dict mutators, with Python's sharing. In a template
+that mutates, its literals and filter results are mutable objects; values
+the host passes in stay read-only (an error says to copy them); changing a
+container while a loop walks it is an error; growth is bounded by fuel.
+
+### Dates
+
+`date`, `datetime` and `timedelta`, naive, in pure Rust (proleptic
+Gregorian, no timezone database), with `to_date`/`to_datetime`/`strptime`,
+`strftime`, `isoformat`, attributes, comparison and `+`/`-`, checked against
+Python's `datetime`.
+
+### A capability ledger
+
+`tests/capability_ledger.toml` maps every changelog entry since 0.5.25 to
+the tests that prove it, and a test fails when one is unmapped or names a
+test that no longer exists. Five entries had no test and now do (the
+reused SQL parser worker, Starlark's load-time execution, and three CI
+settings read from the workflow files).
 
 ### Resource limits
 
@@ -74,12 +110,14 @@ kind's exact text is golden-tested.
 
 ### Tests
 
-Unit (limits at their boundaries, policies, prepass), conformance (263
-cases, Rust and Python), integration (`host-jinja-features` deployed with a
+Unit (limits at their boundaries, policies, prepass, method tables, the
+calendar), conformance (292 cases and 73 method cases, Rust and Python; the
+methods also against Starlark), integration (`host-jinja-features` deployed with a
 real `pulumi up`; one stack per limit and an include chain through `graph`
 and `pulumi preview`), security (DoS shapes, containment, engine crashes,
 secret redaction), fuzz (`fuzz_jinja_template`, `fuzz_jinja_loader`,
-`fuzz_jinja_conformance`), performance (typical stack, large loop,
+`fuzz_jinja_conformance`, `fuzz_jinja_methods`), regression (the
+capability ledger), performance (typical stack, large loop,
 include-heavy benches; fuel counted, not timed).
 
 ## 0.5.39

@@ -12,6 +12,7 @@ page and the engine ever disagree, CI fails.
 
 **Contents:** [Overview](#overview) · [Syntax](#syntax) ·
 [Context](#context-variables) · [Filters, tests and globals](#filters-tests-and-globals) ·
+[Methods](#methods) · [Changing lists and dicts](#changing-lists-and-dicts) · [Dates](#dates) ·
 [Undefined names](#undefined-names) · [Limits](#limits) ·
 [Includes and imports](#includes-and-imports) · [Errors](#errors) ·
 [Divergences from Jinja2](#divergences-from-jinja2) ·
@@ -21,7 +22,8 @@ page and the engine ever disagree, CI fails.
 
 The engine is [minijinja](https://github.com/mitsuhiko/minijinja) 2, extended
 and configured to behave as Jinja2 does, and held to it: the conformance
-corpus (`tests/jinja_conformance/`) renders 263 cases through this runtime
+corpus (`tests/jinja_conformance/`) renders 292 cases and 73 method
+cases through this runtime
 and compares each byte for byte with what pinned reference Jinja2 produces.
 The generated [capability matrix](tests/jinja_conformance/MATRIX.md) lists
 every statement, filter, test and global with its status and the cases that
@@ -108,7 +110,7 @@ total: {{ ns.total }}
 total: 60
 ```
 
-Python's string and dict methods work, as in Jinja2:
+Python's methods work on values, as in Jinja2 (see [Methods](#methods)):
 
 ```jinja
 {{ 'a,b,c'.split(',') | join('+') }} {{ 'Data Lake'.lower().replace(' ', '-') }} {{ '{}-{}'.format('app', 3) }}
@@ -178,6 +180,97 @@ Added by this runtime:
 ```text
 {"team":"data","tier":1} aGVsbG8= 2
 ```
+
+## Methods
+
+Values answer Python's methods, as they do in Jinja2. Every one is held to
+reference Jinja2 and to this runtime's own Starlark by the method corpus
+(`tests/jinja_conformance/methods/`); [MATRIX.md](tests/jinja_conformance/MATRIX.md)
+lists them with their cases.
+
+| Receiver | Methods |
+|---|---|
+| `str` | `upper` `lower` `title` `capitalize` `swapcase` `casefold` · `strip` `lstrip` `rstrip` `replace` `removeprefix` `removesuffix` · `startswith` `endswith` (a tuple too) `find` `rfind` `index` `rindex` `count` (with start/end) · `split` `rsplit` `splitlines` `partition` `rpartition` · `zfill` `ljust` `rjust` `center` `expandtabs` · `isdigit` `isalpha` `isalnum` `isspace` `isupper` `islower` `istitle` `isdecimal` `isnumeric` `isidentifier` · `join` `format` `encode` (UTF-8) |
+| list | `index` `count` `copy`, and the mutators below |
+| dict | `items` `keys` `values` `get` `copy`, and the mutators below |
+| int, float | `is_integer` `bit_length` `as_integer_ratio` `conjugate` |
+
+`str.format` takes positional, numbered and named fields and the format-spec
+mini-language (`{:>8}`, `{:05d}`, `{:.2f}`, `{:,}`, `{:#x}`, `{:.0%}`);
+conversions (`!r`) and field indexing (`{0.name}`) are refused. `index`
+raises an error naming what was not found. A method that can grow a value
+(`ljust`, `zfill`, `center`, `expandtabs`, `replace`, `format`) is refused
+before it allocates past the output limit.
+
+```jinja
+{{ '{}-{:03d}'.format('Data Lake'.lower().replace(' ', '-'), 7) }} {{ 'a,b,c'.rsplit(',', 1) | join('|') }} {{ 'x'.center(5, '*') }} {{ 'abc'.find('c') }}
+```
+
+```text
+data-lake-007 a,b|c **x** 2
+```
+
+## Changing lists and dicts
+
+A list or dict the template builds can be changed, with Python's methods and
+Python's sharing: two names for one list see the same changes. `{% do %}`
+calls a method for its effect; a mutating method returns `None`.
+
+- list: `append` `extend` `insert` `pop` `remove` `clear` `sort` (`key=`,
+  `reverse=`) `reverse`
+- dict: `update` (a mapping or keywords) `setdefault` `pop` `popitem` `clear`
+
+```jinja
+{% set seen = [] %}{% set alias = seen -%}
+{% for name in ['b', 'a', 'c'] %}{% do seen.append(name) %}{% endfor -%}
+{% do seen.sort() %}{{ alias | join(',') }} {{ seen.pop() }}
+```
+
+```text
+a,b,c c
+```
+
+What a filter returns is a new value the template owns, as in Python. Values
+the program is given -- `config`, the context, a value the host passes in --
+are **read-only**: changing one is an error that says to copy it first
+(`x.copy()`, or `x | list`). Changing a list or dict while a loop walks it is
+an error too (Python allows it for lists; here it would loop without end or
+skip silently). A dict keeps its keys in key order, as every map literal here
+does.
+
+```jinja
+{% do config.update(region='south') %}
+```
+
+```error
+JinjaFilterError
+```
+
+## Dates
+
+Naive dates and times, with Python's `datetime` semantics: `date(y, m, d)`,
+`datetime(y, m, d[, h, mi, s, us])`, `timedelta(days=, seconds=,
+microseconds=, milliseconds=, minutes=, hours=, weeks=)`, and the converters
+`to_date`, `to_datetime` and `strptime(format)`, usable as filters or
+functions. Dates and timedeltas compare, add and subtract; they have
+`strftime`, `isoformat`, `date`, `weekday`, `isoweekday`, `toordinal`,
+`replace`, `total_seconds`, and the attributes `year` ... `microsecond`,
+`days`, `seconds`, `microseconds`. A host's `current_date` string becomes a
+date with `current_date | to_date`.
+
+```jinja
+{# context: {"current_date": "2026-10-18"} #}
+{% set today = current_date | to_date -%}
+{{ (today + timedelta(days=90)).isoformat() }} {{ today.strftime('%A %d %B') }} {{ (to_date('2027-01-01') - today).days }}
+```
+
+```text
+2027-01-16 Sunday 18 October 75
+```
+
+The calendar is proleptic Gregorian over years 1-9999. There is no timezone
+database: values are naive, `%z`/`%Z` are empty, and an ISO string with an
+offset is refused rather than guessed.
 
 ## Undefined names
 
@@ -379,8 +472,8 @@ agree. In short:
   (HTML only; output here is YAML); a namespace holding itself (see
   [Limits](#limits)).
 - **Not supported**: macro `varargs`/`kwargs` (extra arguments a macro does
-  not declare); `'%s' % x` formatting (use `format`); mutating a list with
-  `do` (use `namespace()`); line statements.
+  not declare); `'%s' % x` formatting (use `format`); line statements; a
+  timezone database.
 - **Known gaps**: `1 / 0` renders `inf`; `%` with a negative divisor takes the
   dividend's sign; `loop.length` is undefined when iterating a string (use
   `| list`); `include ... without context` still passes the context.
