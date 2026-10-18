@@ -117,35 +117,65 @@ jobs:
     needs: fmt
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           key: size
-      # Reports sizes so a dependency can never again silently double the
-      # binary unnoticed. Informational: it prints, it does not gate.
+      # Gates every release artefact at +2% against the previous release, so a
+      # dependency can never again silently double a binary. The previous
+      # release is the newest `v*` tag this commit descends from, other than
+      # one on this commit itself; it is built here, with the same toolchain
+      # and link configuration, into its own target directory.
       #
       # RUSTFLAGS is cleared deliberately: an env-level RUSTFLAGS makes cargo
       # ignore `target.*.rustflags` from .cargo/config.toml, so the rest of CI
       # never exercises the real release link configuration. Clearing it here
       # means this job links exactly like release.yml does.
-      - name: Build and report sizes
+      - name: Measure this commit and the previous release
         env:
           RUSTFLAGS: ""
         run: |
-          cargo build --release -p pulumi-rs-yaml-language -p pulumi-rs-yaml-converter
-          full_host=$(stat -c%s target/release/pulumi-language-yaml)
-          conv=$(stat -c%s target/release/pulumi-converter-yaml)
-          cargo build --release -p pulumi-rs-yaml-language --no-default-features
-          slim_host=$(stat -c%s target/release/pulumi-language-yaml)
-          {
-            echo "### Release binary sizes"
-            echo ""
-            echo "| Binary | Bytes | MiB |"
-            echo "|---|---:|---:|"
-            printf '| pulumi-language-yaml (full) | %s | %.2f |\n' "$full_host" "$(echo "scale=4; $full_host/1048576" | bc)"
-            printf '| pulumi-language-yaml (--no-default-features) | %s | %.2f |\n' "$slim_host" "$(echo "scale=4; $slim_host/1048576" | bc)"
-            printf '| pulumi-converter-yaml | %s | %.2f |\n' "$conv" "$(echo "scale=4; $conv/1048576" | bc)"
-          } >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          measure() {  # $1 = source dir, $2 = target dir, $3 = output json
+            ( cd "$1"
+              export CARGO_TARGET_DIR="$2"
+              cargo build --release -p pulumi-rs-yaml-language -p pulumi-rs-yaml-converter -p pulumi-rs-yaml-python
+              full=$(stat -c%s "$2/release/pulumi-language-yaml")
+              conv=$(stat -c%s "$2/release/pulumi-converter-yaml")
+              ext=$(stat -c%s "$2/release/libpulumi_yaml_rs.so")
+              cargo build --release -p pulumi-rs-yaml-language --no-default-features
+              slim=$(stat -c%s "$2/release/pulumi-language-yaml")
+              printf '{"pulumi-language-yaml (full)": %s, "pulumi-language-yaml (--no-default-features)": %s, "pulumi-converter-yaml": %s, "python extension (pulumi_yaml_rs)": %s}\n' \
+                "$full" "$slim" "$conv" "$ext" > "$3" )
+          }
+          head=$(git rev-parse HEAD)
+          previous=""
+          for tag in $(git tag --merged HEAD --sort=-v:refname 'v*'); do
+            if [ "$(git rev-list -n1 "$tag")" != "$head" ]; then previous="$tag"; break; fi
+          done
+          measure "$PWD" "$PWD/target" current.json
+          if [ -z "$previous" ]; then
+            echo "no previous release tag; nothing to gate against" | tee -a "$GITHUB_STEP_SUMMARY"
+            cp current.json previous.json
+            echo "PREVIOUS=none" >> "$GITHUB_ENV"
+          else
+            git worktree add --detach ../previous "$previous"
+            measure "$PWD/../previous" "$PWD/../previous-target" previous.json
+            echo "PREVIOUS=$previous" >> "$GITHUB_ENV"
+          fi
+      - name: Gate at +2% per artefact
+        run: python3 .github/scripts/size_gate.py previous.json current.json --max-growth-pct 2 --label "$PREVIOUS" --summary "$GITHUB_STEP_SUMMARY"
+      - name: The gate fails on growth (self-test)
+        run: |
+          echo '{"x": 1000}' > p.json
+          echo '{"x": 1021}' > c.json
+          if python3 .github/scripts/size_gate.py p.json c.json; then
+            echo "::error::the size gate passed a 2.1% growth"; exit 1
+          fi
+          echo '{"x": 1020}' > c.json
+          python3 .github/scripts/size_gate.py p.json c.json
 
   python-test:
     name: Python Tests
