@@ -1,0 +1,1 @@
+{% set d = {'a': 1} %}{% do d.update({'b': 2}) %}{% do d.update(c=3) %}{{ d.setdefault('a', 9) }} {{ d.setdefault('z', 0) }} {{ d.pop('b') }} {{ d.pop('q', 'none') }} {{ d.keys()|join(',') }}

@@ -15,9 +15,11 @@ trailing newline dropped, ``do`` and loop controls enabled.
     python3 scripts/jinja_conformance/generate.py           # write goldens
     python3 scripts/jinja_conformance/generate.py --check   # fail on drift
 
-``registry.json`` beside the cases records every filter, test and global the
+``methods/<id>/expr.txt`` holds one expression, valid in Jinja and in
+Starlark; it is rendered as ``{{ expr }}``. ``registry.json`` beside the cases records every filter, test and global the
 reference ships; the Rust runner builds the capability matrix from it.
 """
+import datetime
 import importlib.metadata
 import json
 import pathlib
@@ -40,14 +42,42 @@ def error_class(exc: BaseException) -> str:
     return "runtime"
 
 
+def to_date(v):
+    if isinstance(v, datetime.datetime):
+        return v.date()
+    if isinstance(v, datetime.date):
+        return v
+    return datetime.date.fromisoformat(v[:10])
+
+
+def to_datetime(v):
+    if isinstance(v, datetime.datetime):
+        return v
+    if isinstance(v, datetime.date):
+        return datetime.datetime(v.year, v.month, v.day)
+    return datetime.datetime.fromisoformat(v)
+
+
 def environment(loader=None) -> jinja2.Environment:
-    return jinja2.Environment(
+    env = jinja2.Environment(
         loader=loader,
         undefined=jinja2.StrictUndefined,
         autoescape=False,
         keep_trailing_newline=False,
         extensions=["jinja2.ext.do", "jinja2.ext.loopcontrols"],
     )
+    return env
+
+
+def with_dates(env: jinja2.Environment) -> jinja2.Environment:
+    """The date helpers the runtime adds, given to the reference as Python's
+    own datetime, so date cases compare against Python's semantics."""
+    strptime = datetime.datetime.strptime
+    env.globals.update(date=datetime.date, datetime=datetime.datetime,
+                       timedelta=datetime.timedelta, to_date=to_date,
+                       to_datetime=to_datetime, strptime=strptime)
+    env.filters.update(to_date=to_date, to_datetime=to_datetime, strptime=strptime)
+    return env
 
 
 def registry() -> str:
@@ -63,9 +93,13 @@ def registry() -> str:
 
 
 def render(case: pathlib.Path):
-    env = environment(jinja2.FileSystemLoader(str(case)))
-    ctx = json.loads((case / "context.json").read_text())
-    source = (case / "template.j2").read_bytes().decode("utf-8")
+    env = with_dates(environment(jinja2.FileSystemLoader(str(case))))
+    if (case / "expr.txt").exists():
+        source = "{{ " + (case / "expr.txt").read_text().rstrip("\n") + " }}"
+    else:
+        source = (case / "template.j2").read_bytes().decode("utf-8")
+    ctxfile = case / "context.json"
+    ctx = json.loads(ctxfile.read_text()) if ctxfile.exists() else {}
     try:
         out = env.from_string(source).render(**ctx)
     except Exception as exc:  # noqa: BLE001 -- every failure is a golden
@@ -86,7 +120,8 @@ def main() -> int:
         drift.append("registry.json")
         if not check:
             reg.write_text(registry())
-    for case in sorted(p for p in (CORPUS / "cases").iterdir() if p.is_dir()):
+    cases = [p for d in ("cases", "methods") for p in (CORPUS / d).iterdir() if p.is_dir()]
+    for case in sorted(cases):
         name, body = render(case)
         other = "expected.txt" if name == "expected_error.txt" else "expected_error.txt"
         target = case / name

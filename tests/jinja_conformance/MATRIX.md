@@ -11,11 +11,12 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 
 ## Totals
 
-- cases: 263 (201 byte-identical to Jinja2, 62 listed divergences)
-- rows extension: 15
-- rows partial: 37
-- rows supported: 195
-- rows unsupported: 10
+- cases: 292 (231 byte-identical to Jinja2, 61 listed divergences)
+- rows extension: 24
+- rows partial: 39
+- rows supported: 276
+- rows unit-tested: 1
+- rows unsupported: 9
 
 ## Filters
 
@@ -69,8 +70,11 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `split` | extension | ext_filter_split | extension (ext_filter_split) |
 | `string` | supported | filter_string | - |
 | `striptags` | unsupported | filter_striptags | unsupported (filter_striptags) |
+| `strptime` | extension | date_from_strings | - |
 | `sum` | supported | filter_sum | - |
 | `title` | supported | filter_title | - |
+| `to_date` | extension | date_arith_with_numbers_unchanged, date_current_date, date_from_strings | - |
+| `to_datetime` | extension | date_from_strings | - |
 | `to_json` | extension | ext_filter_to_json | extension (ext_filter_to_json) |
 | `to_yaml` | extension | ext_filter_to_yaml | extension (ext_filter_to_yaml) |
 | `tojson` | partial | filter_tojson, filter_tojson_indent | intended (filter_tojson) |
@@ -136,17 +140,37 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | name | status | cases | divergence |
 |---|---|---|---|
 | `cycler` | supported | global_cycler | - |
+| `date` | extension | date_arith, date_arith_with_numbers_unchanged, date_compare, date_construct, date_diff, date_from_strings, date_invalid_error, date_isoformat, date_replace, date_weekday, mut_dict_alias, mut_dict_methods | - |
+| `datetime` | extension | date_arith, date_attributes, date_construct, date_diff, date_isoformat, date_replace, date_strftime | - |
 | `dict` | partial | global_dict | intended (global_dict) |
 | `joiner` | supported | global_joiner | - |
 | `lipsum` | unsupported | global_lipsum | unsupported (global_lipsum) |
 | `namespace` | supported | global_namespace | - |
 | `range` | supported | global_range, global_range_in_for | - |
 | `readFile` | extension | ext_fn_readfile | extension (ext_fn_readfile) |
+| `strptime` | extension | date_from_strings | - |
+| `timedelta` | extension | date_arith, date_compare, date_current_date, date_diff, date_timedelta_str | - |
+| `to_date` | extension | date_arith_with_numbers_unchanged, date_current_date, date_from_strings | - |
+| `to_datetime` | extension | date_from_strings | - |
 
 ## Statements, expressions, whitespace, undefined, errors, YAML
 
 | case | status | divergence |
 |---|---|---|
+| `date_arith` | supported | - |
+| `date_arith_with_numbers_unchanged` | supported | - |
+| `date_attributes` | supported | - |
+| `date_compare` | supported | - |
+| `date_construct` | supported | - |
+| `date_current_date` | supported | - |
+| `date_diff` | supported | - |
+| `date_from_strings` | supported | - |
+| `date_invalid_error` | supported | - |
+| `date_isoformat` | supported | - |
+| `date_replace` | supported | - |
+| `date_strftime` | supported | - |
+| `date_timedelta_str` | supported | - |
+| `date_weekday` | supported | - |
 | `err_call_non_callable` | supported | - |
 | `err_endfor_mismatch` | supported | - |
 | `err_iterate_int` | supported | - |
@@ -206,12 +230,27 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `ext_ctx_config` | extension | extension (ext_ctx_config) |
 | `ext_ctx_pulumi` | extension | extension (ext_ctx_pulumi) |
 | `ext_global_debug_removed` | extension | - |
+| `mut_dict_alias` | supported | - |
+| `mut_dict_clear` | supported | - |
+| `mut_dict_methods` | supported | - |
+| `mut_dict_pop_missing_error` | supported | - |
+| `mut_filter_result_is_a_new_list` | supported | - |
+| `mut_list_append_alias` | supported | - |
+| `mut_list_clear_copy` | supported | - |
+| `mut_list_in_loop_collect` | supported | - |
+| `mut_list_methods` | supported | - |
+| `mut_list_pop_empty_error` | supported | - |
+| `mut_list_remove_missing_error` | supported | - |
+| `mut_list_set_return` | supported | - |
+| `mut_list_sort_key_reverse` | supported | - |
+| `mut_list_sort_mixed_error` | supported | - |
+| `mut_nested_append` | supported | - |
 | `stmt_autoescape_block` | supported | - |
 | `stmt_block_scoped` | supported | - |
 | `stmt_call_with_args` | supported | - |
 | `stmt_comment` | supported | - |
 | `stmt_comment_multiline` | supported | - |
-| `stmt_do` | unsupported | unsupported (stmt_do) |
+| `stmt_do` | supported | - |
 | `stmt_extends_block` | supported | - |
 | `stmt_extends_self_block` | supported | - |
 | `stmt_extends_super` | supported | - |
@@ -293,3 +332,64 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `yaml_pulumi_interp_untouched` | supported | - |
 | `yaml_resources_loop` | supported | - |
 | `yaml_tojson_quoting` | supported | - |
+
+## Methods
+
+Each row's cases are held to reference Jinja2 and to the embedded Starlark (`methods/DIVERGENCES.md`).
+
+| receiver | method | status | cases | divergence |
+|---|---|---|---|---|
+| map | `copy` | supported | map_copy | starlark (map_copy) |
+| map | `get` | supported | map_get, map_get_default, map_get_none | - |
+| map | `items` | partial | map_items | both (map_items) |
+| map | `keys` | partial | map_keys | both (map_keys) |
+| map | `values` | supported | map_values | - |
+| number | `as_integer_ratio` | supported | num_as_integer_ratio | starlark (num_as_integer_ratio) |
+| number | `bit_length` | supported | num_bit_length | starlark (num_bit_length) |
+| number | `conjugate` | supported | num_conjugate | starlark (num_conjugate) |
+| number | `is_integer` | supported | num_is_integer | starlark (num_is_integer) |
+| seq | `copy` | supported | seq_copy | starlark (seq_copy) |
+| seq | `count` | supported | seq_count | starlark (seq_count) |
+| seq | `index` | supported | seq_index, seq_index_missing | - |
+| str | `capitalize` | supported | str_capitalize | - |
+| str | `casefold` | supported | str_casefold | starlark (str_casefold) |
+| str | `center` | supported | str_center | starlark (str_center) |
+| str | `count` | supported | str_count | - |
+| str | `encode` | unit-tested |  | - |
+| str | `endswith` | supported | str_endswith | starlark (str_endswith) |
+| str | `expandtabs` | supported | str_expandtabs | starlark (str_expandtabs) |
+| str | `find` | supported | str_find, str_find_unicode | - |
+| str | `format` | supported | str_format_comma_hex, str_format_error, str_format_escape, str_format_named, str_format_numbered, str_format_positional, str_format_spec | starlark (str_format_comma_hex); starlark (str_format_spec) |
+| str | `index` | supported | str_index, str_index_missing | - |
+| str | `isalnum` | supported | str_isalnum | - |
+| str | `isalpha` | supported | str_isalpha | - |
+| str | `isdecimal` | supported | str_isdecimal | starlark (str_isdecimal) |
+| str | `isdigit` | supported | str_isdigit | - |
+| str | `isidentifier` | supported | str_isidentifier | starlark (str_isidentifier) |
+| str | `islower` | supported | str_islower | - |
+| str | `isnumeric` | supported | str_isnumeric | starlark (str_isnumeric) |
+| str | `isspace` | supported | str_isspace | - |
+| str | `istitle` | supported | str_istitle | - |
+| str | `isupper` | supported | str_isupper | - |
+| str | `join` | supported | str_join, str_join_non_str_error | - |
+| str | `ljust` | supported | str_ljust | starlark (str_ljust) |
+| str | `lower` | supported | str_lower | - |
+| str | `lstrip` | supported | str_lstrip | - |
+| str | `partition` | supported | str_partition, str_partition_missing | - |
+| str | `removeprefix` | supported | str_removeprefix | - |
+| str | `removesuffix` | supported | str_removesuffix | - |
+| str | `replace` | supported | str_replace | - |
+| str | `rfind` | supported | str_rfind | - |
+| str | `rindex` | supported | str_rindex | - |
+| str | `rjust` | supported | str_rjust | starlark (str_rjust) |
+| str | `rpartition` | supported | str_rpartition | - |
+| str | `rsplit` | supported | str_rsplit, str_rsplit_ws | - |
+| str | `rstrip` | supported | str_rstrip | - |
+| str | `split` | supported | str_split_empty_sep, str_split_max, str_split_sep, str_split_sep_max, str_split_ws | starlark (str_split_empty_sep) |
+| str | `splitlines` | supported | str_splitlines, str_splitlines_keepends | - |
+| str | `startswith` | supported | str_startswith, str_startswith_tuple | starlark (str_startswith) |
+| str | `strip` | supported | str_strip | - |
+| str | `swapcase` | supported | str_swapcase | starlark (str_swapcase) |
+| str | `title` | supported | str_title | - |
+| str | `upper` | supported | str_upper | - |
+| str | `zfill` | supported | str_zfill | starlark (str_zfill) |

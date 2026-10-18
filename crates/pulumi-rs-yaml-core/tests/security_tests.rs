@@ -4072,3 +4072,141 @@ mod jinja_engine_panic_security {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Methods and mutable containers: a program's inputs stay read-only, a
+// container cannot change under a loop, and no method can grow a value or a
+// container past the render's limits.
+// ---------------------------------------------------------------------------
+mod jinja_method_security {
+    use pulumi_rs_yaml_core::jinja::{
+        JinjaContext, JinjaLimits, JinjaPreprocessor, RenderErrorKind, UndefinedMode,
+    };
+    use std::collections::HashMap;
+    use std::time::{Duration, Instant};
+
+    fn render(source: &str) -> Result<String, (RenderErrorKind, String)> {
+        let config: HashMap<String, String> = [("app:region".to_string(), "north".to_string())]
+            .into_iter()
+            .collect();
+        let extra = HashMap::new();
+        let ctx = JinjaContext {
+            project_name: "app",
+            stack_name: "dev",
+            cwd: ".",
+            organization: "org",
+            root_directory: ".",
+            config: &config,
+            project_dir: ".",
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits: JinjaLimits::default(),
+        };
+        let start = Instant::now();
+        let out = JinjaPreprocessor::new(&ctx)
+            .render(source, "Pulumi.yaml")
+            .map(|c| c.into_owned())
+            .map_err(|d| (d.kind, d.message));
+        assert!(start.elapsed() < Duration::from_secs(20), "{source}");
+        out
+    }
+
+    #[test]
+    fn the_programs_inputs_cannot_be_changed() {
+        for src in [
+            "{% do config.update(region='south') %}",
+            "{% do config.clear() %}",
+            "{% set r = range(3) %}{% do r.append(9) %}",
+        ] {
+            let (kind, msg) = render(src).unwrap_err();
+            assert_eq!(kind, RenderErrorKind::JinjaFilterError, "{src}");
+            assert!(msg.contains("read-only"), "{src}: {msg}");
+        }
+        // The value really is unchanged afterwards, and a copy is free to change.
+        assert_eq!(
+            render("{% set c = config.copy() %}{% do c.update(region='south') %}{{ c.region }} {{ config.region }}").unwrap(),
+            "south north"
+        );
+    }
+
+    #[test]
+    fn a_container_cannot_change_while_a_loop_walks_it() {
+        for src in [
+            "{% set xs = [1, 2] %}{% for x in xs %}{% do xs.append(x) %}{% endfor %}",
+            "{% set d = {'a': 1} %}{% for k in d %}{% do d.update(b=2) %}{% endfor %}",
+            "{% set xs = [1, 2] %}{% for x in xs %}{% do xs.pop() %}{% endfor %}",
+        ] {
+            let (kind, msg) = render(src).unwrap_err();
+            assert_eq!(kind, RenderErrorKind::JinjaFilterError, "{src}");
+            assert!(msg.contains("changed during iteration"), "{src}: {msg}");
+        }
+        // After the loop it may change again.
+        assert_eq!(
+            render("{% set xs = [1] %}{% for x in xs %}{% endfor %}{% do xs.append(2) %}{{ xs|length }}").unwrap(),
+            "2"
+        );
+    }
+
+    #[test]
+    fn a_growing_method_is_refused_before_it_allocates() {
+        for src in [
+            "{{ 'x'.ljust(10 ** 12) }}",
+            "{{ 'x'.rjust(10 ** 12) }}",
+            "{{ 'x'.center(10 ** 12) }}",
+            "{{ '1'.zfill(10 ** 12) }}",
+            "{{ ('\\t' * 1000).expandtabs(10 ** 9) }}",
+            "{{ ('a' * 100000).replace('a', 'b' * 1000) }}",
+            "{{ '{:>1000000000}'.format('x') }}",
+        ] {
+            let (kind, msg) = render(src).unwrap_err();
+            assert_eq!(kind, RenderErrorKind::OutputTooLarge, "{src}: {msg}");
+        }
+    }
+
+    #[test]
+    fn a_container_grown_in_a_loop_runs_out_of_fuel() {
+        let (kind, _) = render(
+            "{% set xs = [] %}{% for i in range(100000) %}{% for j in range(100000) %}{% do xs.append(j) %}{% endfor %}{% endfor %}",
+        )
+        .unwrap_err();
+        assert_eq!(kind, RenderErrorKind::FuelExhausted);
+    }
+
+    #[test]
+    fn dates_are_bounded_to_python_s_calendar() {
+        for src in [
+            "{{ date(10000, 1, 1) }}",
+            "{{ date(2026, 13, 1) }}",
+            "{{ date(9999, 12, 31) + timedelta(days=1) }}",
+            "{{ timedelta(days=10 ** 12) }}",
+            "{{ '2026-10-18T09:00:00+02:00'|to_datetime }}",
+            "{{ 'x'|strptime('%Y') }}",
+            "{{ date(2026, 1, 1).strftime('%Q') }}",
+        ] {
+            assert!(render(src).is_err(), "{src}");
+        }
+    }
+
+    #[test]
+    fn a_method_never_panics_on_hostile_arguments() {
+        for src in [
+            "{{ 'abc'.find('b', -10 ** 18, 10 ** 18) }}",
+            "{{ 'abc'.split(none, -5) }}",
+            "{{ 'abc'.rsplit(none, 10 ** 18) }}",
+            "{{ ''.center(0) }}",
+            "{{ 'é日'.index('日', 1) }}",
+            "{{ '{0}{1}'.format('a') }}",
+            "{{ '{'.format() }}",
+            "{{ '{:'.format(1) }}",
+            "{{ '{:,.2%}'.format(0.5) }}",
+            "{{ (2 ** 62).bit_length() }}",
+            "{{ (1e308).as_integer_ratio() }}",
+            "{% set xs = [] %}{{ xs.pop(-1) if xs else 0 }}",
+            "{% set xs = [1] %}{% do xs.insert(-10 ** 18, 0) %}{{ xs }}",
+            "{% set xs = [1] %}{% do xs.sort(key=none) %}{{ xs }}",
+        ] {
+            let _ = render(src);
+        }
+    }
+}

@@ -14,10 +14,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 mod compat;
+mod containers;
+mod dates;
 mod limits;
+mod methods;
 mod prepass;
 
 pub use limits::{JinjaLimits, RenderStats, LIMITS_ENV, MAX_RECURSION};
+pub use methods::method_names;
 
 // ---------------------------------------------------------------------------
 // GAT-based trait (B.1)
@@ -1039,6 +1043,7 @@ impl JinjaPreprocessor<'_> {
             minijinja::escape_formatter(out, state, value)
         });
         env.add_function(prepass::SLICE_FN, prepass::slice);
+        env.add_global(methods::OUTPUT_LIMIT_GLOBAL, limits.output_bytes);
         let range_limit = limits.range;
         env.add_function(
             "range",
@@ -2414,16 +2419,16 @@ fn center_compat(
             ),
         ));
     }
-    let left = marg / 2 + (marg & width & 1);
-    let mut out = String::with_capacity(subject.len() + marg);
-    for _ in 0..left {
-        out.push(' ');
-    }
-    out.push_str(subject);
-    for _ in 0..(marg - left) {
-        out.push(' ');
-    }
-    Ok(minijinja::Value::from(out))
+    // The padding itself is `str.center`'s, shared with the method.
+    let padded = methods::pad(
+        subject,
+        width,
+        ' ',
+        methods::Align::Center,
+        usize::MAX,
+        "center",
+    )?;
+    Ok(minijinja::Value::from(padded.into_owned()))
 }
 
 /// The most text `wordwrap` will produce for one value.

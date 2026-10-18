@@ -83,18 +83,86 @@ fn may_set_attribute(source: &str) -> bool {
     false
 }
 
-/// One slice to rewrite, as byte ranges of the source.
-struct Site {
-    whole: (usize, usize),
-    target: (usize, usize),
-    start: Option<(usize, usize)>,
-    stop: Option<(usize, usize)>,
-    step: (usize, usize),
+/// The functions rewritten `+` and `-` call (date arithmetic).
+pub(super) const ADD_FN: &str = "__rsyaml_add";
+pub(super) const SUB_FN: &str = "__rsyaml_sub";
+
+/// The method calls that make a template's containers mutable.
+fn may_mutate(source: &str) -> bool {
+    super::containers::MUTATORS.iter().any(|m| {
+        source.match_indices(m).any(|(i, _)| {
+            i > 0 && source.as_bytes()[i - 1] == b'.' && source[i + m.len()..].starts_with('(')
+        })
+    })
 }
 
+/// Names that bring dates into a template.
+fn may_use_dates(source: &str) -> bool {
+    [
+        "timedelta(",
+        "to_date",
+        "to_datetime",
+        "strptime",
+        "date(",
+        "datetime(",
+    ]
+    .iter()
+    .any(|n| source.contains(n))
+}
+
+/// What a rewrite looks for.
+#[derive(Clone, Copy)]
+struct Want {
+    slices: bool,
+    containers: bool,
+    arith: bool,
+}
+
+/// One rewrite: the text `whole` becomes `func(part, part, ...)`, a missing
+/// part written `none`. Byte ranges of the source.
+struct Site {
+    whole: (usize, usize),
+    func: &'static str,
+    parts: [Option<(usize, usize)>; 4],
+    n: usize,
+}
+
+impl Site {
+    fn new(whole: (usize, usize), func: &'static str, parts: &[Option<(usize, usize)>]) -> Self {
+        let mut p = [None; 4];
+        p[..parts.len()].copy_from_slice(parts);
+        // A node's span can start inside its first part (after the first
+        // name of a dotted chain); the text to replace starts at the earlier.
+        let first = parts.iter().flatten().map(|r| r.0).min().unwrap_or(whole.0);
+        Site {
+            whole: (whole.0.min(first), whole.1),
+            func,
+            parts: p,
+            n: parts.len(),
+        }
+    }
+}
+
+/// The bytes an expression's text covers. minijinja starts a postfix or
+/// filter node's span at its operator (`.`, `(`, `|`) in some cases; the
+/// text starts with the leftmost operand, so that is found by descending.
 fn range(e: &Expr<'_>) -> (usize, usize) {
     let s = e.span();
-    (s.start_offset as usize, s.end_offset as usize)
+    let first = match e {
+        Expr::GetAttr(g) => Some(&g.expr),
+        Expr::GetItem(g) => Some(&g.expr),
+        Expr::Slice(x) => Some(&x.expr),
+        Expr::Call(c) => Some(&c.expr),
+        Expr::Filter(f) => f.expr.as_ref(),
+        Expr::Test(t) => Some(&t.expr),
+        Expr::BinOp(b) => Some(&b.left),
+        Expr::Compare(c) => Some(&c.expr),
+        _ => None,
+    };
+    let start = first.map_or(s.start_offset as usize, |x| {
+        range(x).0.min(s.start_offset as usize)
+    });
+    (start, s.end_offset as usize)
 }
 
 /// A step that cannot be negative: a positive integer literal.
@@ -105,172 +173,209 @@ fn is_positive_literal(e: &Expr<'_>) -> bool {
     }
 }
 
-fn walk_expr(e: &Expr<'_>, out: &mut Vec<Site>) {
-    match e {
-        Expr::Var(_) | Expr::Const(_) => {}
-        Expr::Slice(s) => {
-            if let Some(step) = &s.step {
-                if !is_positive_literal(step) {
-                    // The node's span can start inside its target (after
-                    // the first name of a dotted chain); the target's own
-                    // start is where the text to replace begins.
-                    let (whole, target) = (range(e), range(&s.expr));
-                    out.push(Site {
-                        whole: (whole.0.min(target.0), whole.1),
-                        target,
-                        start: s.start.as_ref().map(range),
-                        stop: s.stop.as_ref().map(range),
-                        step: range(step),
-                    });
+struct Walker {
+    want: Want,
+    out: Vec<Site>,
+}
+
+impl Walker {
+    fn expr(&mut self, e: &Expr<'_>) {
+        match e {
+            Expr::Var(_) | Expr::Const(_) => {}
+            Expr::Slice(s) => {
+                if let Some(step) = &s.step {
+                    if self.want.slices && !is_positive_literal(step) {
+                        self.out.push(Site::new(
+                            range(e),
+                            SLICE_FN,
+                            &[
+                                Some(range(&s.expr)),
+                                s.start.as_ref().map(range),
+                                s.stop.as_ref().map(range),
+                                Some(range(step)),
+                            ],
+                        ));
+                    }
+                }
+                self.expr(&s.expr);
+                for part in [&s.start, &s.stop, &s.step].into_iter().flatten() {
+                    self.expr(part);
                 }
             }
-            walk_expr(&s.expr, out);
-            for part in [&s.start, &s.stop, &s.step].into_iter().flatten() {
-                walk_expr(part, out);
+            Expr::UnaryOp(u) => self.expr(&u.expr),
+            Expr::BinOp(b) => {
+                if self.want.arith && matches!(b.op, BinOpKind::Add | BinOpKind::Sub) {
+                    let f = if matches!(b.op, BinOpKind::Add) {
+                        ADD_FN
+                    } else {
+                        SUB_FN
+                    };
+                    self.out.push(Site::new(
+                        range(e),
+                        f,
+                        &[Some(range(&b.left)), Some(range(&b.right))],
+                    ));
+                }
+                self.expr(&b.left);
+                self.expr(&b.right);
             }
-        }
-        Expr::UnaryOp(u) => walk_expr(&u.expr, out),
-        Expr::BinOp(b) => {
-            walk_expr(&b.left, out);
-            walk_expr(&b.right, out);
-        }
-        Expr::Compare(c) => {
-            walk_expr(&c.expr, out);
-            for op in &c.ops {
-                walk_expr(&op.expr, out);
-            }
-        }
-        Expr::IfExpr(i) => {
-            walk_expr(&i.test_expr, out);
-            walk_expr(&i.true_expr, out);
-            if let Some(f) = &i.false_expr {
-                walk_expr(f, out);
-            }
-        }
-        Expr::Filter(f) => {
-            if let Some(x) = &f.expr {
-                walk_expr(x, out);
-            }
-            walk_args(&f.args, out);
-        }
-        Expr::Test(t) => {
-            walk_expr(&t.expr, out);
-            walk_args(&t.args, out);
-        }
-        Expr::GetAttr(g) => walk_expr(&g.expr, out),
-        Expr::GetItem(g) => {
-            walk_expr(&g.expr, out);
-            walk_expr(&g.subscript_expr, out);
-        }
-        Expr::Call(c) => {
-            walk_expr(&c.expr, out);
-            walk_args(&c.args, out);
-        }
-        Expr::List(l) => l.items.iter().for_each(|x| walk_expr(x, out)),
-        Expr::Map(m) => {
-            m.keys.iter().for_each(|x| walk_expr(x, out));
-            m.values.iter().for_each(|x| walk_expr(x, out));
-        }
-    }
-}
-
-fn walk_args(args: &[CallArg<'_>], out: &mut Vec<Site>) {
-    for a in args {
-        match a {
-            CallArg::Pos(e)
-            | CallArg::Kwarg(_, e)
-            | CallArg::PosSplat(e)
-            | CallArg::KwargSplat(e) => walk_expr(e, out),
-        }
-    }
-}
-
-fn walk_body(stmts: &[Stmt<'_>], out: &mut Vec<Site>) {
-    stmts.iter().for_each(|s| walk_stmt(s, out));
-}
-
-fn walk_stmt(s: &Stmt<'_>, out: &mut Vec<Site>) {
-    match s {
-        Stmt::Template(t) => walk_body(&t.children, out),
-        Stmt::EmitExpr(e) => walk_expr(&e.expr, out),
-        Stmt::EmitRaw(_) | Stmt::Continue(_) | Stmt::Break(_) => {}
-        Stmt::ForLoop(f) => {
-            walk_expr(&f.target, out);
-            walk_expr(&f.iter, out);
-            if let Some(x) = &f.filter_expr {
-                walk_expr(x, out);
-            }
-            walk_body(&f.body, out);
-            walk_body(&f.else_body, out);
-        }
-        Stmt::IfCond(i) => {
-            walk_expr(&i.expr, out);
-            walk_body(&i.true_body, out);
-            walk_body(&i.false_body, out);
-        }
-        Stmt::WithBlock(w) => {
-            for (a, b) in &w.assignments {
-                walk_expr(a, out);
-                walk_expr(b, out);
-            }
-            walk_body(&w.body, out);
-        }
-        Stmt::Set(x) => {
-            walk_expr(&x.target, out);
-            walk_expr(&x.expr, out);
-        }
-        Stmt::SetBlock(x) => {
-            walk_expr(&x.target, out);
-            if let Some(f) = &x.filter {
-                walk_expr(f, out);
-            }
-            walk_body(&x.body, out);
-        }
-        Stmt::AutoEscape(a) => {
-            walk_expr(&a.enabled, out);
-            walk_body(&a.body, out);
-        }
-        Stmt::FilterBlock(f) => {
-            walk_expr(&f.filter, out);
-            walk_body(&f.body, out);
-        }
-        Stmt::Block(b) => walk_body(&b.body, out),
-        Stmt::Import(i) => {
-            walk_expr(&i.expr, out);
-            walk_expr(&i.name, out);
-        }
-        Stmt::FromImport(f) => {
-            walk_expr(&f.expr, out);
-            for (a, b) in &f.names {
-                walk_expr(a, out);
-                if let Some(b) = b {
-                    walk_expr(b, out);
+            Expr::Compare(c) => {
+                self.expr(&c.expr);
+                for op in &c.ops {
+                    self.expr(&op.expr);
                 }
             }
-        }
-        Stmt::Extends(e) => walk_expr(&e.name, out),
-        Stmt::Include(i) => walk_expr(&i.name, out),
-        Stmt::Macro(m) => {
-            m.args.iter().for_each(|x| walk_expr(x, out));
-            m.defaults.iter().for_each(|x| walk_expr(x, out));
-            walk_body(&m.body, out);
-        }
-        Stmt::CallBlock(c) => {
-            walk_expr(&c.call.expr, out);
-            walk_args(&c.call.args, out);
-            m_body(&c.macro_decl, out);
-        }
-        Stmt::Do(d) => {
-            walk_expr(&d.call.expr, out);
-            walk_args(&d.call.args, out);
+            Expr::IfExpr(i) => {
+                self.expr(&i.test_expr);
+                self.expr(&i.true_expr);
+                if let Some(f) = &i.false_expr {
+                    self.expr(f);
+                }
+            }
+            Expr::Filter(f) => {
+                // A filter returns a new object in Python; in a template that
+                // changes containers, it is one the template may change.
+                if let (true, Some(x)) = (self.want.containers, &f.expr) {
+                    // A filter node's span starts at the `|`; its text starts
+                    // with the value it filters.
+                    let _ = x;
+                    self.out.push(Site::new(
+                        range(e),
+                        super::containers::OWN_FN,
+                        &[Some(range(e))],
+                    ));
+                }
+                if let Some(x) = &f.expr {
+                    self.expr(x);
+                }
+                self.args(&f.args);
+            }
+            Expr::Test(t) => {
+                self.expr(&t.expr);
+                self.args(&t.args);
+            }
+            Expr::GetAttr(g) => self.expr(&g.expr),
+            Expr::GetItem(g) => {
+                self.expr(&g.expr);
+                self.expr(&g.subscript_expr);
+            }
+            Expr::Call(c) => {
+                if self.want.containers && matches!(&c.expr, Expr::Var(v) if v.id == "dict") {
+                    self.out.push(Site::new(
+                        range(e),
+                        super::containers::OWN_FN,
+                        &[Some(range(e))],
+                    ));
+                }
+                self.expr(&c.expr);
+                self.args(&c.args);
+            }
+            Expr::List(l) => {
+                if self.want.containers {
+                    self.out.push(Site::new(
+                        range(e),
+                        super::containers::LIST_FN,
+                        &[Some(range(e))],
+                    ));
+                }
+                l.items.iter().for_each(|x| self.expr(x));
+            }
+            Expr::Map(m) => {
+                if self.want.containers {
+                    self.out.push(Site::new(
+                        range(e),
+                        super::containers::DICT_FN,
+                        &[Some(range(e))],
+                    ));
+                }
+                m.keys.iter().for_each(|x| self.expr(x));
+                m.values.iter().for_each(|x| self.expr(x));
+            }
         }
     }
-}
 
-fn m_body(m: &minijinja::machinery::ast::Macro<'_>, out: &mut Vec<Site>) {
-    m.args.iter().for_each(|x| walk_expr(x, out));
-    m.defaults.iter().for_each(|x| walk_expr(x, out));
-    walk_body(&m.body, out);
+    fn args(&mut self, args: &[CallArg<'_>]) {
+        for a in args {
+            match a {
+                CallArg::Pos(e)
+                | CallArg::Kwarg(_, e)
+                | CallArg::PosSplat(e)
+                | CallArg::KwargSplat(e) => self.expr(e),
+            }
+        }
+    }
+
+    fn body(&mut self, stmts: &[Stmt<'_>]) {
+        stmts.iter().for_each(|s| self.stmt(s));
+    }
+
+    /// Assignment targets (`for a, b in`, `set x`, macro parameters, import
+    /// names) are names, not values, and are never rewritten.
+    fn stmt(&mut self, s: &Stmt<'_>) {
+        match s {
+            Stmt::Template(t) => self.body(&t.children),
+            Stmt::EmitExpr(e) => self.expr(&e.expr),
+            Stmt::EmitRaw(_) | Stmt::Continue(_) | Stmt::Break(_) => {}
+            Stmt::ForLoop(f) => {
+                self.expr(&f.iter);
+                if let Some(x) = &f.filter_expr {
+                    self.expr(x);
+                }
+                self.body(&f.body);
+                self.body(&f.else_body);
+            }
+            Stmt::IfCond(i) => {
+                self.expr(&i.expr);
+                self.body(&i.true_body);
+                self.body(&i.false_body);
+            }
+            Stmt::WithBlock(w) => {
+                for (_, b) in &w.assignments {
+                    self.expr(b);
+                }
+                self.body(&w.body);
+            }
+            Stmt::Set(x) => {
+                if let Expr::GetAttr(g) = &x.target {
+                    self.expr(&g.expr);
+                }
+                self.expr(&x.expr);
+            }
+            Stmt::SetBlock(x) => {
+                if let Some(f) = &x.filter {
+                    self.expr(f);
+                }
+                self.body(&x.body);
+            }
+            Stmt::AutoEscape(a) => {
+                self.expr(&a.enabled);
+                self.body(&a.body);
+            }
+            Stmt::FilterBlock(f) => {
+                self.expr(&f.filter);
+                self.body(&f.body);
+            }
+            Stmt::Block(b) => self.body(&b.body),
+            Stmt::Import(i) => self.expr(&i.expr),
+            Stmt::FromImport(f) => self.expr(&f.expr),
+            Stmt::Extends(e) => self.expr(&e.name),
+            Stmt::Include(i) => self.expr(&i.name),
+            Stmt::Macro(m) => {
+                m.defaults.iter().for_each(|x| self.expr(x));
+                self.body(&m.body);
+            }
+            Stmt::CallBlock(c) => {
+                self.expr(&c.call.expr);
+                self.args(&c.call.args);
+                c.macro_decl.defaults.iter().for_each(|x| self.expr(x));
+                self.body(&c.macro_decl.body);
+            }
+            Stmt::Do(d) => {
+                self.expr(&d.call.expr);
+                self.args(&d.call.args);
+            }
+        }
+    }
 }
 
 /// Writes `source[from..to]` with every site inside it replaced, outermost
@@ -288,8 +393,8 @@ fn emit(source: &str, sites: &[&Site], from: usize, to: usize, out: &mut String)
             .copied()
             .filter(|s| s.whole.1 <= site.whole.1)
             .collect();
-        let parts = [Some(site.target), site.start, site.stop, Some(site.step)];
-        out.push_str(SLICE_FN);
+        let parts = &site.parts[..site.n];
+        out.push_str(site.func);
         out.push('(');
         for (n, part) in parts.iter().enumerate() {
             if n > 0 {
@@ -301,8 +406,8 @@ fn emit(source: &str, sites: &[&Site], from: usize, to: usize, out: &mut String)
             }
         }
         out.push(')');
-        // Keep the line count: a newline between the parts (a slice written
-        // across lines) is carried after the call.
+        // Keep the line count: a newline between the parts (an expression
+        // written across lines) is carried after the call.
         let all = source[site.whole.0..site.whole.1].matches('\n').count();
         let kept: usize = parts
             .iter()
@@ -329,9 +434,13 @@ pub(super) struct Refusal {
 /// a namespace that would hold itself. A template that does not parse is
 /// returned as it is, for the compiler to report.
 pub(super) fn prepare<'s>(source: &'s str, name: &str) -> Result<Cow<'s, str>, Refusal> {
-    let slices = may_have_stepped_slice(source);
+    let want = Want {
+        slices: may_have_stepped_slice(source),
+        containers: may_mutate(source),
+        arith: may_use_dates(source),
+    };
     let attributes = may_set_attribute(source);
-    if !slices && !attributes {
+    if !want.slices && !want.containers && !want.arith && !attributes {
         return Ok(Cow::Borrowed(source));
     }
     let Ok(ast) = parse(
@@ -347,10 +456,14 @@ pub(super) fn prepare<'s>(source: &'s str, name: &str) -> Result<Cow<'s, str>, R
             return Err(refusal);
         }
     }
-    let mut sites = Vec::new();
-    if slices {
-        walk_stmt(&ast, &mut sites);
+    let mut walker = Walker {
+        want,
+        out: Vec::new(),
+    };
+    if want.slices || want.containers || want.arith {
+        walker.stmt(&ast);
     }
+    let mut sites = walker.out;
     if sites.is_empty() {
         return Ok(Cow::Borrowed(source));
     }

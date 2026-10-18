@@ -222,6 +222,9 @@ fn every_case_matches_jinja2_or_is_a_listed_divergence() {
 /// Names the engine adds that Jinja2 does not ship; each is probed, so a
 /// stale entry here fails rather than lies.
 const EXTENSION_FILTERS: &[&str] = &[
+    "strptime",
+    "to_date",
+    "to_datetime",
     "base64_decode",
     "base64_encode",
     "bool",
@@ -233,7 +236,15 @@ const EXTENSION_FILTERS: &[&str] = &[
     "zip",
 ];
 const EXTENSION_TESTS: &[&str] = &["endingwith", "startingwith"];
-const EXTENSION_GLOBALS: &[&str] = &["readFile"];
+const EXTENSION_GLOBALS: &[&str] = &[
+    "date",
+    "datetime",
+    "readFile",
+    "strptime",
+    "timedelta",
+    "to_date",
+    "to_datetime",
+];
 
 /// The operator tests cannot be spelled `x is ==`; their cases go through
 /// `select`.
@@ -293,6 +304,15 @@ fn cases_for<'a>(ids: &'a [String], prefixes: &[String]) -> Vec<&'a str> {
         })
         .map(String::as_str)
         .collect()
+}
+
+/// Whether case `id`'s template calls `name` or filters through it.
+fn uses(id: &str, name: &str) -> bool {
+    let t =
+        fs::read_to_string(corpus().join("cases").join(id).join("template.j2")).unwrap_or_default();
+    t.contains(&format!("{name}("))
+        || t.contains(&format!("|{name}"))
+        || t.contains(&format!("| {name}"))
 }
 
 fn status(run: &Run, engine: bool, in_jinja2: bool, cases: &[&str]) -> &'static str {
@@ -407,7 +427,16 @@ fn build_matrix(run: &Run) -> (String, Vec<String>) {
                 format!("{prefix}_{stem}"),
                 format!("ext_{ext_kind}_{}", stem.to_lowercase()),
             ];
-            let covered = cases_for(&ids, &prefixes);
+            let mut covered = cases_for(&ids, &prefixes);
+            if covered.is_empty() && !in_jinja2 {
+                // An extension exercised by cases named for their topic
+                // (`date_*`): the cases whose template uses it.
+                covered = ids
+                    .iter()
+                    .filter(|id| uses(id, name))
+                    .map(String::as_str)
+                    .collect();
+            }
             if covered.is_empty() {
                 problems.push(format!("{kind} `{name}` has no conformance case"));
             }
@@ -441,6 +470,8 @@ fn build_matrix(run: &Run) -> (String, Vec<String>) {
             "yaml_",
             "ext_ctx_",
             "ext_global_",
+            "mut_",
+            "date_",
         ]
         .iter()
         .any(|p| id.starts_with(p));
@@ -460,6 +491,68 @@ fn build_matrix(run: &Run) -> (String, Vec<String>) {
         if !claimed.contains(id.as_str()) {
             problems.push(format!("case `{id}` belongs to no matrix row"));
         }
+    }
+
+    // Methods: their corpus is checked three ways by jinja_method_oracle.rs;
+    // here each method gets its row.
+    let mdir = corpus().join("methods");
+    let mdiv = fs::read_to_string(mdir.join("DIVERGENCES.md")).unwrap_or_default();
+    let mcases: Vec<String> = fs::read_dir(&mdir)
+        .map(|d| {
+            d.filter_map(|e| e.ok())
+                .filter(|e| e.path().is_dir())
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    body.push_str(
+        "\n## Methods\n\nEach row's cases are held to reference Jinja2 and to the embedded \
+         Starlark (`methods/DIVERGENCES.md`).\n\n| receiver | method | status | cases | divergence |\n|---|---|---|---|---|\n",
+    );
+    let mut rows: Vec<(&str, &str)> = pulumi_rs_yaml_core::jinja::method_names().collect();
+    rows.sort();
+    for (kind, method) in rows {
+        let prefix = match kind {
+            "str" => "str_",
+            "seq" => "seq_",
+            "map" => "map_",
+            _ => "num_",
+        };
+        let stem = format!("{prefix}{method}");
+        let mut cs: Vec<&str> = mcases
+            .iter()
+            .filter(|n| **n == stem || n.starts_with(&format!("{stem}_")))
+            .map(String::as_str)
+            .collect();
+        cs.sort();
+        let notes: Vec<String> = cs
+            .iter()
+            .filter_map(|c| {
+                mdiv.lines()
+                    .find(|l| l.starts_with(&format!("| `{c}` |")))
+                    .map(|l| format!("{} ({c})", l.split(" | ").nth(1).unwrap_or("").trim()))
+            })
+            .collect();
+        let st = if cs.is_empty() {
+            "unit-tested"
+        } else if notes
+            .iter()
+            .any(|n| n.starts_with("jinja2") || n.starts_with("both"))
+        {
+            "partial"
+        } else {
+            "supported"
+        };
+        *totals.entry(st).or_default() += 1;
+        body.push_str(&format!(
+            "| {kind} | `{method}` | {st} | {} | {} |\n",
+            cs.join(", "),
+            if notes.is_empty() {
+                "-".to_string()
+            } else {
+                notes.join("; ")
+            }
+        ));
     }
 
     let agree = ids.iter().filter(|id| run.agrees(id)).count();

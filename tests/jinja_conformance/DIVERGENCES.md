@@ -66,7 +66,6 @@ Classes:
 | `filter_xmlattr` | unsupported | HTML-only; output here is YAML |
 | `global_dict` | intended | a list or map renders JSON-style (`["a"]`, `{"k": 1}`; pairs as lists) where Jinja2 prints Python reprs (`['a']`, `('k', 1)`); the values are identical, both are valid YAML flow, and stacks already deploy the JSON spelling -- use `tojson` for portable text |
 | `global_lipsum` | unsupported | refused by design: random text makes a render non-deterministic |
-| `stmt_do` | unsupported | `{% do %}` works, but values are immutable: there is no `list.append`; use `namespace()` |
 | `stmt_for_dict_items` | intended | a map literal iterates in key order; Jinja2 keeps insertion order -- use a list of pairs when order matters |
 | `stmt_for_dict_iter_keys` | intended | a map literal iterates in key order; Jinja2 keeps insertion order |
 | `stmt_for_loop_index` | gap | iterating a string has no known length, so `loop.length`/`revindex` are undefined (strict error); `'abc'|list` works |

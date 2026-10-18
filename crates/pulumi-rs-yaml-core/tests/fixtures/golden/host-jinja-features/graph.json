@@ -5,6 +5,17 @@
   "stack": "golden",
   "nodes": [
     {
+      "id": "stackoutput::org/jinja-features/golden::expires",
+      "kind": "output",
+      "logical_name": "expires",
+      "name": "expires",
+      "source_file": "Pulumi.main.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "jinja-features",
+      "stack": "golden"
+    },
+    {
       "id": "stackoutput::org/jinja-features/golden::kept",
       "kind": "output",
       "logical_name": "kept",
@@ -31,6 +42,17 @@
       "kind": "output",
       "logical_name": "names",
       "name": "names",
+      "source_file": "Pulumi.main.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "jinja-features",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/jinja-features/golden::order",
+      "kind": "output",
+      "logical_name": "order",
+      "name": "order",
       "source_file": "Pulumi.main.yaml",
       "literal_properties": {},
       "organization": "org",
@@ -82,10 +104,32 @@
       "stack": "golden"
     },
     {
+      "id": "stackoutput::org/jinja-features/golden::slug",
+      "kind": "output",
+      "logical_name": "slug",
+      "name": "slug",
+      "source_file": "Pulumi.main.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "jinja-features",
+      "stack": "golden"
+    },
+    {
       "id": "stackoutput::org/jinja-features/golden::stackName",
       "kind": "output",
       "logical_name": "stackName",
       "name": "stackName",
+      "source_file": "Pulumi.main.yaml",
+      "literal_properties": {},
+      "organization": "org",
+      "project": "jinja-features",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/jinja-features/golden::weekday",
+      "kind": "output",
+      "logical_name": "weekday",
+      "name": "weekday",
       "source_file": "Pulumi.main.yaml",
       "literal_properties": {},
       "organization": "org",

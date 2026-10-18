@@ -27,7 +27,7 @@ class TestAllAcceptanceProjects:
         dirs = list(all_acceptance_dirs(acceptance_dir))
         # Skip Jinja projects that need context and multi-phase projects
         # whose Pulumi.phase*.yaml files are standalone projects (not multi-file extras)
-        jinja_dirs = {"gcp-jinja-bucket", "gcp-jinja-single-line", "gcp-multi-file-jinja", "gcp-exec-jinja-bucket", "gcp-get-resource"}
+        jinja_dirs = {"gcp-jinja-bucket", "gcp-jinja-single-line", "gcp-multi-file-jinja", "gcp-exec-jinja-bucket", "gcp-get-resource", "host-jinja-features"}
         for d in dirs:
             if d.name in jinja_dirs:
                 continue

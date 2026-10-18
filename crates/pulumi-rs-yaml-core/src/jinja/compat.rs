@@ -17,7 +17,7 @@ use std::fmt::Write as _;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use minijinja::value::{from_args, Kwargs, Object, ObjectRepr, Value, ValueKind};
+use minijinja::value::{Kwargs, Object, ObjectRepr, Value, ValueKind};
 use minijinja::{Environment, Error, ErrorKind, State};
 
 /// Registers every filter, test, global and method this module provides.
@@ -46,7 +46,25 @@ pub(super) fn register(env: &mut Environment<'_>) {
     // without an extension; a deploy has no use for one.
     env.remove_global("debug");
 
-    env.set_unknown_method_callback(method_compat);
+    // Python's methods on values; template-built lists and dicts carry
+    // their own (mutating) methods.
+    env.set_unknown_method_callback(super::methods::dispatch);
+    env.add_function(super::containers::LIST_FN, super::containers::wrap_list);
+    env.add_function(super::containers::DICT_FN, super::containers::wrap_dict);
+    env.add_function(super::containers::OWN_FN, super::containers::own);
+    // Naive dates; `+`/`-` reach them through the prepass.
+    env.add_function("date", super::dates::date);
+    env.add_function("datetime", super::dates::datetime);
+    env.add_function("timedelta", super::dates::timedelta);
+    env.add_filter("to_date", super::dates::to_date);
+    env.add_filter("to_datetime", super::dates::to_datetime);
+    env.add_filter("strptime", super::dates::strptime);
+    // The converters are callable as functions as well as filters.
+    env.add_function("to_date", super::dates::to_date);
+    env.add_function("to_datetime", super::dates::to_datetime);
+    env.add_function("strptime", super::dates::strptime);
+    env.add_function(super::prepass::ADD_FN, super::dates::add);
+    env.add_function(super::prepass::SUB_FN, super::dates::sub);
 }
 
 // ---------------------------------------------------------------------------
@@ -733,372 +751,6 @@ fn joiner(sep: Option<String>) -> Value {
     })
 }
 
-// ---------------------------------------------------------------------------
-// Methods: Python's str and dict methods, which minijinja exposes as filters
-// ---------------------------------------------------------------------------
-
-/// Splits a trailing keyword-argument map off a method call's arguments.
-fn split_kwargs(args: &[Value]) -> Result<(&[Value], Option<Kwargs>), Error> {
-    match args.split_last() {
-        Some((last, rest)) if last.is_kwargs() => {
-            let (kw,): (Kwargs,) = from_args(std::slice::from_ref(last))?;
-            Ok((rest, Some(kw)))
-        }
-        _ => Ok((args, None)),
-    }
-}
-
-fn no_args(name: &str, args: &[Value]) -> Result<(), Error> {
-    if args.is_empty() {
-        Ok(())
-    } else {
-        Err(Error::new(
-            ErrorKind::TooManyArguments,
-            format!("{name} takes no arguments"),
-        ))
-    }
-}
-
-fn str_arg(args: &[Value], idx: usize, name: &str) -> Result<String, Error> {
-    let v = args.get(idx).ok_or_else(|| {
-        Error::new(
-            ErrorKind::MissingArgument,
-            format!("{name} is missing an argument"),
-        )
-    })?;
-    v.as_str()
-        .map(str::to_string)
-        .ok_or_else(|| invalid(format!("{name} expects a string argument")))
-}
-
-/// Python-style methods on the values Jinja2 templates call them on.
-///
-/// Borrows the receiver and arguments throughout. Unknown names fall
-/// through to minijinja's own error, so a typo still reads as an unknown
-/// method.
-fn method_compat(
-    _state: &State<'_, '_>,
-    value: &Value,
-    method: &str,
-    args: &[Value],
-) -> Result<Value, Error> {
-    if let Some(s) = value.as_str() {
-        return str_method(s, method, args);
-    }
-    match method {
-        "items" => {
-            no_args("items", args)?;
-            minijinja::filters::items(value)
-        }
-        "keys" | "values" => {
-            no_args(method, args)?;
-            let idx = usize::from(method == "values");
-            let pairs = minijinja::filters::items(value)?;
-            let out = pairs
-                .try_iter()?
-                .filter_map(|pair| pair.get_item_by_index(idx).ok())
-                .collect::<Vec<_>>();
-            Ok(Value::from(out))
-        }
-        "get" => {
-            let key = args
-                .first()
-                .ok_or_else(|| Error::new(ErrorKind::MissingArgument, "get requires a key"))?;
-            let found = value.get_item(key).ok().filter(|v| !v.is_undefined());
-            // Python's dict.get answers None when absent and no default given.
-            Ok(found
-                .or_else(|| args.get(1).cloned())
-                .unwrap_or_else(|| Value::from(())))
-        }
-        _ => Err(Error::from(ErrorKind::UnknownMethod)),
-    }
-}
-
-/// `str.split`/`rsplit` with Python's two modes: no separator splits on
-/// runs of whitespace and drops empties; a separator splits exactly.
-fn py_split(s: &str, sep: Option<&str>, maxsplit: i64) -> Result<Vec<Value>, Error> {
-    let limit = (maxsplit >= 0).then_some(maxsplit as usize);
-    let mut out = Vec::new();
-    match sep {
-        Some("") => return Err(invalid("empty separator")),
-        Some(sep) => match limit {
-            Some(n) => out.extend(s.splitn(n + 1, sep).map(Value::from)),
-            None => out.extend(s.split(sep).map(Value::from)),
-        },
-        None => {
-            let mut rest = s.trim_start();
-            while !rest.is_empty() {
-                if limit.is_some_and(|n| out.len() == n) {
-                    out.push(Value::from(rest));
-                    break;
-                }
-                let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
-                out.push(Value::from(&rest[..end]));
-                rest = rest[end..].trim_start();
-            }
-        }
-    }
-    Ok(out)
-}
-
-/// Python's `str.format` for automatic (`{}`), numbered (`{0}`) and named
-/// (`{name}`) fields and `{{`/`}}` escapes. Format specs and conversions are
-/// refused rather than ignored.
-fn py_format(s: &str, positional: &[Value], kwargs: Option<&Kwargs>) -> Result<String, Error> {
-    let mut out = String::with_capacity(s.len());
-    let mut auto = 0usize;
-    let mut chars = s.char_indices().peekable();
-    while let Some((i, c)) = chars.next() {
-        match c {
-            '{' if matches!(chars.peek(), Some((_, '{'))) => {
-                chars.next();
-                out.push('{');
-            }
-            '}' if matches!(chars.peek(), Some((_, '}'))) => {
-                chars.next();
-                out.push('}');
-            }
-            '{' => {
-                let end = s[i + 1..]
-                    .find('}')
-                    .ok_or_else(|| invalid("format: single '{' encountered"))?;
-                let field = &s[i + 1..i + 1 + end];
-                if field.contains([':', '!', '[', '.', '{']) {
-                    return Err(invalid(
-                        "format: only plain {}, {n} and {name} fields are supported",
-                    ));
-                }
-                let value = if field.is_empty() {
-                    auto += 1;
-                    positional.get(auto - 1)
-                } else if let Ok(n) = field.parse::<usize>() {
-                    positional.get(n)
-                } else {
-                    None
-                };
-                let value = match value {
-                    Some(v) => v.clone(),
-                    None if !field.is_empty() && field.parse::<usize>().is_err() => kwargs
-                        .map(|k| k.get::<Value>(field))
-                        .transpose()?
-                        .ok_or_else(|| invalid(format!("format: no argument named {field:?}")))?,
-                    None => return Err(invalid("format: replacement index out of range")),
-                };
-                out.push_str(&text(&value)?);
-                for _ in 0..field.chars().count() + 1 {
-                    chars.next();
-                }
-            }
-            '}' => return Err(invalid("format: single '}' encountered")),
-            other => out.push(other),
-        }
-    }
-    Ok(out)
-}
-
-fn str_method(s: &str, method: &str, args: &[Value]) -> Result<Value, Error> {
-    let chars_arg = |args: &[Value]| -> Result<Option<String>, Error> {
-        match args.first() {
-            None => Ok(None),
-            Some(v) if v.is_none() => Ok(None),
-            Some(_) => str_arg(args, 0, method).map(Some),
-        }
-    };
-    let strip = |chars: Option<String>, left: bool, right: bool| -> String {
-        let pred = |c: char| match &chars {
-            Some(set) => set.contains(c),
-            None => c.is_whitespace(),
-        };
-        let mut t = s;
-        if left {
-            t = t.trim_start_matches(pred);
-        }
-        if right {
-            t = t.trim_end_matches(pred);
-        }
-        t.to_string()
-    };
-    let (args, kwargs) = split_kwargs(args)?;
-    if method != "format" {
-        if let Some(kw) = &kwargs {
-            if kw.args().next().is_some() && !matches!(method, "split" | "rsplit") {
-                return Err(invalid(format!("{method} takes no keyword arguments")));
-            }
-        }
-    }
-    let v = match method {
-        "upper" => {
-            no_args(method, args)?;
-            Value::from(s.to_uppercase())
-        }
-        "lower" => {
-            no_args(method, args)?;
-            Value::from(s.to_lowercase())
-        }
-        "strip" => Value::from(strip(chars_arg(args)?, true, true)),
-        "lstrip" => Value::from(strip(chars_arg(args)?, true, false)),
-        "rstrip" => Value::from(strip(chars_arg(args)?, false, true)),
-        "split" => {
-            let sep = match args.first() {
-                Some(v) if !v.is_none() => Some(str_arg(args, 0, method)?),
-                _ => kwargs
-                    .as_ref()
-                    .map(|k| k.get::<Option<String>>("sep"))
-                    .transpose()?
-                    .flatten(),
-            };
-            let maxsplit = match args.get(1) {
-                Some(v) => i64::try_from(v.clone())?,
-                None => kwargs
-                    .as_ref()
-                    .map(|k| k.get::<Option<i64>>("maxsplit"))
-                    .transpose()?
-                    .flatten()
-                    .unwrap_or(-1),
-            };
-            if let Some(kw) = &kwargs {
-                kw.assert_all_used()?;
-            }
-            Value::from(py_split(s, sep.as_deref(), maxsplit)?)
-        }
-        "splitlines" => {
-            no_args(method, args)?;
-            Value::from(s.lines().map(Value::from).collect::<Vec<_>>())
-        }
-        "replace" => {
-            let (old, new) = (str_arg(args, 0, method)?, str_arg(args, 1, method)?);
-            match args.get(2) {
-                Some(c) => {
-                    let c = i64::try_from(c.clone())?;
-                    Value::from(if c < 0 {
-                        s.replace(&old, &new)
-                    } else {
-                        s.replacen(&old, &new, c as usize)
-                    })
-                }
-                None => Value::from(s.replace(&old, &new)),
-            }
-        }
-        "startswith" | "endswith" => {
-            let probe = args.first().ok_or_else(|| {
-                Error::new(
-                    ErrorKind::MissingArgument,
-                    format!("{method} requires a prefix"),
-                )
-            })?;
-            let test = |p: &str| {
-                if method == "startswith" {
-                    s.starts_with(p)
-                } else {
-                    s.ends_with(p)
-                }
-            };
-            // Python accepts a tuple of candidates as well as one string.
-            let hit = match probe.as_str() {
-                Some(p) => test(p),
-                None => probe.try_iter()?.any(|p| p.as_str().is_some_and(test)),
-            };
-            Value::from(hit)
-        }
-        "join" => {
-            let items = args.first().ok_or_else(|| {
-                Error::new(ErrorKind::MissingArgument, "join requires an iterable")
-            })?;
-            let mut out = String::new();
-            for (i, item) in items.try_iter()?.enumerate() {
-                if i > 0 {
-                    out.push_str(s);
-                }
-                let piece = item
-                    .as_str()
-                    .ok_or_else(|| invalid("join: sequence item is not a string"))?;
-                out.push_str(piece);
-            }
-            Value::from(out)
-        }
-        "title" => {
-            // Python's str.title starts a word after ANY non-letter, unlike
-            // the `title` filter.
-            no_args(method, args)?;
-            let mut out = String::with_capacity(s.len());
-            let mut prev_cased = false;
-            for c in s.chars() {
-                if prev_cased {
-                    out.extend(c.to_lowercase());
-                } else {
-                    out.extend(c.to_uppercase());
-                }
-                prev_cased = c.is_alphabetic();
-            }
-            Value::from(out)
-        }
-        "capitalize" => {
-            no_args(method, args)?;
-            let mut chars = s.chars();
-            let mut out = String::with_capacity(s.len());
-            if let Some(first) = chars.next() {
-                out.extend(first.to_uppercase());
-                out.extend(chars.flat_map(char::to_lowercase));
-            }
-            Value::from(out)
-        }
-        "count" => {
-            let sub = str_arg(args, 0, method)?;
-            Value::from(if sub.is_empty() {
-                s.chars().count() + 1
-            } else {
-                s.matches(sub.as_str()).count()
-            })
-        }
-        "find" => {
-            let sub = str_arg(args, 0, method)?;
-            Value::from(match s.find(sub.as_str()) {
-                Some(byte) => s[..byte].chars().count() as i64,
-                None => -1,
-            })
-        }
-        "format" => Value::from(py_format(s, args, kwargs.as_ref())?),
-        "isdigit" | "isalpha" | "isalnum" => {
-            no_args(method, args)?;
-            let pred: fn(char) -> bool = match method {
-                "isdigit" => |c| c.is_numeric(),
-                "isalpha" => char::is_alphabetic,
-                _ => char::is_alphanumeric,
-            };
-            Value::from(!s.is_empty() && s.chars().all(pred))
-        }
-        "islower" | "isupper" => {
-            no_args(method, args)?;
-            let cased = s.chars().any(|c| c.is_lowercase() || c.is_uppercase());
-            let ok = if method == "islower" {
-                !s.chars().any(char::is_uppercase)
-            } else {
-                !s.chars().any(char::is_lowercase)
-            };
-            Value::from(cased && ok)
-        }
-        "zfill" => {
-            let width = args
-                .first()
-                .map(|w| usize::try_from(w.clone()))
-                .transpose()?
-                .unwrap_or(0);
-            let len = s.chars().count();
-            if len >= width {
-                Value::from(s)
-            } else {
-                let (sign, digits) = match s.as_bytes().first() {
-                    Some(b'+' | b'-') => s.split_at(1),
-                    _ => ("", s),
-                };
-                Value::from(format!("{sign}{}{digits}", "0".repeat(width - len)))
-            }
-        }
-        _ => return Err(Error::from(ErrorKind::UnknownMethod)),
-    };
-    Ok(v)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1136,29 +788,5 @@ mod tests {
         assert_eq!(url_quote("v w/", true), "v+w%2F");
         assert_eq!(url_quote("é", false), "%C3%A9");
         assert_eq!(url_quote("_.-~", true), "_.-~");
-    }
-
-    #[test]
-    fn python_split_modes() {
-        let s = |v: Vec<Value>| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-        assert_eq!(s(py_split("  a  b ", None, -1).unwrap()), ["a", "b"]);
-        assert_eq!(s(py_split("a b c", None, 1).unwrap()), ["a", "b c"]);
-        assert_eq!(s(py_split("a,,b", Some(","), -1).unwrap()), ["a", "", "b"]);
-        assert_eq!(s(py_split("a,b,c", Some(","), 1).unwrap()), ["a", "b,c"]);
-        assert!(py_split("a", Some(""), -1).is_err());
-        assert!(py_split("", None, -1).unwrap().is_empty());
-    }
-
-    #[test]
-    fn python_format_fields() {
-        let pos = [Value::from("a"), Value::from(1)];
-        assert_eq!(py_format("{}-{}", &pos, None).unwrap(), "a-1");
-        assert_eq!(py_format("{1}{0}{1}", &pos, None).unwrap(), "1a1");
-        assert_eq!(py_format("{{x}}", &pos, None).unwrap(), "{x}");
-        assert!(py_format("{:>4}", &pos, None).is_err());
-        assert!(py_format("{5}", &pos, None).is_err());
-        assert!(py_format("{", &pos, None).is_err());
-        assert!(py_format("}", &pos, None).is_err());
-        assert!(py_format("{name}", &pos, None).is_err());
     }
 }

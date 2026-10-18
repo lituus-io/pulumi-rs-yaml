@@ -253,6 +253,10 @@ fn the_language_host_deploys_the_features_stack() {
     assert_eq!(o["names"], "ORDERS,CUSTOMERS,EVENTS,AUDIT");
     assert_eq!(o["sizes"], "1.5 KiB");
     assert_eq!(o["quoted"], "a: b");
+    assert_eq!(o["order"], "ORDERS,EVENTS,CUSTOMERS,AUDIT");
+    assert_eq!(o["expires"], "2027-01-16");
+    assert_eq!(o["weekday"], "Sunday");
+    assert_eq!(o["slug"], "data-lake-007");
     let out = pulumi(&dir, &home, &[], &["destroy", "--yes"]);
     assert!(out.status.success(), "{}", text(&out));
 }

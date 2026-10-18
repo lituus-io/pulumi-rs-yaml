@@ -2,6 +2,17 @@
   "edges": [],
   "nodes": [
     {
+      "id": "stackoutput::org/jinja-features/golden::expires",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "expires",
+      "name": "expires",
+      "organization": "org",
+      "project": "jinja-features",
+      "source_file": "Pulumi.main.yaml",
+      "stack": "golden"
+    },
+    {
       "id": "stackoutput::org/jinja-features/golden::kept",
       "kind": "output",
       "literal_properties": {},
@@ -29,6 +40,17 @@
       "literal_properties": {},
       "logical_name": "names",
       "name": "names",
+      "organization": "org",
+      "project": "jinja-features",
+      "source_file": "Pulumi.main.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/jinja-features/golden::order",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "order",
+      "name": "order",
       "organization": "org",
       "project": "jinja-features",
       "source_file": "Pulumi.main.yaml",
@@ -79,11 +101,33 @@
       "stack": "golden"
     },
     {
+      "id": "stackoutput::org/jinja-features/golden::slug",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "slug",
+      "name": "slug",
+      "organization": "org",
+      "project": "jinja-features",
+      "source_file": "Pulumi.main.yaml",
+      "stack": "golden"
+    },
+    {
       "id": "stackoutput::org/jinja-features/golden::stackName",
       "kind": "output",
       "literal_properties": {},
       "logical_name": "stackName",
       "name": "stackName",
+      "organization": "org",
+      "project": "jinja-features",
+      "source_file": "Pulumi.main.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/jinja-features/golden::weekday",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "weekday",
+      "name": "weekday",
       "organization": "org",
       "project": "jinja-features",
       "source_file": "Pulumi.main.yaml",
