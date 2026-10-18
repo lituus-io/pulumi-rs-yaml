@@ -1,0 +1,20 @@
+name: reporting
+runtime: yaml
+resources:
+  wh:
+    type: pulumi:pulumi:StackReference
+    properties:
+      name: warehouse/warehouse
+  net:
+    type: pulumi:pulumi:StackReference
+    properties:
+      name: organization/network/network
+  daily:
+    type: gcp:bigquery:Table
+    properties:
+      datasetId: ${net.outputs.datasetId}
+      tableId: daily
+      view:
+        query: SELECT 1
+        useLegacySql: false
+      description: ${wh.outputs.tableId}

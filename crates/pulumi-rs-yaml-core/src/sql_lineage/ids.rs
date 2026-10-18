@@ -22,6 +22,16 @@
 //!
 //! Names containing `/` or `#` (illegal in BigQuery anyway) are
 //! rejected rather than escaped, keeping the URI unambiguous.
+//!
+//! # The canonical spec
+//!
+//! This module is the one table-identity spec every consumer follows:
+//! project lowercased, a domain-scoped project (`example.com:proj`) allowed
+//! as one segment, `$partition` stripped, column lowercased. The project
+//! rule and the domain split are shared with [`crate::resource_key`], whose
+//! [`bq_to_resource_key`](crate::resource_key::bq_to_resource_key) maps every
+//! id here onto the `//bigquery.googleapis.com/...` key the deploy and the
+//! audit logs use.
 
 use std::borrow::Cow;
 
@@ -84,7 +94,7 @@ pub fn table_name(project: &str, dataset: &str, table: &str) -> Option<TableName
         return None;
     }
     Some(TableName {
-        project: project.to_lowercase(),
+        project: crate::resource_key::canonical_project(project).into_owned(),
         dataset: dataset.to_string(),
         table: table.to_string(),
     })
@@ -106,6 +116,16 @@ pub fn parse_table_reference(
     } else {
         Cow::Borrowed(raw)
     };
+    // A domain-scoped project carries its own dot: `example.com:proj.d.t`.
+    if let Some((project, rest)) = crate::resource_key::split_project(&cleaned)
+        .filter(|(p, _)| p.contains(':') && p[..p.find(':').unwrap_or(0)].contains('.'))
+    {
+        let mut parts = rest.split('.');
+        return match (parts.next(), parts.next(), parts.next()) {
+            (Some(d), Some(t), None) => table_name(project, d, t),
+            _ => None,
+        };
+    }
     let parts: Vec<&str> = cleaned.split('.').collect();
     match parts.as_slice() {
         [p, d, t] => table_name(p, d, t),
@@ -121,7 +141,7 @@ pub fn routine_id(project: &str, dataset: &str, routine: &str) -> Option<String>
     }
     Some(format!(
         "bq-routine://{}/{}/{}",
-        project.to_lowercase(),
+        crate::resource_key::canonical_project(project),
         dataset,
         routine
     ))
@@ -186,6 +206,31 @@ mod tests {
         assert!(parse_table_reference("d.t", None, None).is_none());
         assert!(parse_table_reference("t", Some("p"), None).is_none());
         assert!(parse_table_reference("a.b.c.d", None, None).is_none());
+    }
+
+    #[test]
+    fn domain_scoped_and_mixed_case_projects() {
+        for raw in [
+            "`example.com:Proj.d.t`",
+            "`example.com:proj`.`d`.`t`",
+            "example.com:proj.d.t$2024",
+        ] {
+            let t = parse_table_reference(raw, None, None).expect(raw);
+            assert_eq!(t.id(), "bq://example.com:proj/d/t", "{raw}");
+        }
+        let t = parse_table_reference("My-Proj.DS.T", None, None).expect("mixed");
+        assert_eq!(t.id(), "bq://my-proj/DS/T");
+        assert!(parse_table_reference("example.com:proj.d", None, None).is_none());
+        assert!(parse_table_reference("example.com:proj.a.b.c", None, None).is_none());
+        // Every id here maps onto the resource key the deploy records.
+        assert_eq!(
+            crate::resource_key::bq_to_resource_key(&t.id()).as_deref(),
+            crate::resource_key::resource_key(
+                "gcp:bigquery:Table",
+                "projects/My-Proj/datasets/DS/tables/T"
+            )
+            .as_deref()
+        );
     }
 
     #[test]

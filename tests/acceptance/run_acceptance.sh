@@ -170,7 +170,7 @@ run_test() {
     fi
 
     # Special handling for preview-only projects
-    if [ "$project" = "gcp-preview-only" ]; then
+    if [ "$project" = "gcp-preview-only" ] || [ -f "$SCRIPT_DIR/$project/.preview-only" ]; then
         log "$project: preview-only test passed"
         PASSED=$((PASSED + 1))
         test_cleanup

@@ -25,16 +25,182 @@
 //!
 //! Moved verbatim from `resource_graph.rs` so sibling exporters (e.g.
 //! SQL lineage) share one deterministic stringification.
+//!
+//! # Host-supplied config
+//!
+//! A config value is dynamic to a program read on its own, so by default it
+//! never resolves. A host that knows the stack's PLAINTEXT config -- the
+//! values a `Pulumi.<stack>.yaml` holds, with every `secure:` value already
+//! dropped -- may pass them as a [`ConfigLookup`]. A name that is not a
+//! variable then falls back to that config exactly the way the deploy looks
+//! it up: the declared key, by its own name or with the project namespace
+//! stripped (`${k}`, `${proj:k}`, `${gcp:k}`); its raw value under
+//! `{project}:{key}`, then `{key}`; then the declaration's `value:`, then its
+//! `default:`; parsed by the declared type with the deploy's own parser. A
+//! key declared `secret: true` never resolves, and neither does a non-scalar
+//! type. Without a lookup nothing here reads config and the output is what it
+//! always was.
 
 use std::borrow::Cow;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
+use std::ops::Deref;
 
 use crate::ast::expr::{Expr, InvokeExpr};
 use crate::ast::property::{PropertyAccess, PropertyAccessor};
-use crate::ast::template::{ResourceEntry, ResourceProperties};
+use crate::ast::template::{ConfigEntry, ResourceEntry, ResourceProperties, VariableEntry};
+use crate::config_types::ConfigType;
 use crate::eval::native_str;
 use crate::eval::value::Value;
 use crate::packages::canonicalize_function_token;
+
+/// Host-supplied plaintext stack config, keyed the way `Pulumi.<stack>.yaml`
+/// keys it (`project:key`, `gcp:project`, or a bare `key`). Never a secure
+/// value: a host drops those before the call.
+pub type HostConfig = HashMap<String, String>;
+
+/// The config one program can resolve statically: its `config:`
+/// declarations plus the host's plaintext values. Built once per export.
+pub struct ConfigLookup<'src> {
+    /// The Pulumi project name -- the namespace config keys are written in.
+    namespace: &'src str,
+    host: &'src HostConfig,
+    declared: HashMap<&'src str, &'src ConfigEntry<'src>>,
+}
+
+impl<'src> ConfigLookup<'src> {
+    /// `namespace` is the program's Pulumi project name (the `name:` of
+    /// `Pulumi.yaml`), which is what config keys are namespaced by even when
+    /// a host exports the stack under another identity.
+    pub fn new(
+        namespace: &'src str,
+        declared: &'src [ConfigEntry<'src>],
+        host: &'src HostConfig,
+    ) -> Self {
+        Self {
+            namespace,
+            host,
+            declared: declared.iter().map(|c| (c.key.as_ref(), c)).collect(),
+        }
+    }
+
+    /// The literal the deploy would bind to the config name `root`, or `None`
+    /// for an undeclared, secret, non-scalar, unparsable or absent value.
+    pub fn get(&self, root: &str) -> Option<Cow<'src, str>> {
+        let stripped = crate::eval::config::strip_config_namespace(self.namespace, root);
+        let entry = self
+            .declared
+            .get(root)
+            .or_else(|| self.declared.get(stripped))
+            .copied()?;
+        if entry.param.secret == Some(true) {
+            return None;
+        }
+        let key = entry.key.as_ref();
+        let declared_type = match entry.param.type_.as_deref() {
+            Some(t) => ConfigType::parse(t)?,
+            None => ConfigType::String,
+        };
+        if !matches!(
+            declared_type,
+            ConfigType::String | ConfigType::Int | ConfigType::Number | ConfigType::Boolean
+        ) {
+            return None;
+        }
+        let raw = self
+            .host
+            .get(&format!("{}:{}", self.namespace, key))
+            .or_else(|| self.host.get(key));
+        let Some(raw) = raw else {
+            // The project file's own `value:`, then the declared default.
+            let expr = entry
+                .param
+                .value
+                .as_ref()
+                .or(entry.param.default.as_ref())?;
+            return match expr {
+                Expr::String(_, s) => Some(Cow::Owned(s.to_string())),
+                Expr::Bool(_, b) => Some(Cow::Borrowed(if *b { "true" } else { "false" })),
+                Expr::Number(_, n) => format_literal_number(*n).map(Cow::Owned),
+                _ => None,
+            };
+        };
+        let mut scratch = crate::diag::Diagnostics::new();
+        match crate::eval::config::parse_config_value(raw, declared_type, &mut scratch)? {
+            Value::Number(n) => format_literal_number(n).map(Cow::Owned),
+            other => literal_from_value(&other),
+        }
+    }
+}
+
+/// The variables one scope resolves through, and the config a name that is
+/// not a variable falls back to (top-level scopes only: inside a component
+/// body such a name is a component input, never stack config).
+///
+/// Dereferences to the variable map, so a caller that walks variables for
+/// edges reads it as before.
+pub(crate) struct Vars<'src, 'c> {
+    map: HashMap<&'src str, &'src Expr<'src>>,
+    config: Option<&'c ConfigLookup<'src>>,
+    /// Bumped on every resolution that read config, so a caller can tell a
+    /// config-sourced literal from a plain one.
+    config_reads: Cell<usize>,
+    /// Variables whose value was built from config: a memo hit on one of
+    /// them reads config too. Touched only when a lookup is present.
+    from_config: RefCell<HashSet<&'src str>>,
+}
+
+impl<'src, 'c> Vars<'src, 'c> {
+    pub(crate) fn new(map: HashMap<&'src str, &'src Expr<'src>>) -> Self {
+        Self {
+            map,
+            config: None,
+            config_reads: Cell::new(0),
+            from_config: RefCell::new(HashSet::new()),
+        }
+    }
+
+    pub(crate) fn from_entries(entries: &'src [VariableEntry<'src>]) -> Self {
+        Self::new(entries.iter().map(|v| (v.key.as_ref(), &v.value)).collect())
+    }
+
+    /// No variables and no config.
+    pub(crate) fn empty() -> Self {
+        Self::new(HashMap::new())
+    }
+
+    pub(crate) fn with_config(mut self, config: Option<&'c ConfigLookup<'src>>) -> Self {
+        self.config = config;
+        self
+    }
+
+    /// How many resolutions have read config so far.
+    pub(crate) fn config_reads(&self) -> usize {
+        self.config_reads.get()
+    }
+
+    pub(crate) fn has_config(&self) -> bool {
+        self.config.is_some()
+    }
+
+    fn bump(&self) {
+        self.config_reads.set(self.config_reads.get() + 1);
+    }
+
+    /// The config value for a name no variable answers.
+    fn config_value(&self, name: &str) -> Option<Cow<'src, str>> {
+        let value = self.config?.get(name)?;
+        self.bump();
+        Some(value)
+    }
+}
+
+impl<'src> Deref for Vars<'src, '_> {
+    type Target = HashMap<&'src str, &'src Expr<'src>>;
+    fn deref(&self) -> &Self::Target {
+        &self.map
+    }
+}
 
 /// Statically resolves an expression to a scalar literal string.
 /// Resolves a `fn::deriveString` whose arguments are written inline.
@@ -92,7 +258,7 @@ pub fn derive_string_literal(expr: &Expr<'_>) -> Option<String> {
 
 pub(crate) fn resolve_literal<'src>(
     expr: &'src Expr<'src>,
-    variables: &HashMap<&'src str, &'src Expr<'src>>,
+    variables: &Vars<'src, '_>,
     memo: &mut HashMap<&'src str, Option<Cow<'src, str>>>,
     visiting: &mut HashSet<&'src str>,
 ) -> Option<Cow<'src, str>> {
@@ -143,7 +309,7 @@ pub(crate) fn resolve_literal<'src>(
 /// `None`, never a guess, per this module's contract.
 fn resolve_derive_literal<'src>(
     inner: &'src Expr<'src>,
-    variables: &HashMap<&'src str, &'src Expr<'src>>,
+    variables: &Vars<'src, '_>,
     memo: &mut HashMap<&'src str, Option<Cow<'src, str>>>,
     visiting: &mut HashSet<&'src str>,
 ) -> Option<Cow<'src, str>> {
@@ -205,7 +371,7 @@ fn resolve_derive_literal<'src>(
 /// one, which is dynamic by definition).
 fn resolve_access_literal<'src>(
     access: &'src PropertyAccess<'src>,
-    variables: &HashMap<&'src str, &'src Expr<'src>>,
+    variables: &Vars<'src, '_>,
     memo: &mut HashMap<&'src str, Option<Cow<'src, str>>>,
     visiting: &mut HashSet<&'src str>,
 ) -> Option<Cow<'src, str>> {
@@ -238,7 +404,7 @@ fn accessor_name<'src>(accessor: &'src PropertyAccessor<'src>) -> Option<&'src s
 fn resolve_invoke_variable_output<'src>(
     name: &'src str,
     field: &str,
-    variables: &HashMap<&'src str, &'src Expr<'src>>,
+    variables: &Vars<'src, '_>,
     memo: &mut HashMap<&'src str, Option<Cow<'src, str>>>,
     visiting: &mut HashSet<&'src str>,
 ) -> Option<Cow<'src, str>> {
@@ -266,7 +432,7 @@ fn resolve_invoke_variable_output<'src>(
 /// schema form all reach the same function.
 fn resolve_str_invoke<'src>(
     invoke: &'src InvokeExpr<'src>,
-    variables: &HashMap<&'src str, &'src Expr<'src>>,
+    variables: &Vars<'src, '_>,
     memo: &mut HashMap<&'src str, Option<Cow<'src, str>>>,
     visiting: &mut HashSet<&'src str>,
 ) -> Option<HashMap<String, Value<'static>>> {
@@ -316,21 +482,32 @@ pub(crate) fn single_name_access<'src>(access: &'src PropertyAccess<'src>) -> Op
 
 pub(crate) fn resolve_variable_literal<'src>(
     name: &'src str,
-    variables: &HashMap<&'src str, &'src Expr<'src>>,
+    variables: &Vars<'src, '_>,
     memo: &mut HashMap<&'src str, Option<Cow<'src, str>>>,
     visiting: &mut HashSet<&'src str>,
 ) -> Option<Cow<'src, str>> {
     if let Some(cached) = memo.get(name) {
+        if variables.has_config() && variables.from_config.borrow().contains(name) {
+            variables.bump();
+        }
         return cached.clone();
     }
     if !visiting.insert(name) {
-        return None;
+        // A variable that shadows a config key reads the CONFIG value through
+        // its own name (Go parity, as the DAG check accepts it). Without host
+        // config this is the cycle it always was.
+        return variables.config_value(name);
     }
-    let result = variables
-        .get(name)
-        .copied()
-        .and_then(|expr| resolve_literal(expr, variables, memo, visiting));
+    let before = variables.config_reads();
+    let result = match variables.get(name).copied() {
+        Some(expr) => resolve_literal(expr, variables, memo, visiting),
+        // The variable-miss fallback: a config name, when the host gave config.
+        None => variables.config_value(name),
+    };
     visiting.remove(name);
+    if variables.config_reads() != before {
+        variables.from_config.borrow_mut().insert(name);
+    }
     memo.insert(name, result.clone());
     result
 }
@@ -349,15 +526,22 @@ pub(crate) fn format_literal_number(n: f64) -> Option<String> {
     }
 }
 
-/// Collects `literal_properties` for one resource.
-pub(crate) fn collect_literal_properties<'src>(
+/// Collects `literal_properties` for one resource, and the paths among them
+/// whose literal was read from host config (sorted; empty without a config
+/// lookup).
+pub(crate) fn collect_literal_properties_sourced<'src>(
     entry: &'src ResourceEntry<'src>,
-    variables: &HashMap<&'src str, &'src Expr<'src>>,
-) -> Vec<(Cow<'src, str>, Cow<'src, str>)> {
+    variables: &Vars<'src, '_>,
+) -> LiteralProperties<'src> {
     let mut out = Vec::new();
+    let mut from_config = Vec::new();
     let mut memo = HashMap::new();
     let mut visiting = HashSet::new();
     if let ResourceProperties::Map(props) = &entry.resource.properties {
+        let mut sink = LiteralSink {
+            out: &mut out,
+            from_config: &mut from_config,
+        };
         for prop in props {
             collect_literals_rec(
                 Cow::Borrowed(prop.key.as_ref()),
@@ -365,22 +549,35 @@ pub(crate) fn collect_literal_properties<'src>(
                 variables,
                 &mut memo,
                 &mut visiting,
-                &mut out,
+                &mut sink,
             );
         }
     }
     out.sort();
     out.dedup_by(|a, b| a.0 == b.0);
-    out
+    from_config.sort();
+    from_config.dedup();
+    (out, from_config)
+}
+
+/// Literal properties as sorted `(path, value)` pairs, and the sorted paths
+/// among them whose value came from host config.
+pub(crate) type LiteralProperties<'src> =
+    (Vec<(Cow<'src, str>, Cow<'src, str>)>, Vec<Cow<'src, str>>);
+
+/// Where [`collect_literals_rec`] puts what it finds.
+pub(crate) struct LiteralSink<'a, 'src> {
+    pub out: &'a mut Vec<(Cow<'src, str>, Cow<'src, str>)>,
+    pub from_config: &'a mut Vec<Cow<'src, str>>,
 }
 
 pub(crate) fn collect_literals_rec<'src>(
     path: Cow<'src, str>,
     expr: &'src Expr<'src>,
-    variables: &HashMap<&'src str, &'src Expr<'src>>,
+    variables: &Vars<'src, '_>,
     memo: &mut HashMap<&'src str, Option<Cow<'src, str>>>,
     visiting: &mut HashSet<&'src str>,
-    out: &mut Vec<(Cow<'src, str>, Cow<'src, str>)>,
+    sink: &mut LiteralSink<'_, 'src>,
 ) {
     match expr {
         Expr::Object(_, entries) => {
@@ -392,7 +589,7 @@ pub(crate) fn collect_literals_rec<'src>(
                         variables,
                         memo,
                         visiting,
-                        out,
+                        sink,
                     );
                 }
             }
@@ -405,14 +602,18 @@ pub(crate) fn collect_literals_rec<'src>(
                     variables,
                     memo,
                     visiting,
-                    out,
+                    sink,
                 );
             }
         }
         Expr::Null(_) => {}
         _ => {
+            let before = variables.config_reads();
             if let Some(lit) = resolve_literal(expr, variables, memo, visiting) {
-                out.push((path, lit));
+                if variables.config_reads() != before {
+                    sink.from_config.push(path.clone());
+                }
+                sink.out.push((path, lit));
             }
         }
     }
@@ -430,16 +631,13 @@ mod tests {
         let (template, diags) = parse_template(yaml, None);
         assert!(!diags.has_errors(), "parse failed: {}", diags);
         let template: &'static TemplateDecl<'static> = Box::leak(Box::new(template));
-        let variables: HashMap<&str, &Expr<'_>> = template
-            .variables
-            .iter()
-            .map(|v| (v.key.as_ref(), &v.value))
-            .collect();
+        let variables = Vars::from_entries(&template.variables);
         let entry = template
             .resources
             .first()
             .expect("template declares a resource");
-        collect_literal_properties(entry, &variables)
+        collect_literal_properties_sourced(entry, &variables)
+            .0
             .into_iter()
             .map(|(k, v)| (k.into_owned(), v.into_owned()))
             .collect()
@@ -476,7 +674,7 @@ mod tests {
         };
         let mut memo = HashMap::new();
         let mut visiting = HashSet::new();
-        let got = resolve_literal(&prop.value, &HashMap::new(), &mut memo, &mut visiting)
+        let got = resolve_literal(&prop.value, &Vars::empty(), &mut memo, &mut visiting)
             .expect("literal");
         assert!(
             matches!(got, Cow::Borrowed(_)),
@@ -660,11 +858,148 @@ mod tests {
         assert_eq!(name_of(&yaml), None);
     }
 
-    /// A config value is dynamic, so an invoke reading one is unanswerable.
+    /// Without host config a config value is dynamic, so an invoke reading
+    /// one is unanswerable. (With the host's plaintext config it resolves:
+    /// see `config_reaches_an_invoke_argument`.)
     #[test]
     fn an_unresolved_argument_leaves_the_invoke_unresolved() {
         let yaml = "name: proj\nruntime: yaml\nconfig:\n  region:\n    type: string\nvariables:\n  sanitized:\n    fn::str:replace:\n      string: ${region}\n      old: '_'\n      new: '-'\nresources:\n  r:\n    type: gcp:storage:Bucket\n    properties:\n      name: ${sanitized.result}\n";
         assert_eq!(name_of(yaml), None);
+    }
+
+    // ---------------------------------------------------------------
+    // Host-supplied config
+    // ---------------------------------------------------------------
+
+    /// The literal properties of the single resource with host config, and
+    /// the paths read from it.
+    fn literals_with(yaml: &str, host: &[(&str, &str)]) -> (HashMap<String, String>, Vec<String>) {
+        let (template, diags) = parse_template(yaml, None);
+        assert!(!diags.has_errors(), "parse failed: {}", diags);
+        let template: &'static TemplateDecl<'static> = Box::leak(Box::new(template));
+        let host: &'static HostConfig = Box::leak(Box::new(
+            host.iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        ));
+        let lookup: &'static ConfigLookup<'static> = Box::leak(Box::new(ConfigLookup::new(
+            template.name.as_deref().unwrap_or("proj"),
+            &template.config,
+            host,
+        )));
+        let variables = Vars::from_entries(&template.variables).with_config(Some(lookup));
+        let entry = template.resources.first().expect("a resource");
+        let (props, from_config) = collect_literal_properties_sourced(entry, &variables);
+        (
+            props
+                .into_iter()
+                .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                .collect(),
+            from_config.into_iter().map(Cow::into_owned).collect(),
+        )
+    }
+
+    const CONFIG_PROGRAM: &str = "name: proj\nruntime: yaml\nconfig:\n  env:\n    type: string\n  gcp:project:\n    type: string\n  count:\n    type: integer\n  flag:\n    type: boolean\n  token:\n    type: string\n    secret: true\n  tags:\n    type: List<String>\n  region:\n    default: us-central1\n  zone:\n    value: us-east1-b\nvariables:\n  name: analytics_${env}\nresources:\n  r:\n    type: gcp:bigquery:Dataset\n    properties:\n      datasetId: ${name}\n      again: ${name}\n      project: ${gcp:project}\n      count: ${count}\n      flag: ${flag}\n      token: ${token}\n      tags: ${tags}\n      region: ${region}\n      zone: ${zone}\n      plain: literal\n";
+
+    #[test]
+    fn config_resolves_the_way_the_deploy_reads_it() {
+        let (props, from_config) = literals_with(
+            CONFIG_PROGRAM,
+            &[
+                ("proj:env", "prod"),
+                ("gcp:project", "data-proj"),
+                ("proj:count", "030"),
+                ("flag", "true"),
+                ("proj:token", "s3cr3t"),
+                ("proj:tags", "[\"a\"]"),
+            ],
+        );
+        assert_eq!(
+            props.get("datasetId").map(String::as_str),
+            Some("analytics_prod")
+        );
+        // Read twice through one memoized variable: both are marked.
+        assert_eq!(
+            props.get("again").map(String::as_str),
+            Some("analytics_prod")
+        );
+        assert_eq!(props.get("project").map(String::as_str), Some("data-proj"));
+        // Parsed by the declared type, as the deploy parses it.
+        assert_eq!(props.get("count").map(String::as_str), Some("30"));
+        assert_eq!(props.get("flag").map(String::as_str), Some("true"));
+        // The declaration's own value and default stand in for the host's.
+        assert_eq!(props.get("region").map(String::as_str), Some("us-central1"));
+        assert_eq!(props.get("zone").map(String::as_str), Some("us-east1-b"));
+        assert_eq!(props.get("token"), None, "a secret never resolves");
+        assert_eq!(props.get("tags"), None, "a list is not a scalar");
+        assert_eq!(props.get("plain").map(String::as_str), Some("literal"));
+        assert_eq!(
+            from_config,
+            vec![
+                "again",
+                "count",
+                "datasetId",
+                "flag",
+                "project",
+                "region",
+                "zone"
+            ]
+        );
+    }
+
+    #[test]
+    fn without_host_config_nothing_reads_config() {
+        let props = literals(CONFIG_PROGRAM);
+        for key in [
+            "datasetId",
+            "project",
+            "count",
+            "flag",
+            "region",
+            "zone",
+            "token",
+        ] {
+            assert_eq!(props.get(key), None, "{key}");
+        }
+        assert_eq!(props.get("plain").map(String::as_str), Some("literal"));
+    }
+
+    #[test]
+    fn an_unparsable_value_does_not_resolve() {
+        let (props, _) = literals_with(
+            CONFIG_PROGRAM,
+            &[("proj:count", "many"), ("proj:flag", "yes")],
+        );
+        assert_eq!(props.get("count"), None);
+        assert_eq!(props.get("flag"), None);
+    }
+
+    #[test]
+    fn config_reaches_an_invoke_argument() {
+        let yaml = "name: proj\nruntime: yaml\nconfig:\n  region:\n    type: string\nvariables:\n  sanitized:\n    fn::str:replace:\n      string: ${region}\n      old: '_'\n      new: '-'\nresources:\n  r:\n    type: gcp:storage:Bucket\n    properties:\n      name: ${sanitized.result}\n";
+        let (props, from_config) = literals_with(yaml, &[("region", "us_east")]);
+        assert_eq!(props.get("name").map(String::as_str), Some("us-east"));
+        assert_eq!(from_config, vec!["name"]);
+    }
+
+    /// `variables: project: ${project}` reads the config value through its
+    /// own name, as the deploy does.
+    #[test]
+    fn a_variable_shadowing_config_reads_the_config() {
+        let yaml = "name: proj\nruntime: yaml\nconfig:\n  project:\n    type: string\nvariables:\n  project: ${project}\nresources:\n  r:\n    type: gcp:storage:Bucket\n    properties:\n      name: ${project}-bucket\n";
+        let (props, _) = literals_with(yaml, &[("proj:project", "p1")]);
+        assert_eq!(props.get("name").map(String::as_str), Some("p1-bucket"));
+        assert_eq!(literals(yaml).get("name"), None);
+    }
+
+    /// A value for an undeclared key, or one under another project's
+    /// namespace, is not the program's config.
+    #[test]
+    fn only_declared_keys_in_this_namespace_resolve() {
+        let yaml = "name: proj\nruntime: yaml\nconfig:\n  env:\n    type: string\nresources:\n  r:\n    type: gcp:storage:Bucket\n    properties:\n      name: ${env}\n      other: ${undeclared}\n";
+        let (props, _) = literals_with(yaml, &[("elsewhere:env", "x"), ("undeclared", "y")]);
+        assert_eq!(props.get("name"), None);
+        assert_eq!(props.get("other"), None);
     }
 
     /// Every other provider's invoke is a call this module will not make.
@@ -714,9 +1049,10 @@ mod tests {
         let (template, diags) = parse_template(yaml, None);
         assert!(!diags.has_errors(), "parse failed: {}", diags);
         let template: &'static TemplateDecl<'static> = Box::leak(Box::new(template));
-        let variables: HashMap<&str, &Expr<'_>> = HashMap::new();
+        let variables = Vars::empty();
         let entry = &template.resources[1];
-        let props: HashMap<String, String> = collect_literal_properties(entry, &variables)
+        let props: HashMap<String, String> = collect_literal_properties_sourced(entry, &variables)
+            .0
             .into_iter()
             .map(|(k, v)| (k.into_owned(), v.into_owned()))
             .collect();

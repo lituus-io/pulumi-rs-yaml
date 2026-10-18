@@ -53,7 +53,7 @@ use crate::ast::expr::Expr;
 use crate::ast::template::{OutputEntry, ResourceEntry, TemplateDecl, VariableEntry};
 use crate::diag::Diagnostics;
 use crate::eval::graph;
-use crate::literal_resolve::resolve_literal;
+use crate::literal_resolve::{resolve_literal, ConfigLookup, HostConfig, Vars};
 use crate::resource_graph::ResourceGraph;
 
 pub use ids::TableName;
@@ -297,6 +297,11 @@ pub struct SqlLineageOptions<'src> {
     /// the written table's columns to the source columns, `via` the script.
     /// Off by default, so existing output does not move.
     pub script_column_lineage: bool,
+    /// The stack's plaintext config (`Pulumi.<stack>.yaml` keys, `secure:`
+    /// values already dropped by the host). Config-valued table identities
+    /// and SQL then resolve the way the deploy resolves them. `None` is the
+    /// output without it. See [`crate::literal_resolve`].
+    pub config: Option<&'src HostConfig>,
 }
 
 /// Extracts the data-object lineage graph. Pure and deterministic;
@@ -320,21 +325,35 @@ pub fn export_sql_lineage<'src>(
         opts.organization
     };
 
-    // Default BigQuery project: explicit option, else literal
-    // `gcp:project` config value.
-    let config_project = template
-        .config
-        .iter()
-        .find(|c| c.key == "gcp:project")
-        .and_then(|c| c.param.value.as_ref().or(c.param.default.as_ref()))
-        .and_then(|expr| {
-            resolve_literal(
-                expr,
-                &HashMap::new(),
-                &mut HashMap::new(),
-                &mut HashSet::new(),
-            )
-        });
+    // Host config, for the top-level scope only. The program's own name
+    // namespaces its keys.
+    let config = opts.config.map(|host| {
+        ConfigLookup::new(
+            template.name.as_deref().unwrap_or(opts.project),
+            &template.config,
+            host,
+        )
+    });
+
+    // Default BigQuery project: explicit option, else the `gcp:project`
+    // config value -- the host's when it gave config, else the literal the
+    // program declares.
+    let config_project = match &config {
+        Some(lookup) => lookup.get("gcp:project"),
+        None => template
+            .config
+            .iter()
+            .find(|c| c.key == "gcp:project")
+            .and_then(|c| c.param.value.as_ref().or(c.param.default.as_ref()))
+            .and_then(|expr| {
+                resolve_literal(
+                    expr,
+                    &Vars::empty(),
+                    &mut HashMap::new(),
+                    &mut HashSet::new(),
+                )
+            }),
+    };
     let default_project: Option<String> = opts
         .default_bq_project
         .map(str::to_string)
@@ -368,6 +387,7 @@ pub fn export_sql_lineage<'src>(
         &template.variables,
         &template.outputs,
         None,
+        config.as_ref(),
         &mut stack_guard,
     );
 
@@ -752,12 +772,10 @@ fn process_scope<'src>(
     variables: &'src [VariableEntry<'src>],
     outputs: &'src [OutputEntry<'src>],
     logical_prefix: Option<&str>,
+    config: Option<&ConfigLookup<'src>>,
     stack_guard: &mut Vec<&'src str>,
 ) {
-    let var_map: HashMap<&'src str, &'src Expr<'src>> = variables
-        .iter()
-        .map(|v| (v.key.as_ref(), &v.value))
-        .collect();
+    let var_map = Vars::from_entries(variables).with_config(config);
 
     let dbt_env = dbt::DbtEnv::build_scope(resources, &var_map, &mut ctx.diags);
 
@@ -833,6 +851,8 @@ fn process_scope<'src>(
             &comp.component.variables,
             &comp.component.outputs,
             Some(&instance_prefix),
+            // A component body's free names are its inputs, never config.
+            None,
             stack_guard,
         );
         stack_guard.pop();
@@ -843,7 +863,7 @@ fn process_resource<'src>(
     ctx: &mut Ctx<'src, '_>,
     entry: &'src ResourceEntry<'src>,
     logical: &str,
-    var_map: &HashMap<&'src str, &'src Expr<'src>>,
+    var_map: &Vars<'src, '_>,
     dbt_env: &dbt::DbtEnv,
 ) {
     let token = entry.resource.type_.as_ref();
@@ -1116,7 +1136,7 @@ fn extract_select_lineage<'src>(
     ctx: &mut Ctx<'src, '_>,
     _entry: &'src ResourceEntry<'src>,
     expr: &'src Expr<'src>,
-    var_map: &HashMap<&'src str, &'src Expr<'src>>,
+    var_map: &Vars<'src, '_>,
     self_fq: &TableName,
     role: SqlRole,
     logical: &str,
@@ -1315,7 +1335,7 @@ fn process_routine<'src>(
     ctx: &mut Ctx<'src, '_>,
     entry: &'src ResourceEntry<'src>,
     logical: &str,
-    var_map: &HashMap<&'src str, &'src Expr<'src>>,
+    var_map: &Vars<'src, '_>,
     source_file: Option<&'src str>,
 ) {
     let project = resolve::literal_prop(entry, var_map, &["project", "gcpProject"])
@@ -1397,7 +1417,7 @@ fn process_job_like<'src>(
     ctx: &mut Ctx<'src, '_>,
     entry: &'src ResourceEntry<'src>,
     logical: &str,
-    var_map: &HashMap<&'src str, &'src Expr<'src>>,
+    var_map: &Vars<'src, '_>,
     sql_expr: &'src Expr<'src>,
     role: SqlRole,
     source_file: Option<&'src str>,
@@ -1905,7 +1925,7 @@ struct DeclaredColumnLineage {
 fn process_declared_lineage<'src>(
     ctx: &mut Ctx<'src, '_>,
     output: &'src OutputEntry<'src>,
-    var_map: &HashMap<&'src str, &'src Expr<'src>>,
+    var_map: &Vars<'src, '_>,
 ) {
     let mut memo = HashMap::new();
     let mut visiting = HashSet::new();

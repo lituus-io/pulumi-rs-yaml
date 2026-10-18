@@ -3348,3 +3348,147 @@ mod stack_uri_security {
         }
     }
 }
+
+// =========================================================================
+// Host options: identity overrides, reference backends, plaintext config
+// =========================================================================
+
+mod host_option_security {
+    use std::collections::HashMap;
+
+    use pulumi_rs_yaml_core::ast::parse::parse_template;
+    use pulumi_rs_yaml_core::ast::template::TemplateDecl;
+    use pulumi_rs_yaml_core::iam_graph::export_iam_graph;
+    use pulumi_rs_yaml_core::resource_graph::{export_resource_graph, GraphExportOptions};
+
+    fn leak(yaml: &str) -> &'static TemplateDecl<'static> {
+        let (t, d) = parse_template(yaml, None);
+        assert!(!d.has_errors(), "{d}");
+        Box::leak(Box::new(t))
+    }
+
+    fn leak_map(pairs: &[(&str, &str)]) -> &'static HashMap<String, String> {
+        Box::leak(Box::new(
+            pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        ))
+    }
+
+    const PROGRAM: &str = "name: p\nruntime: yaml\nconfig:\n  token:\n    type: string\n    secret: true\n  member:\n    type: string\nresources:\n  up:\n    type: pulumi:pulumi:StackReference\n    properties:\n      name: other/prod\n  b:\n    type: gcp:storage:Bucket\n    properties:\n      label: ${token}\n      derived: x-${token}-y\n  g:\n    type: gcp:storage:BucketIAMMember\n    properties:\n      bucket: ${b.name}\n      role: roles/x\n      member: ${token}\n";
+
+    #[test]
+    fn a_credentialed_reference_backend_never_reaches_a_uri() {
+        let refs = leak_map(&[("other/prod", "gs://user:hunter2@bucket")]);
+        let opts = GraphExportOptions {
+            project: "p",
+            stack: "dev",
+            backend_url: Some("gs://state"),
+            reference_backends: Some(refs),
+            ..Default::default()
+        };
+        let json = export_resource_graph(leak(PROGRAM), &opts)
+            .0
+            .to_json()
+            .expect("json");
+        assert!(!json.contains("hunter2"), "{json}");
+    }
+
+    #[test]
+    fn hostile_override_names_cannot_inject_into_a_uri() {
+        let opts = GraphExportOptions {
+            project: "p",
+            stack: "dev",
+            backend_url: Some("gs://state"),
+            project_override: Some("../../etc#x"),
+            stack_override: Some("a?b=c d\n"),
+            ..Default::default()
+        };
+        let g = export_resource_graph(leak(PROGRAM), &opts).0;
+        let uris = g
+            .stack_uri
+            .iter()
+            .chain(g.nodes.iter().filter_map(|n| n.resource_uri.as_ref()));
+        for u in uris {
+            assert!(u.starts_with("gs://state/.pulumi/stacks/"), "{u}");
+            let path = u.split('#').next().unwrap_or(u);
+            assert!(!path.contains("/../") && !path.contains('?'), "{u}");
+            assert!(u.matches('#').count() <= 1, "{u}");
+            assert!(
+                !u.chars().any(|c| c.is_whitespace() || c.is_control()),
+                "{u:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_secret_config_value_never_resolves_in_any_export() {
+        let config = leak_map(&[("p:token", "TOKEN-CANARY"), ("token", "TOKEN-CANARY")]);
+        let opts = GraphExportOptions {
+            project: "p",
+            stack: "dev",
+            config: Some(config),
+            ..Default::default()
+        };
+        let template = leak(PROGRAM);
+        let infra = export_resource_graph(template, &opts)
+            .0
+            .to_json()
+            .expect("json");
+        let iam = export_iam_graph(template, &opts).0.to_json().expect("json");
+        assert!(!infra.contains("TOKEN-CANARY"), "{infra}");
+        assert!(!iam.contains("TOKEN-CANARY"), "{iam}");
+    }
+
+    #[test]
+    fn default_output_is_byte_identical_when_no_option_is_set() {
+        let template = leak(PROGRAM);
+        let base = GraphExportOptions {
+            organization: "o",
+            project: "p",
+            stack: "dev",
+            ..Default::default()
+        };
+        // Every new option present but empty or absent in effect.
+        let empty_refs = leak_map(&[]);
+        let quiet = GraphExportOptions {
+            project_override: None,
+            stack_override: None,
+            reference_backends: None,
+            config: None,
+            backend_source: None,
+            ..base
+        };
+        let a = export_resource_graph(template, &base)
+            .0
+            .to_json()
+            .expect("a");
+        let b = export_resource_graph(template, &quiet)
+            .0
+            .to_json()
+            .expect("b");
+        assert_eq!(a, b);
+        for key in [
+            "resolved",
+            "config_properties",
+            "backend_source",
+            "stack_uri",
+        ] {
+            assert!(
+                !a.contains(&format!("\"{key}\"")),
+                "{key} in default output"
+            );
+        }
+        // A reference map without a backend adds no URI anywhere.
+        let refs_only = GraphExportOptions {
+            reference_backends: Some(empty_refs),
+            ..base
+        };
+        let c = export_resource_graph(template, &refs_only)
+            .0
+            .to_json()
+            .expect("c");
+        assert!(!c.contains("_uri"), "{c}");
+    }
+}

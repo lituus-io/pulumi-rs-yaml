@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use crate::ast::expr::Expr;
 use crate::ast::template::{ResourceEntry, ResourceProperties, TemplateDecl, VariableEntry};
 use crate::jinja::resolve_contained_path;
-use crate::literal_resolve::resolve_literal;
+use crate::literal_resolve::{resolve_literal, Vars};
 
 /// The largest file the store holds. Decided from the file's size before it
 /// is read, and enforced again while reading, so a file that grows between
@@ -72,10 +72,7 @@ impl SqlSourceStore {
         dir: &str,
         by_path: &mut HashMap<PathBuf, usize>,
     ) {
-        let variables: HashMap<&'src str, &'src Expr<'src>> = variables
-            .iter()
-            .map(|v| (v.key.as_ref(), &v.value))
-            .collect();
+        let variables = Vars::from_entries(variables);
         let mut literals: Vec<std::borrow::Cow<'src, str>> = Vec::new();
         for entry in resources {
             match &entry.resource.properties {
@@ -139,7 +136,7 @@ impl SqlSourceStore {
 /// through objects and lists -- the shapes a property path walks.
 fn readfile_literals<'src>(
     expr: &'src Expr<'src>,
-    variables: &HashMap<&'src str, &'src Expr<'src>>,
+    variables: &Vars<'src, '_>,
     out: &mut Vec<std::borrow::Cow<'src, str>>,
 ) {
     match expr {

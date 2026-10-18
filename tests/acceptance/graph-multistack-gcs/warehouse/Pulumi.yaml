@@ -1,0 +1,20 @@
+name: warehouse
+runtime: yaml
+resources:
+  net:
+    type: pulumi:pulumi:StackReference
+    properties:
+      name: network/network
+  events:
+    type: gcp:bigquery:Table
+    properties:
+      datasetId: ${net.outputs.datasetId}
+      tableId: events
+  load:
+    type: gcp:storage:BucketObject
+    properties:
+      bucket: ${net.outputs["bucketName"]}
+      name: manifest.json
+      content: "{}"
+outputs:
+  tableId: ${events.tableId}

@@ -1135,3 +1135,56 @@ fn test_readfile_cross_file_with_evaluation() {
         Some("my-bucket"),
     );
 }
+
+// ---- Stack config files are not resource files ----
+//
+// `discover_project_files` lists every `Pulumi.*.yaml`, which includes the
+// stack config files (`Pulumi.<stack>.yaml`) the Pulumi CLI writes. These
+// fixtures settle what the loader does with each shape such a file takes.
+
+const STACK_MAIN: &str = "name: proj\nruntime: yaml\nconfig:\n  env:\n    type: string\nresources:\n  bucket:\n    type: test:index:Bucket\n    properties:\n      name: ${env}\n";
+
+/// The usual file: plaintext and `secure:` values, a secrets provider and an
+/// encrypted key. Skipped whole: nothing in it is merged, and the secure
+/// value appears nowhere in the merged program.
+#[test]
+fn a_stack_config_file_is_skipped_not_merged() {
+    let dir = make_temp_project(&[
+        ("Pulumi.yaml", STACK_MAIN),
+        (
+            "Pulumi.dev.yaml",
+            "secretsprovider: gcpkms://projects/p/locations/global/keyRings/r/cryptoKeys/k\nencryptedkey: CiQAbc==\nconfig:\n  proj:env: dev\n  gcp:project: data-proj\n  proj:token:\n    secure: v1:CIPHERTEXT\n",
+        ),
+    ]);
+    let (merged, diags) = load_project(dir.path(), None);
+    assert!(!diags.has_errors(), "{diags}");
+    assert_eq!(merged.resource_count(), 1);
+    assert_eq!(merged.variable_count(), 0);
+    assert!(
+        merged
+            .source_map()
+            .values()
+            .all(|f| !f.contains("Pulumi.dev.yaml")),
+        "{:?}",
+        merged.source_map()
+    );
+    let (template, _) = merged.into_parts();
+    let keys: Vec<&str> = template.config.iter().map(|c| c.key.as_ref()).collect();
+    assert_eq!(keys, vec!["env"], "only the main file declares config");
+    assert!(!format!("{template:?}").contains("CIPHERTEXT"));
+}
+
+/// A stack file holding only an encryption salt -- what `pulumi stack init`
+/// writes for a passphrase stack before any config is set -- has no
+/// `config:` either. It is not mistaken for a program file with an error.
+#[test]
+fn a_stack_file_without_config_is_harmless() {
+    let dir = make_temp_project(&[
+        ("Pulumi.yaml", STACK_MAIN),
+        ("Pulumi.dev.yaml", "encryptionsalt: v1:abc:def\n"),
+        ("Pulumi.prod.yaml", "config: {}\n"),
+    ]);
+    let (merged, diags) = load_project(dir.path(), None);
+    assert!(!diags.has_errors(), "{diags}");
+    assert_eq!(merged.resource_count(), 1);
+}

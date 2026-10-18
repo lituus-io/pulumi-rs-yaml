@@ -1,0 +1,2574 @@
+{
+  "edges": [
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant01",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::raw"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant02",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::curated"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant03",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::marts"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant04",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::sandbox"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant07",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::raw"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant08",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::curated"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant09",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::marts"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant10",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::sandbox"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant13",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::raw"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant14",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::curated"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant15",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::marts"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant16",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::sandbox"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant19",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::raw"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant20",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::curated"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant21",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::marts"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant22",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::sandbox"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant25",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::raw"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant26",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::curated"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant27",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::marts"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant28",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::sandbox"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant31",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::raw"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant32",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::curated"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant33",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::marts"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant34",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::sandbox"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant37",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::raw"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant38",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::curated"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant39",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::marts"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant40",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::sandbox"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant43",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::raw"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant44",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::curated"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant45",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::marts"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant46",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::sandbox"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant64",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::raw"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "member"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant64",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:serviceaccount/account:Account::etlSa"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "datasetId"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant66",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::marts"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "member"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant66",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:serviceaccount/account:Account::reportSa"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "name"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:cloudrunv2/serviceIamMember:ServiceIamMember::grant50",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:cloudrunv2/service:Service::api"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "name"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:cloudrunv2/serviceIamMember:ServiceIamMember::grant53",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:cloudrunv2/service:Service::api"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "name"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:cloudrunv2/serviceIamMember:ServiceIamMember::grant56",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:cloudrunv2/service:Service::api"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "name"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:cloudrunv2/serviceIamMember:ServiceIamMember::grant59",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:cloudrunv2/service:Service::api"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "name"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:cloudrunv2/serviceIamMember:ServiceIamMember::grant62",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:cloudrunv2/service:Service::api"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "member"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant67",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:serviceaccount/account:Account::reportSa"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "topic"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:pubsub/topicIAMMember:TopicIAMMember::grant49",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:pubsub/topic:Topic::events"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "topic"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:pubsub/topicIAMMember:TopicIAMMember::grant52",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:pubsub/topic:Topic::events"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "topic"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:pubsub/topicIAMMember:TopicIAMMember::grant55",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:pubsub/topic:Topic::events"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "topic"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:pubsub/topicIAMMember:TopicIAMMember::grant58",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:pubsub/topic:Topic::events"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "topic"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:pubsub/topicIAMMember:TopicIAMMember::grant61",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:pubsub/topic:Topic::events"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "bucket"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant05",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucket:Bucket::landing"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "bucket"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant11",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucket:Bucket::landing"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "bucket"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant17",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucket:Bucket::landing"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "bucket"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant23",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucket:Bucket::landing"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "bucket"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant29",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucket:Bucket::landing"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "bucket"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant35",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucket:Bucket::landing"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "bucket"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant41",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucket:Bucket::landing"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "bucket"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant47",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucket:Bucket::landing"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "member"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant65",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:serviceaccount/account:Account::etlSa"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [
+        "bucket"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant65",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucket:Bucket::landing"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::curated"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::marts"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::raw"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::sandbox"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant01"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant02"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant03"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant04"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant07"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant08"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant09"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant10"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant13"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant14"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant15"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant16"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant19"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant20"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant21"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant22"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant25"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant26"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant27"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant28"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant31"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant32"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant33"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant34"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant37"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant38"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant39"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant40"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant43"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant44"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant45"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant46"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant64"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant66"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:cloudrunv2/service:Service::api"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:cloudrunv2/serviceIamMember:ServiceIamMember::grant50"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:cloudrunv2/serviceIamMember:ServiceIamMember::grant53"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:cloudrunv2/serviceIamMember:ServiceIamMember::grant56"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:cloudrunv2/serviceIamMember:ServiceIamMember::grant59"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:cloudrunv2/serviceIamMember:ServiceIamMember::grant62"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant06"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant12"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant18"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant24"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant30"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant36"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant42"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant48"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant51"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant54"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant57"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant60"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant63"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant67"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:pubsub/topic:Topic::events"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:pubsub/topicIAMMember:TopicIAMMember::grant49"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:pubsub/topicIAMMember:TopicIAMMember::grant52"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:pubsub/topicIAMMember:TopicIAMMember::grant55"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:pubsub/topicIAMMember:TopicIAMMember::grant58"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:pubsub/topicIAMMember:TopicIAMMember::grant61"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:serviceaccount/account:Account::etlSa"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:serviceaccount/account:Account::reportSa"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucket:Bucket::landing"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant05"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant11"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant17"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant23"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant29"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant35"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant41"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant47"
+    },
+    {
+      "organization": "org",
+      "project": "graph-iam-bindings",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant65"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::curated",
+      "kind": "resource",
+      "literal_properties": {
+        "datasetId": "curated"
+      },
+      "logical_name": "curated",
+      "name": "curated",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/dataset:Dataset"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::marts",
+      "kind": "resource",
+      "literal_properties": {
+        "datasetId": "marts"
+      },
+      "logical_name": "marts",
+      "name": "marts",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/dataset:Dataset"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::raw",
+      "kind": "resource",
+      "literal_properties": {
+        "datasetId": "raw"
+      },
+      "logical_name": "raw",
+      "name": "raw",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/dataset:Dataset"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/dataset:Dataset::sandbox",
+      "kind": "resource",
+      "literal_properties": {
+        "datasetId": "sandbox"
+      },
+      "logical_name": "sandbox",
+      "name": "sandbox",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/dataset:Dataset"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant01",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:analyst01@example.com",
+        "role": "roles/bigquery.dataViewer"
+      },
+      "logical_name": "grant01",
+      "name": "grant01",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant02",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:analyst02@example.com",
+        "role": "roles/bigquery.dataEditor"
+      },
+      "logical_name": "grant02",
+      "name": "grant02",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant03",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:analyst03@example.com",
+        "role": "roles/bigquery.dataViewer"
+      },
+      "logical_name": "grant03",
+      "name": "grant03",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant04",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:analyst04@example.com",
+        "role": "roles/bigquery.dataEditor"
+      },
+      "logical_name": "grant04",
+      "name": "grant04",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant07",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:analyst07@example.com",
+        "role": "roles/bigquery.dataViewer"
+      },
+      "logical_name": "grant07",
+      "name": "grant07",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant08",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:analyst08@example.com",
+        "role": "roles/bigquery.dataEditor"
+      },
+      "logical_name": "grant08",
+      "name": "grant08",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant09",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:analyst09@example.com",
+        "role": "roles/bigquery.dataViewer"
+      },
+      "logical_name": "grant09",
+      "name": "grant09",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant10",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:analyst10@example.com",
+        "role": "roles/bigquery.dataEditor"
+      },
+      "logical_name": "grant10",
+      "name": "grant10",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant13",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:analyst13@example.com",
+        "role": "roles/bigquery.dataViewer"
+      },
+      "logical_name": "grant13",
+      "name": "grant13",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant14",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:analyst14@example.com",
+        "role": "roles/bigquery.dataEditor"
+      },
+      "logical_name": "grant14",
+      "name": "grant14",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant15",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:analyst15@example.com",
+        "role": "roles/bigquery.dataViewer"
+      },
+      "logical_name": "grant15",
+      "name": "grant15",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant16",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:analyst16@example.com",
+        "role": "roles/bigquery.dataEditor"
+      },
+      "logical_name": "grant16",
+      "name": "grant16",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant19",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:analyst19@example.com",
+        "role": "roles/bigquery.dataViewer"
+      },
+      "logical_name": "grant19",
+      "name": "grant19",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant20",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:analyst20@example.com",
+        "role": "roles/bigquery.dataEditor"
+      },
+      "logical_name": "grant20",
+      "name": "grant20",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant21",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "group:team01@example.com",
+        "role": "roles/bigquery.dataViewer"
+      },
+      "logical_name": "grant21",
+      "name": "grant21",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant22",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "group:team02@example.com",
+        "role": "roles/bigquery.dataEditor"
+      },
+      "logical_name": "grant22",
+      "name": "grant22",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant25",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "group:team05@example.com",
+        "role": "roles/bigquery.dataViewer"
+      },
+      "logical_name": "grant25",
+      "name": "grant25",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant26",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "group:team06@example.com",
+        "role": "roles/bigquery.dataEditor"
+      },
+      "logical_name": "grant26",
+      "name": "grant26",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant27",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "group:team07@example.com",
+        "role": "roles/bigquery.dataViewer"
+      },
+      "logical_name": "grant27",
+      "name": "grant27",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant28",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "group:team08@example.com",
+        "role": "roles/bigquery.dataEditor"
+      },
+      "logical_name": "grant28",
+      "name": "grant28",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant31",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "serviceAccount:svc01@sample-proj.iam.gserviceaccount.com",
+        "role": "roles/bigquery.dataViewer"
+      },
+      "logical_name": "grant31",
+      "name": "grant31",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant32",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "serviceAccount:svc02@sample-proj.iam.gserviceaccount.com",
+        "role": "roles/bigquery.dataEditor"
+      },
+      "logical_name": "grant32",
+      "name": "grant32",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant33",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "serviceAccount:svc03@sample-proj.iam.gserviceaccount.com",
+        "role": "roles/bigquery.dataViewer"
+      },
+      "logical_name": "grant33",
+      "name": "grant33",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant34",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "serviceAccount:svc04@sample-proj.iam.gserviceaccount.com",
+        "role": "roles/bigquery.dataEditor"
+      },
+      "logical_name": "grant34",
+      "name": "grant34",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant37",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "serviceAccount:svc07@sample-proj.iam.gserviceaccount.com",
+        "role": "roles/bigquery.dataViewer"
+      },
+      "logical_name": "grant37",
+      "name": "grant37",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant38",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "serviceAccount:svc08@sample-proj.iam.gserviceaccount.com",
+        "role": "roles/bigquery.dataEditor"
+      },
+      "logical_name": "grant38",
+      "name": "grant38",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant39",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "domain:example.com",
+        "role": "roles/bigquery.dataViewer"
+      },
+      "logical_name": "grant39",
+      "name": "grant39",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant40",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "serviceAccount:platform-runner@sample-proj.iam.gserviceaccount.com",
+        "role": "roles/bigquery.dataEditor"
+      },
+      "logical_name": "grant40",
+      "name": "grant40",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant43",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:Mixed.Case3@Example.com",
+        "role": "roles/bigquery.dataViewer"
+      },
+      "logical_name": "grant43",
+      "name": "grant43",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant44",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:Mixed.Case4@Example.com",
+        "role": "roles/bigquery.dataEditor"
+      },
+      "logical_name": "grant44",
+      "name": "grant44",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant45",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "group:data-readers@example.com",
+        "role": "roles/bigquery.dataViewer"
+      },
+      "logical_name": "grant45",
+      "name": "grant45",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant46",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:auditor@example.com",
+        "role": "roles/bigquery.dataEditor"
+      },
+      "logical_name": "grant46",
+      "name": "grant46",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant64",
+      "kind": "resource",
+      "literal_properties": {
+        "role": "roles/bigquery.dataEditor"
+      },
+      "logical_name": "grant64",
+      "name": "grant64",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:bigquery/datasetIamMember:DatasetIamMember::grant66",
+      "kind": "resource",
+      "literal_properties": {
+        "role": "roles/bigquery.dataViewer"
+      },
+      "logical_name": "grant66",
+      "name": "grant66",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/datasetIamMember:DatasetIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:cloudrunv2/service:Service::api",
+      "kind": "resource",
+      "literal_properties": {
+        "location": "us-central1",
+        "template.containers.0.image": "us-docker.pkg.dev/cloudrun/container/hello"
+      },
+      "logical_name": "api",
+      "name": "api",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:cloudrunv2/service:Service"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:cloudrunv2/serviceIamMember:ServiceIamMember::grant50",
+      "kind": "resource",
+      "literal_properties": {
+        "location": "us-central1",
+        "role": "roles/run.invoker"
+      },
+      "logical_name": "grant50",
+      "name": "grant50",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:cloudrunv2/serviceIamMember:ServiceIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:cloudrunv2/serviceIamMember:ServiceIamMember::grant53",
+      "kind": "resource",
+      "literal_properties": {
+        "location": "us-central1",
+        "role": "roles/run.invoker"
+      },
+      "logical_name": "grant53",
+      "name": "grant53",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:cloudrunv2/serviceIamMember:ServiceIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:cloudrunv2/serviceIamMember:ServiceIamMember::grant56",
+      "kind": "resource",
+      "literal_properties": {
+        "location": "us-central1",
+        "role": "roles/run.invoker"
+      },
+      "logical_name": "grant56",
+      "name": "grant56",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:cloudrunv2/serviceIamMember:ServiceIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:cloudrunv2/serviceIamMember:ServiceIamMember::grant59",
+      "kind": "resource",
+      "literal_properties": {
+        "location": "us-central1",
+        "role": "roles/run.invoker"
+      },
+      "logical_name": "grant59",
+      "name": "grant59",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:cloudrunv2/serviceIamMember:ServiceIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:cloudrunv2/serviceIamMember:ServiceIamMember::grant62",
+      "kind": "resource",
+      "literal_properties": {
+        "location": "us-central1",
+        "role": "roles/run.invoker"
+      },
+      "logical_name": "grant62",
+      "name": "grant62",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:cloudrunv2/serviceIamMember:ServiceIamMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant06",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:analyst06@example.com",
+        "project": "sample-proj",
+        "role": "roles/bigquery.jobUser"
+      },
+      "logical_name": "grant06",
+      "name": "grant06",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:projects/iAMMember:IAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant12",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:analyst12@example.com",
+        "project": "sample-proj",
+        "role": "roles/bigquery.jobUser"
+      },
+      "logical_name": "grant12",
+      "name": "grant12",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:projects/iAMMember:IAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant18",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:analyst18@example.com",
+        "project": "sample-proj",
+        "role": "roles/bigquery.jobUser"
+      },
+      "logical_name": "grant18",
+      "name": "grant18",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:projects/iAMMember:IAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant24",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "group:team04@example.com",
+        "project": "sample-proj",
+        "role": "roles/bigquery.jobUser"
+      },
+      "logical_name": "grant24",
+      "name": "grant24",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:projects/iAMMember:IAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant30",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "group:team10@example.com",
+        "project": "sample-proj",
+        "role": "roles/bigquery.jobUser"
+      },
+      "logical_name": "grant30",
+      "name": "grant30",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:projects/iAMMember:IAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant36",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "serviceAccount:svc06@sample-proj.iam.gserviceaccount.com",
+        "project": "sample-proj",
+        "role": "roles/bigquery.jobUser"
+      },
+      "logical_name": "grant36",
+      "name": "grant36",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:projects/iAMMember:IAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant42",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:Mixed.Case2@Example.com",
+        "project": "sample-proj",
+        "role": "roles/bigquery.jobUser"
+      },
+      "logical_name": "grant42",
+      "name": "grant42",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:projects/iAMMember:IAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant48",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "principalSet://iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/ci/attribute.repository/org/repo",
+        "project": "sample-proj",
+        "role": "roles/bigquery.jobUser"
+      },
+      "logical_name": "grant48",
+      "name": "grant48",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:projects/iAMMember:IAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant51",
+      "kind": "resource",
+      "literal_properties": {
+        "role": "roles/bigquery.user"
+      },
+      "logical_name": "grant51",
+      "name": "grant51",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:projects/iAMMember:IAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant54",
+      "kind": "resource",
+      "literal_properties": {
+        "role": "roles/bigquery.user"
+      },
+      "logical_name": "grant54",
+      "name": "grant54",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:projects/iAMMember:IAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant57",
+      "kind": "resource",
+      "literal_properties": {
+        "role": "roles/bigquery.user"
+      },
+      "logical_name": "grant57",
+      "name": "grant57",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:projects/iAMMember:IAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant60",
+      "kind": "resource",
+      "literal_properties": {
+        "role": "roles/bigquery.user"
+      },
+      "logical_name": "grant60",
+      "name": "grant60",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:projects/iAMMember:IAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant63",
+      "kind": "resource",
+      "literal_properties": {
+        "role": "roles/bigquery.user"
+      },
+      "logical_name": "grant63",
+      "name": "grant63",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:projects/iAMMember:IAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:projects/iAMMember:IAMMember::grant67",
+      "kind": "resource",
+      "literal_properties": {
+        "project": "sample-proj",
+        "role": "roles/bigquery.jobUser"
+      },
+      "logical_name": "grant67",
+      "name": "grant67",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:projects/iAMMember:IAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:pubsub/topic:Topic::events",
+      "kind": "resource",
+      "literal_properties": {},
+      "logical_name": "events",
+      "name": "events",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:pubsub/topic:Topic"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:pubsub/topicIAMMember:TopicIAMMember::grant49",
+      "kind": "resource",
+      "literal_properties": {
+        "role": "roles/pubsub.subscriber"
+      },
+      "logical_name": "grant49",
+      "name": "grant49",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:pubsub/topicIAMMember:TopicIAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:pubsub/topicIAMMember:TopicIAMMember::grant52",
+      "kind": "resource",
+      "literal_properties": {
+        "role": "roles/pubsub.subscriber"
+      },
+      "logical_name": "grant52",
+      "name": "grant52",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:pubsub/topicIAMMember:TopicIAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:pubsub/topicIAMMember:TopicIAMMember::grant55",
+      "kind": "resource",
+      "literal_properties": {
+        "role": "roles/pubsub.subscriber"
+      },
+      "logical_name": "grant55",
+      "name": "grant55",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:pubsub/topicIAMMember:TopicIAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:pubsub/topicIAMMember:TopicIAMMember::grant58",
+      "kind": "resource",
+      "literal_properties": {
+        "role": "roles/pubsub.subscriber"
+      },
+      "logical_name": "grant58",
+      "name": "grant58",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:pubsub/topicIAMMember:TopicIAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:pubsub/topicIAMMember:TopicIAMMember::grant61",
+      "kind": "resource",
+      "literal_properties": {
+        "role": "roles/pubsub.subscriber"
+      },
+      "logical_name": "grant61",
+      "name": "grant61",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:pubsub/topicIAMMember:TopicIAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:serviceaccount/account:Account::etlSa",
+      "kind": "resource",
+      "literal_properties": {
+        "accountId": "etl-loader"
+      },
+      "logical_name": "etlSa",
+      "name": "etlSa",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:serviceaccount/account:Account"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:serviceaccount/account:Account::reportSa",
+      "kind": "resource",
+      "literal_properties": {
+        "accountId": "report-runner"
+      },
+      "logical_name": "reportSa",
+      "name": "reportSa",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:serviceaccount/account:Account"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucket:Bucket::landing",
+      "kind": "resource",
+      "literal_properties": {
+        "location": "US"
+      },
+      "logical_name": "landing",
+      "name": "landing",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucket:Bucket"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant05",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:analyst05@example.com",
+        "role": "roles/storage.objectViewer"
+      },
+      "logical_name": "grant05",
+      "name": "grant05",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucketIAMMember:BucketIAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant11",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:analyst11@example.com",
+        "role": "roles/storage.objectViewer"
+      },
+      "logical_name": "grant11",
+      "name": "grant11",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucketIAMMember:BucketIAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant17",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:analyst17@example.com",
+        "role": "roles/storage.objectViewer"
+      },
+      "logical_name": "grant17",
+      "name": "grant17",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucketIAMMember:BucketIAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant23",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "group:team03@example.com",
+        "role": "roles/storage.objectViewer"
+      },
+      "logical_name": "grant23",
+      "name": "grant23",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucketIAMMember:BucketIAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant29",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "group:team09@example.com",
+        "role": "roles/storage.objectViewer"
+      },
+      "logical_name": "grant29",
+      "name": "grant29",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucketIAMMember:BucketIAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant35",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "serviceAccount:svc05@sample-proj.iam.gserviceaccount.com",
+        "role": "roles/storage.objectViewer"
+      },
+      "logical_name": "grant35",
+      "name": "grant35",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucketIAMMember:BucketIAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant41",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "user:Mixed.Case1@Example.com",
+        "role": "roles/storage.objectViewer"
+      },
+      "logical_name": "grant41",
+      "name": "grant41",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucketIAMMember:BucketIAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant47",
+      "kind": "resource",
+      "literal_properties": {
+        "member": "allAuthenticatedUsers",
+        "role": "roles/storage.objectViewer"
+      },
+      "logical_name": "grant47",
+      "name": "grant47",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucketIAMMember:BucketIAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::gcp:storage/bucketIAMMember:BucketIAMMember::grant65",
+      "kind": "resource",
+      "literal_properties": {
+        "role": "roles/storage.objectAdmin"
+      },
+      "logical_name": "grant65",
+      "name": "grant65",
+      "organization": "org",
+      "package": "gcp",
+      "project": "graph-iam-bindings",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:storage/bucketIAMMember:BucketIAMMember"
+    },
+    {
+      "id": "urn:pulumi:golden::graph-iam-bindings::pulumi:pulumi:Stack::graph-iam-bindings-golden",
+      "kind": "stack",
+      "literal_properties": {},
+      "logical_name": "stack",
+      "name": "graph-iam-bindings-golden",
+      "organization": "org",
+      "package": "pulumi",
+      "project": "graph-iam-bindings",
+      "stack": "golden",
+      "type_token": "pulumi:pulumi:Stack"
+    }
+  ],
+  "organization": "org",
+  "project": "graph-iam-bindings",
+  "schema_version": 1,
+  "sql_lineage": {
+    "edges": [],
+    "nodes": [],
+    "organization": "org",
+    "project": "graph-iam-bindings",
+    "schema_version": 1,
+    "stack": "golden"
+  },
+  "stack": "golden"
+}

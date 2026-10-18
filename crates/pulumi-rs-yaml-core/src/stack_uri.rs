@@ -87,10 +87,113 @@ pub fn resolve_backend_url<'a>(
     environment: Option<&'a str>,
     project: Option<&'a str>,
 ) -> Option<&'a str> {
-    [explicit, environment, project]
-        .into_iter()
-        .flatten()
-        .find(|u| !u.is_empty())
+    resolve_backend(explicit, environment, project, None).0
+}
+
+/// Which source named the backend a graph was exported against.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackendSource {
+    /// The caller passed it.
+    Argument,
+    /// `PULUMI_BACKEND_URL`.
+    Env,
+    /// The project's `backend.url`.
+    Project,
+    /// The Pulumi workspace's current backend (`credentials.json`).
+    Workspace,
+    /// Nothing named one.
+    None,
+}
+
+impl BackendSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Argument => "argument",
+            Self::Env => "env",
+            Self::Project => "project",
+            Self::Workspace => "workspace",
+            Self::None => "none",
+        }
+    }
+}
+
+/// The backend Pulumi itself would use, in Pulumi's own order -- the
+/// caller's, `PULUMI_BACKEND_URL`, the project's `backend.url`, the
+/// workspace's current backend -- skipping any that is empty, with the source
+/// that named it. Pure: [`discover_backend`] reads the environment.
+pub fn resolve_backend<'a>(
+    explicit: Option<&'a str>,
+    environment: Option<&'a str>,
+    project: Option<&'a str>,
+    workspace: Option<&'a str>,
+) -> (Option<&'a str>, BackendSource) {
+    [
+        (explicit, BackendSource::Argument),
+        (environment, BackendSource::Env),
+        (project, BackendSource::Project),
+        (workspace, BackendSource::Workspace),
+    ]
+    .into_iter()
+    .find_map(|(url, source)| url.filter(|u| !u.is_empty()).map(|u| (Some(u), source)))
+    .unwrap_or((None, BackendSource::None))
+}
+
+/// [`resolve_backend`] with the environment read: `PULUMI_BACKEND_URL`, and
+/// the `current` backend of `$PULUMI_HOME/credentials.json` (default
+/// `~/.pulumi`). The ONE resolver every entry point uses -- the CLI, the
+/// Python binding -- so they cannot disagree. An `explicit` empty string is
+/// the caller turning every fallback off: `(None, None)`.
+///
+/// Only the backend URL is read from the credentials file; its access tokens
+/// are never touched, copied or returned. A URL that carries credentials is
+/// returned as found, and refused by [`parse_backend`] when a URI is derived.
+pub fn discover_backend(
+    explicit: Option<&str>,
+    project: Option<&str>,
+) -> (Option<String>, BackendSource) {
+    if explicit == Some("") {
+        return (None, BackendSource::None);
+    }
+    if let Some(url) = explicit {
+        return (Some(url.to_owned()), BackendSource::Argument);
+    }
+    let environment = std::env::var("PULUMI_BACKEND_URL").ok();
+    let early = resolve_backend(None, environment.as_deref(), project, None);
+    if early.0.is_some() {
+        return (early.0.map(str::to_owned), early.1);
+    }
+    let workspace = workspace_current_backend();
+    let (url, source) = resolve_backend(None, None, None, workspace.as_deref());
+    (url.map(str::to_owned), source)
+}
+
+/// The `current` backend in the Pulumi workspace's `credentials.json`.
+fn workspace_current_backend() -> Option<String> {
+    let home = match std::env::var_os("PULUMI_HOME") {
+        Some(h) if !h.is_empty() => std::path::PathBuf::from(h),
+        _ => {
+            let user_home = std::env::var_os("HOME")
+                .filter(|h| !h.is_empty())
+                .or_else(|| std::env::var_os("USERPROFILE").filter(|h| !h.is_empty()))?;
+            std::path::PathBuf::from(user_home).join(".pulumi")
+        }
+    };
+    current_backend_from_credentials(&std::fs::read(home.join("credentials.json")).ok()?)
+}
+
+/// The `current` field of a `credentials.json` document. A file larger than
+/// 1 MiB is not a credentials file and is not parsed.
+pub fn current_backend_from_credentials(bytes: &[u8]) -> Option<String> {
+    #[derive(serde::Deserialize)]
+    struct Credentials {
+        current: Option<String>,
+    }
+    if bytes.len() > 1 << 20 {
+        return None;
+    }
+    let creds: Credentials = serde_json::from_slice(bytes).ok()?;
+    creds.current.filter(|c| !c.is_empty())
 }
 
 /// The `backend.url` a `Pulumi.yaml` declares, if any. Jinja block lines are
@@ -342,6 +445,73 @@ mod tests {
             Some("gs://c")
         );
         assert_eq!(resolve_backend_url(None, Some(""), None), None);
+    }
+
+    #[test]
+    fn resolution_order_names_its_source() {
+        let all = resolve_backend(
+            Some("gs://a"),
+            Some("gs://b"),
+            Some("gs://c"),
+            Some("gs://d"),
+        );
+        assert_eq!(all, (Some("gs://a"), BackendSource::Argument));
+        let env = resolve_backend(None, Some("gs://b"), Some("gs://c"), Some("gs://d"));
+        assert_eq!(env, (Some("gs://b"), BackendSource::Env));
+        let project = resolve_backend(Some(""), Some(""), Some("gs://c"), Some("gs://d"));
+        assert_eq!(project, (Some("gs://c"), BackendSource::Project));
+        let ws = resolve_backend(None, None, None, Some("file://~"));
+        assert_eq!(ws, (Some("file://~"), BackendSource::Workspace));
+        assert_eq!(
+            resolve_backend(None, None, None, None),
+            (None, BackendSource::None)
+        );
+        assert_eq!(BackendSource::Workspace.as_str(), "workspace");
+    }
+
+    #[test]
+    fn an_explicit_empty_backend_turns_every_fallback_off() {
+        assert_eq!(
+            discover_backend(Some(""), Some("gs://p")),
+            (None, BackendSource::None)
+        );
+        assert_eq!(
+            discover_backend(Some("gs://x"), Some("gs://p")),
+            (Some("gs://x".to_owned()), BackendSource::Argument)
+        );
+    }
+
+    #[test]
+    fn the_workspace_current_backend_is_read_and_nothing_else() {
+        let doc = br#"{"current":"gs://ws-state","accessTokens":{"https://api.pulumi.com":"pul-SECRET"},"accounts":{}}"#;
+        assert_eq!(
+            current_backend_from_credentials(doc).as_deref(),
+            Some("gs://ws-state")
+        );
+        assert_eq!(current_backend_from_credentials(b"{}"), None);
+        assert_eq!(current_backend_from_credentials(br#"{"current":""}"#), None);
+        assert_eq!(current_backend_from_credentials(b"not json"), None);
+        let huge = vec![b' '; (1 << 20) + 1];
+        assert_eq!(current_backend_from_credentials(&huge), None);
+    }
+
+    #[test]
+    fn credentials_in_a_backend_never_reach_a_uri() {
+        for url in [
+            "gs://user:token@bucket",
+            "s3://AKIA:secret@b",
+            "https://pul-token@api.pulumi.com",
+            "azblob://acct:key@c/x",
+            "file://u:p@host/x",
+        ] {
+            assert!(parse_backend(url).is_none(), "{url}");
+        }
+        // A query (where an s3 profile or token-ish setting lives) is dropped.
+        let b = parse_backend("s3://b?awssdk=v2&token=t0k").expect("backend");
+        let uri = StackUri::new(b, "o", true, "p", "s")
+            .expect("uri")
+            .to_string();
+        assert!(!uri.contains("t0k"), "{uri}");
     }
 
     #[test]
