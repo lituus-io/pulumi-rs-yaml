@@ -28,6 +28,17 @@ pub const JINJA_SOURCE_ENV: &str = "PULUMI_YAML_JINJA_SOURCE";
 
 /// Runs the exec subcommand. Returns the process exit code.
 pub fn run_exec(command_args: &[String]) -> i32 {
+    // With the Jinja pass off the files are already rendered: there is nothing
+    // to validate or strip, and the child runs on them as they are.
+    match pulumi_rs_yaml_core::jinja::jinja_enabled() {
+        Ok(true) => {}
+        Ok(false) => return spawn_command(command_args, None),
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return 1;
+        }
+    }
+
     // 1. Discover all project files
     let cwd = match std::env::current_dir() {
         Ok(dir) => dir,

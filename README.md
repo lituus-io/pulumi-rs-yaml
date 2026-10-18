@@ -125,6 +125,21 @@ opens a raw block that swallows everything after it. Scoping does not help:
 a comment sits outside the block scalar it describes. Write the construct
 without its delimiters, or put the comment inside the scoped scalar.
 
+## Already-rendered projects
+
+A caller that renders the project itself, with this crate's own renderer, and
+hands the runtime the result sets `PULUMI_YAML_JINJA=off` in the environment
+`pulumi` runs in. The language host, `exec` and `graph` then parse every
+project file exactly as written, with no second render. Without it, text a
+`{% raw %}` block legitimately emitted — a literal `{{ x }}` — would be read
+as an expression the second time, and the deploy fails on an undefined name.
+
+- Unset, empty or `on`: the runtime renders, as it always has.
+- `off`: no Jinja pass. The files must already be valid Pulumi YAML.
+- Anything else is refused with the value named; it is never guessed at.
+- `off` together with `exec`'s `PULUMI_YAML_JINJA_SOURCE` is refused: the
+  wrapper's sources exist to be rendered.
+
 ## Test
 
 ```bash

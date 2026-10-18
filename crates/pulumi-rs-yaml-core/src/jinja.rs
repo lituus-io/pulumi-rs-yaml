@@ -798,6 +798,38 @@ pub fn has_jinja_syntax(s: &str) -> bool {
     s.contains("{{") || s.contains("{%") || s.contains("{#")
 }
 
+/// Turns the runtime's own Jinja pass off: `PULUMI_YAML_JINJA=off`.
+///
+/// For a caller that has already rendered the project and hands over the
+/// result. Rendered text can legitimately hold `{{` -- a `{% raw %}` block
+/// emits it as literal text -- and a second pass would read that as an
+/// expression. With the pass off, every project file is parsed exactly as
+/// written. Unset, empty or `on` keeps the pass; any other value is an error,
+/// never a guess.
+pub const JINJA_ENV: &str = "PULUMI_YAML_JINJA";
+
+/// Whether the runtime renders project files, from the value of
+/// [`JINJA_ENV`]. `Err` names the bad value.
+pub fn jinja_enabled_from(value: Option<&str>) -> Result<bool, String> {
+    match value {
+        None | Some("") | Some("on") => Ok(true),
+        Some("off") => Ok(false),
+        Some(other) => Err(format!(
+            "{}={:?}: expected \"on\" or \"off\"",
+            JINJA_ENV, other
+        )),
+    }
+}
+
+/// [`jinja_enabled_from`] on this process's environment.
+pub fn jinja_enabled() -> Result<bool, String> {
+    match std::env::var(JINJA_ENV) {
+        Ok(v) => jinja_enabled_from(Some(&v)),
+        Err(std::env::VarError::NotPresent) => Ok(true),
+        Err(std::env::VarError::NotUnicode(_)) => Err(format!("{} is not valid UTF-8", JINJA_ENV)),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Block-Level Stripping for exec Wrapper (B.10)
 // ---------------------------------------------------------------------------
@@ -2155,6 +2187,18 @@ mod tests {
     fn test_has_jinja_syntax_single_brace() {
         // Single braces are not Jinja
         assert!(!has_jinja_syntax("{ key: value }"));
+    }
+
+    #[test]
+    fn the_jinja_pass_is_on_unless_turned_off_exactly() {
+        assert_eq!(jinja_enabled_from(None), Ok(true));
+        assert_eq!(jinja_enabled_from(Some("")), Ok(true));
+        assert_eq!(jinja_enabled_from(Some("on")), Ok(true));
+        assert_eq!(jinja_enabled_from(Some("off")), Ok(false));
+        for bad in ["OFF", "false", "0", " off", "off\n", "no"] {
+            let err = jinja_enabled_from(Some(bad)).unwrap_err();
+            assert!(err.starts_with("PULUMI_YAML_JINJA="), "{err}");
+        }
     }
 
     // ---- classify_yaml_error ----

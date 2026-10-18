@@ -254,7 +254,14 @@ pub fn run_graph(args: &[String]) -> i32 {
         extra: &extra,
     };
 
-    let (merged, load_diags) = multi_file::load_project(&parsed.dir, Some(&jinja_ctx));
+    let render = match pulumi_rs_yaml_core::jinja::jinja_enabled() {
+        Ok(render) => render,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return 1;
+        }
+    };
+    let (merged, load_diags) = multi_file::load_project(&parsed.dir, render.then_some(&jinja_ctx));
     if load_diags.has_errors() {
         eprintln!("error: failed to load project: {}", load_diags);
         return 1;
