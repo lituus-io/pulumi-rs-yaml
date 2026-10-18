@@ -135,3 +135,40 @@ fn defaults_are_what_the_documentation_says() {
     assert_eq!(d.output_bytes, 16 * 1024 * 1024);
     assert_eq!(d.range, 100_000);
 }
+
+/// A resource loop of the shape real stacks take.
+fn stack(n: usize) -> String {
+    format!(
+        "resources:\n{{% for i in range({n}) %}}\n  t{{{{ i }}}}:\n    type: gcp:bigquery:Table\n    properties:\n      tableId: {{{{ ('t_' ~ i) | upper | tojson }}}}\n{{% if i is even %}}      description: {{{{ ('n ' ~ i) | title | tojson }}}}\n{{% endif %}}{{% endfor %}}\n"
+    )
+}
+
+#[test]
+fn work_is_linear_in_resources_with_no_hidden_quadratic() {
+    // Counted, not timed: the per-resource cost is a constant, so doubling
+    // the stack adds exactly twice the previous increment.
+    let fuel = |n| render(&stack(n), JinjaLimits::default()).unwrap().1.fuel;
+    let (f50, f100, f200) = (fuel(50), fuel(100), fuel(200));
+    assert_eq!(f200 - f100, 2 * (f100 - f50), "{f50} {f100} {f200}");
+    // And output grows with it, byte for byte predictable.
+    let out = |n| {
+        render(&stack(n), JinjaLimits::default())
+            .unwrap()
+            .1
+            .output_bytes
+    };
+    assert!(out(200) > 2 * out(50) * 3 / 2);
+}
+
+#[test]
+fn the_default_budget_holds_thousands_of_resources() {
+    let per = {
+        let f = |n| render(&stack(n), JinjaLimits::default()).unwrap().1.fuel;
+        (f(200) - f(100)) / 100
+    };
+    let capacity = JinjaLimits::DEFAULT_FUEL / per;
+    assert!(
+        capacity >= 2_000,
+        "{per} fuel per resource allows only {capacity}"
+    );
+}

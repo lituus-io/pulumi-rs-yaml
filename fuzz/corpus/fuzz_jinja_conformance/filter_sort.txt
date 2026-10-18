@@ -1,0 +1,1 @@
+{{ [3,1,2]|sort }} {{ [3,1,2]|sort(reverse=true) }} {{ ['b', 'A', 'c']|sort }} {{ [{'n': 2}, {'n': 1}]|sort(attribute='n')|map(attribute='n')|list }}

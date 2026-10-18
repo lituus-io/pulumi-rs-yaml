@@ -1,0 +1,1 @@
+{{ pulumi_project }}/{{ pulumi_stack }}/{{ pulumi_organization }}

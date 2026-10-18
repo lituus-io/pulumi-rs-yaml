@@ -1,0 +1,1 @@
+{% set who = 'w' %}{% from 'includes/lib.j2' import hello with context %}{{ hello() }}

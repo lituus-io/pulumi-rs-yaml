@@ -1,0 +1,1 @@
+{{ '1.5'|float }} {{ 3|float }} {{ 'x'|float }} {{ 'x'|float(2.5) }}

@@ -149,3 +149,18 @@ doc = false
 name = "fuzz_iam_graph"
 path = "fuzz_targets/fuzz_iam_graph.rs"
 doc = false
+
+[[bin]]
+name = "fuzz_jinja_template"
+path = "fuzz_targets/fuzz_jinja_template.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_jinja_loader"
+path = "fuzz_targets/fuzz_jinja_loader.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_jinja_conformance"
+path = "fuzz_targets/fuzz_jinja_conformance.rs"
+doc = false
