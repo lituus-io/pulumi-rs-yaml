@@ -1971,7 +1971,7 @@ fn register_template_loader(
 
 fn register_custom_filters(env: &mut minijinja::Environment<'_>) {
     env.add_filter("to_json", |v: minijinja::Value| -> String {
-        serde_json::to_string(&v).unwrap_or_default()
+        yaml_safe_json(serde_json::to_string(&v).unwrap_or_default())
     });
 
     // Jinja2 spells this `tojson` (no underscore); `to_json` above is the
@@ -2079,7 +2079,38 @@ fn tojson_compat(
         }
         None => serde_json::to_string(&value).map_err(|e| json_error(&e))?,
     };
-    Ok(rendered)
+    Ok(yaml_safe_json(rendered))
+}
+
+/// JSON that YAML reads back unchanged.
+///
+/// JSON escapes only C0 control characters. YAML also refuses DEL and the C1
+/// controls outright, reads U+0085, U+2028 and U+2029 as line breaks --
+/// folding them to a space inside a quoted scalar -- and drops a byte order
+/// mark. A value quoted with `tojson` must survive the YAML it is written
+/// into, so those characters are written as `\uXXXX` escapes, which JSON and
+/// YAML both read as the character itself. They can only occur inside JSON
+/// strings, so a plain replacement is exact; text without them is returned
+/// as it came, unallocated.
+fn yaml_safe_json(json: String) -> String {
+    fn unsafe_in_yaml(c: char) -> bool {
+        matches!(
+            c,
+            '\u{7f}'..='\u{9f}' | '\u{2028}' | '\u{2029}' | '\u{feff}' | '\u{fffe}' | '\u{ffff}'
+        )
+    }
+    if !json.contains(unsafe_in_yaml) {
+        return json;
+    }
+    let mut out = String::with_capacity(json.len() + 16);
+    for c in json.chars() {
+        if unsafe_in_yaml(c) {
+            out.push_str(&format!("\\u{:04x}", c as u32));
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn json_error(e: &serde_json::Error) -> minijinja::Error {
