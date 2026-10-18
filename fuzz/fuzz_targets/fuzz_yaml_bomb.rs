@@ -66,7 +66,9 @@ fuzz_target!(|data: &[u8]| {
                 continue;
             }
             let mut diags = pulumi_rs_yaml_core::diag::Diagnostics::new();
-            let _ = pulumi_rs_yaml_core::ast::interpolation::parse_interpolation(line, None, &mut diags);
+            let _ = pulumi_rs_yaml_core::ast::interpolation::parse_interpolation(
+                line, None, &mut diags,
+            );
         }
     }
 });

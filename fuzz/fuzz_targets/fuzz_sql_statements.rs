@@ -50,11 +50,18 @@ fuzz_target!(|data: &[u8]| {
 
     let sliced: Vec<&str> = spans.iter().map(|r| &script[r.clone()]).collect();
     assert_eq!(split_statements(script), sliced);
-    assert_eq!(split_statement_spans(script), spans, "split must be deterministic");
+    assert_eq!(
+        split_statement_spans(script),
+        spans,
+        "split must be deterministic"
+    );
 
     // The keyword classifier reads author text too; it may answer anything,
     // but it must answer, and answer the same twice.
     for piece in sliced.iter().copied().chain(std::iter::once(script)) {
-        assert_eq!(classify_statement_text(piece), classify_statement_text(piece));
+        assert_eq!(
+            classify_statement_text(piece),
+            classify_statement_text(piece)
+        );
     }
 });

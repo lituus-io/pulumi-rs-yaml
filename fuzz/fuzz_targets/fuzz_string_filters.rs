@@ -113,7 +113,11 @@ fuzz_target!(|input: Input<'_>| {
         // whitespace it wrapped at, and insert separators, but it may not
         // introduce anything else. Compared over non-whitespace characters so
         // the separator bookkeeping does not have to be replicated here.
-        let before: String = input.subject.chars().filter(|c| !c.is_whitespace()).collect();
+        let before: String = input
+            .subject
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
         let after: String = inner.chars().filter(|c| !c.is_whitespace()).collect();
         // The quoting above substitutes Jinja delimiters, so compare likewise.
         let before: String = before

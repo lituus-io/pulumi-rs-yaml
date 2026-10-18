@@ -134,3 +134,18 @@ doc = false
 name = "fuzz_derive_string"
 path = "fuzz_targets/fuzz_derive_string.rs"
 doc = false
+
+[[bin]]
+name = "fuzz_stack_uri"
+path = "fuzz_targets/fuzz_stack_uri.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_cross_stack"
+path = "fuzz_targets/fuzz_cross_stack.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_iam_graph"
+path = "fuzz_targets/fuzz_iam_graph.rs"
+doc = false

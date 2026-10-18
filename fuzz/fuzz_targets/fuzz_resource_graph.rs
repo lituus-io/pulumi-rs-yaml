@@ -17,6 +17,8 @@
 //! - Stack overflow from deep parent chains or component nesting
 //! - Non-determinism (ordering leaks) in the exported graph
 //! - Panics, hangs or non-determinism from `str`-invoke-derived literals
+//! - Host options (identity overrides, reference backends, plaintext config):
+//!   determinism, URI shape, and a secret-declared key's value never exported
 
 #![no_main]
 use libfuzzer_sys::fuzz_target;
@@ -200,6 +202,76 @@ fn str_invoke_template(input: &str) -> String {
     yaml
 }
 
+/// Exports with every host option set from the input -- an identity
+/// override, a reference-backend map, and plaintext config -- and holds the
+/// same invariants, plus: a value under a key the program declares secret
+/// never appears in the export, and the options never make the export
+/// nondeterministic.
+fn export_with_host_options(source: &str, input: &str) {
+    let (template, _) = pulumi_rs_yaml_core::ast::parse::parse_template(source, None);
+    let mut parts = input.splitn(4, '\n');
+    let (a, b, c) = (
+        parts.next().unwrap_or(""),
+        parts.next().unwrap_or(""),
+        parts.next().unwrap_or(""),
+    );
+    let mut config = std::collections::HashMap::new();
+    for key in ["fuzz:env", "env", "gcp:project", "fuzz:member", "member"] {
+        config.insert(key.to_string(), a.to_string());
+    }
+    config.insert("fuzz:token".to_string(), "SECRET-CANARY".to_string());
+    let mut refs = std::collections::HashMap::new();
+    refs.insert(b.to_string(), "gs://ref-state/x".to_string());
+    refs.insert("other/prod".to_string(), c.to_string());
+    let opts = GraphExportOptions {
+        organization: "",
+        project: "fuzz",
+        stack: "dev",
+        backend_url: Some("gs://fuzz-state"),
+        project_override: Some(b).filter(|s| !s.is_empty()),
+        stack_override: Some(c).filter(|s| !s.is_empty()),
+        reference_backends: Some(&refs),
+        config: Some(&config),
+        ..Default::default()
+    };
+    let (g1, _) = export_resource_graph(&template, &opts);
+    let (g2, _) = export_resource_graph(&template, &opts);
+    assert_eq!(g1, g2, "export with host options must be deterministic");
+    let json = g1.to_json().expect("graph serializes");
+    assert!(
+        !json.contains("SECRET-CANARY"),
+        "a secret config value leaked"
+    );
+    for n in &g1.nodes {
+        for p in &n.config_properties {
+            assert!(
+                n.literal_properties.iter().any(|(k, _)| k == p),
+                "config path {p} is not a literal property"
+            );
+        }
+        for uri in [&n.referenced_stack_uri, &n.resource_uri]
+            .into_iter()
+            .flatten()
+        {
+            assert!(uri.starts_with("gs://"), "{uri}");
+            assert!(
+                !uri.chars().any(|ch| ch.is_whitespace() || ch.is_control()),
+                "{uri:?}"
+            );
+            assert!(!uri.contains('?') && uri.matches('#').count() <= 1, "{uri}");
+        }
+    }
+}
+
+/// A program with config-valued properties and a secret key, so host config
+/// actually reaches the resolver.
+fn config_template(input: &str) -> String {
+    format!(
+        "name: fuzz\nruntime: yaml\nconfig:\n  env:\n    type: string\n  member:\n    type: string\n  token:\n    type: string\n    secret: true\n  gcp:project:\n    type: string\nvariables:\n  name: x-${{env}}-{}\nresources:\n  r:\n    type: gcp:bigquery:Dataset\n    properties:\n      datasetId: ${{name}}\n      project: ${{gcp:project}}\n      token: ${{token}}\n      tok2: pre-${{token}}\n  ref:\n    type: pulumi:pulumi:StackReference\n    properties:\n      name: ${{env}}\n  g:\n    type: gcp:projects:IAMMember\n    properties:\n      project: ${{r.project}}\n      role: roles/viewer\n      member: ${{member}}\n",
+        serde_json::to_string(input).unwrap_or_default()
+    )
+}
+
 fuzz_target!(|data: &[u8]| {
     let Ok(input) = std::str::from_utf8(data) else {
         return;
@@ -209,6 +281,10 @@ fuzz_target!(|data: &[u8]| {
     }
 
     export_and_check(input);
+    export_with_host_options(input, input);
+    if input.len() <= 4 * 1024 {
+        export_with_host_options(&config_template(input), input);
+    }
 
     // The generated template embeds the same bytes as `str` arguments. Its
     // regex work is bounded but not free, so it takes the smaller inputs.
