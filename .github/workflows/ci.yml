@@ -138,7 +138,7 @@ jobs:
           RUSTFLAGS: ""
         run: |
           set -euo pipefail
-          measure() {  # $1 = source dir, $2 = target dir, $3 = output json
+          measure() {  # $1 = source dir, $2 = target dir, $3 = output json (absolute: measure cds into $1)
             ( cd "$1"
               export CARGO_TARGET_DIR="$2"
               cargo build --release -p pulumi-rs-yaml-language -p pulumi-rs-yaml-converter -p pulumi-rs-yaml-python
@@ -155,14 +155,14 @@ jobs:
           for tag in $(git tag --merged HEAD --sort=-v:refname 'v*'); do
             if [ "$(git rev-list -n1 "$tag")" != "$head" ]; then previous="$tag"; break; fi
           done
-          measure "$PWD" "$PWD/target" current.json
+          measure "$PWD" "$PWD/target" "$PWD/current.json"
           if [ -z "$previous" ]; then
             echo "no previous release tag; nothing to gate against" | tee -a "$GITHUB_STEP_SUMMARY"
             cp current.json previous.json
             echo "PREVIOUS=none" >> "$GITHUB_ENV"
           else
             git worktree add --detach ../previous "$previous"
-            measure "$PWD/../previous" "$PWD/../previous-target" previous.json
+            measure "$PWD/../previous" "$PWD/../previous-target" "$PWD/previous.json"
             echo "PREVIOUS=$previous" >> "$GITHUB_ENV"
           fi
       - name: Gate at +2% per artefact
