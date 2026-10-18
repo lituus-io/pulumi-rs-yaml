@@ -77,6 +77,14 @@ pub fn parse_backend(url: &str) -> Option<Backend<'_>> {
     if base.len() <= scheme.len() + 3 {
         return None;
     }
+    // A `.` or `..` segment (a bucket named `.`, or a dot path under `file://`)
+    // is no valid location and would put a dot-segment into every URI.
+    if base[scheme.len() + 3..]
+        .split('/')
+        .any(|seg| seg == "." || seg == "..")
+    {
+        return None;
+    }
     Some(Backend::SelfManaged { base })
 }
 
@@ -323,6 +331,23 @@ fn percent_encode(f: &mut fmt::Formatter<'_>, s: &str) -> fmt::Result {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_dot_segment_names_no_backend() {
+        for url in [
+            "gs://.",
+            "gs://..",
+            "gs://./x",
+            "s3://b/../c",
+            "file://./state",
+            "file:///a/./b",
+            "azblob://c/..",
+        ] {
+            assert_eq!(super::parse_backend(url), None, "{url}");
+        }
+        assert!(super::parse_backend("gs://bucket/a.b/.c").is_some());
+        assert!(super::parse_backend("file://~").is_some());
+    }
+
     use super::*;
 
     fn stack(url: &str, org_known: bool) -> Option<String> {
