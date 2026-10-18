@@ -38,8 +38,14 @@ fuzz_target!(|input: Input<'_>| {
         Value::String(Cow::Borrowed(input.from))
     } else {
         Value::Object(vec![
-            (Cow::Borrowed("from"), Value::String(Cow::Borrowed(input.from))),
-            (Cow::Borrowed("length"), Value::Number(f64::from(input.length))),
+            (
+                Cow::Borrowed("from"),
+                Value::String(Cow::Borrowed(input.from)),
+            ),
+            (
+                Cow::Borrowed("length"),
+                Value::Number(f64::from(input.length)),
+            ),
             (
                 Cow::Borrowed("alphabet"),
                 Value::String(Cow::Borrowed(input.alphabet)),

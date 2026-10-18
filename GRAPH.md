@@ -71,9 +71,13 @@ directly (`bq load ... infra.nodes graph-export/nodes.ndjson.gz`).
 ### Where state lives: stack and resource URIs
 
 Given the backend the stacks live in, the export says where each one's state
-is. Pass it with `--backend-url` (else `PULUMI_BACKEND_URL`, else
-`backend.url` in `Pulumi.yaml`), or `backend_url=` from Python (else
-`backend.url`; `""` turns the fallback off):
+is. Pass it with `--backend-url` or `backend_url=` from Python. Without it,
+both use one resolver, in Pulumi's own order: `PULUMI_BACKEND_URL`, then
+`backend.url` in `Pulumi.yaml`, then the Pulumi workspace's current backend
+(`current` in `$PULUMI_HOME/credentials.json`, default `~/.pulumi`; nothing
+else in that file is read). The graph's `backend_source` says which applied --
+`argument`, `env`, `project` or `workspace` -- and is absent when none did.
+From Python, `backend_url=""` turns every fallback off:
 
 ```bash
 pulumi-language-yaml graph --stack prod --organization my-org \
@@ -101,6 +105,39 @@ pulumi-language-yaml graph --stack prod --organization my-org \
   backend at all adds no URI fields, and the output is what it always was.
 - Pulumi Cloud URIs are omitted when the organization is not known, since they
   would name the wrong one.
+
+#### Host identity, exact references, organization
+
+- `project_override` / `stack_override` (Python) export the stack under the
+  identity a host deploys it with -- a path-canonical project and stack, say.
+  Every id and URI uses it; config keys stay namespaced by the program's own
+  `name`.
+- `reference_backends={"org/project/stack": "gs://bucket/prefix", ...}` gives
+  each referenced stack's exact backend (keys normalized like the reference:
+  `stack`, `project/stack` or `org/project/stack`). A StackReference found
+  there carries `"resolved": "exact"`; one not found falls back to the
+  declaring stack's own backend with `"resolved": "literal"`. A backend in
+  the map that this exporter does not recognise yields no URI rather than a
+  guess. Without the map there is no `resolved` key.
+- On a self-managed backend there is no organization (Pulumi calls it
+  `organization`), so every stack on one mints `stackoutput::organization/...`
+  ids whatever organization a caller passes, and a three-part reference's
+  organization is read as that too. Exporter and consumer ids line up by
+  construction; no warning is printed. Pulumi Cloud keeps the real
+  organization.
+
+#### Cross-stack resolution
+
+`resolve_cross_stack([graph, ...])` (Rust: `cross_stack::resolve_cross_stack`)
+joins every `consumes_stack_output` edge to the resources the exporting
+stack's `exports` edges name, in linear time:
+
+```json
+[{"consumer_edge": {"source_id": "urn:pulumi:...::Table::t",
+                    "target_id": "stackoutput::organization/producer/prod::datasetId"},
+  "exporter_resource_id": "urn:pulumi:...::Dataset::ds",
+  "output_key": "datasetId"}]
+```
 
 Tables created before these columns existed take them with
 `bq load --schema_update_option=ALLOW_FIELD_ADDITION`, or an `ALTER TABLE ...
@@ -265,6 +302,113 @@ FROM infra.lineage_edges e
 JOIN infra.lineage_statements s ON s.id = e.source_id
 JOIN infra.lineage_statement_occurrences o ON o.statement_id = s.id
 WHERE e.relationship = 'writes' AND e.target_id = 'bq://data-proj/marts/daily';
+```
+
+## Host-supplied config
+
+A config value is dynamic to the program alone, so by default it is never a
+literal. A host that knows the stack's PLAINTEXT config passes it as
+`config={"project:key": "value", "gcp:project": "...", ...}` (Python; Rust:
+`GraphExportOptions::config` / `SqlLineageOptions::config`) -- the keys of
+`Pulumi.<stack>.yaml`, with every `secure:` value dropped first. The Python
+binding refuses a `{"secure": ...}` value outright, and a key the program
+declares `secret: true` never resolves whatever is passed.
+
+Resolution is the deploy's: the declared key by its own name or with the
+project namespace stripped (`${k}`, `${proj:k}`, `${gcp:k}`); the value under
+`{project}:{key}`, then `{key}`, then the declaration's `value:`, then its
+`default:`; parsed by the declared type (`integer` `030` is `30`). Only
+scalar types resolve, only at the top level (inside a component body a free
+name is an input), and a value read from config is listed in the node's
+`config_properties` (`"source": "config"`). Without `config` the output is
+byte-identical.
+
+`Pulumi.<stack>.yaml` itself is never read as a program file: a file in the
+project directory with `config:` and nothing else is skipped whole, and one
+with only an `encryptionsalt:` or an empty `config: {}` merges nothing.
+
+## IAM graph
+
+`export_iam_graph` (Python, same arguments as `export_dependency_graph`; Rust:
+`iam_graph::export_iam_graph`) is a projection of the infrastructure walk, so
+its resource ids are the infra graph's URNs.
+
+| Row | Id | Notes |
+|---|---|---|
+| `principal` node | `principal::{member}` | `principal_type`: `user`, `group`, `serviceAccount`, `domain`, `principal`, `principalSet`, `special`, ... The email of a user, group, service account or domain is lowercased. |
+| `role` node | `role::{role}` | |
+| `has_role` edge | principal (or resource) -> resource URN | `role_id`, `binding_id` (the IAM resource's URN), `property_path`, `member_source`: `literal`, `config` or `resource` |
+
+- A binding is any resource whose type name ends `IAMMember`/`IamMember`
+  (`member`) or `IAMBinding`/`IamBinding` (`members`), plus
+  `gcp:bigquery:DatasetAccess` (`userByEmail`, `groupByEmail`, `domain`,
+  `iamMember`, `specialGroup`). `*IAMPolicy` is not read.
+- The target is every in-program resource the binding's other properties
+  reference; with none (a literal project or dataset) it is the binding
+  itself, whose `literal_properties` name the target.
+- A member that is a resource output (`serviceAccount:${sa.email}`,
+  `${sa.member}`) is an edge FROM that resource.
+- `summary` accounts for every member: `member_resolved` (literal or config,
+  of which `member_from_config`), `member_from_resource`, and
+  `member_unresolved` -- each unresolved one also a warning naming it.
+
+## Resource keys
+
+One join key between the static graph and everything Google records about a
+deployed resource: its full resource name,
+`//{service}.googleapis.com/{relative-name}`. `resource_key(type,
+provider_id)` builds it from a Pulumi type and the provider id the deploy
+recorded; `resource_key_from_properties(type, props)` from literal
+properties when the id is a bare name; `bq_to_resource_key(id)` from a
+lineage id (`bq://p/d/t`, `bq-routine://p/d/r`) or a SQL reference
+(`p.d.t`); `bq_job_resource_key(p, location, job_id)` for a BigQuery job.
+
+| Pulumi type | Provider id (= relative name) | Key |
+|---|---|---|
+| `gcp:bigquery:Dataset` | `projects/{p}/datasets/{d}` | `//bigquery.googleapis.com/projects/{p}/datasets/{d}` |
+| `gcp:bigquery:Table` | `projects/{p}/datasets/{d}/tables/{t}` | `//bigquery.googleapis.com/projects/{p}/datasets/{d}/tables/{t}` |
+| `gcp:bigquery:Routine` | `projects/{p}/datasets/{d}/routines/{r}` | `//bigquery.googleapis.com/projects/{p}/datasets/{d}/routines/{r}` |
+| `gcp:bigquery:DataTransferConfig` | `projects/{p}/locations/{l}/transferConfigs/{id}` | `//bigquerydatatransfer.googleapis.com/projects/{p}/locations/{l}/transferConfigs/{id}` |
+| `gcp:workflows:Workflow` | `projects/{p}/locations/{l}/workflows/{w}` | `//workflows.googleapis.com/projects/{p}/locations/{l}/workflows/{w}` |
+| `gcp:cloudscheduler:Job` | `projects/{p}/locations/{l}/jobs/{j}` | `//cloudscheduler.googleapis.com/projects/{p}/locations/{l}/jobs/{j}` |
+| `gcp:cloudrunv2:Service` | `projects/{p}/locations/{l}/services/{s}` | `//run.googleapis.com/projects/{p}/locations/{l}/services/{s}` |
+| `gcp:cloudrunv2:Job` | `projects/{p}/locations/{l}/jobs/{j}` | `//run.googleapis.com/projects/{p}/locations/{l}/jobs/{j}` |
+| `gcp:storage:Bucket` | `{name}` | `//storage.googleapis.com/projects/_/buckets/{name}` |
+| `gcp:pubsub:Topic` | `projects/{p}/topics/{t}` | `//pubsub.googleapis.com/projects/{p}/topics/{t}` |
+| `gcp:pubsub:Subscription` | `projects/{p}/subscriptions/{s}` | `//pubsub.googleapis.com/projects/{p}/subscriptions/{s}` |
+| `gcp:dataproc:Batch` | `projects/{p}/locations/{l}/batches/{b}` | `//dataproc.googleapis.com/projects/{p}/locations/{l}/batches/{b}` |
+| `gcp:batch:Job` | `projects/{p}/locations/{l}/jobs/{j}` | `//batch.googleapis.com/projects/{p}/locations/{l}/jobs/{j}` |
+| `gcp:serviceaccount:Account` | `projects/{p}/serviceAccounts/{email}` | `//iam.googleapis.com/projects/{p}/serviceAccounts/{email}` |
+| (BigQuery job, runtime only) | `projects/{p}/jobs/{id}` + location | `//bigquery.googleapis.com/projects/{p}/locations/{l}/jobs/{id}` |
+
+Normalization (the same as the lineage ids): the project is lowercased, a
+domain-scoped project (`example.com:proj`) stays one segment, a table's
+`$partition` decorator is stripped, every other segment keeps its case. A
+segment that is empty or holds `/`, `#`, `?`, whitespace or a control
+character gives no key. The project is the project ID, never the number.
+
+The same templates in BigQuery SQL, for a view or a Workflow that builds keys
+from logs:
+
+```sql
+-- From a provider id that is already the relative name:
+CONCAT('//workflows.googleapis.com/', REGEXP_REPLACE(id, r'^projects/([^/]+)',
+       CONCAT('projects/', LOWER(REGEXP_EXTRACT(id, r'^projects/([^/]+)')))))
+-- Cloud Scheduler, from the log's jsonPayload.jobName:
+CONCAT('//cloudscheduler.googleapis.com/', JSON_VALUE(jsonPayload.jobName))
+-- Dataproc batch, from protoPayload.resourceName:
+CONCAT('//dataproc.googleapis.com/', protoPayload.resourceName)
+-- Cloud Run job, from resource labels:
+FORMAT('//run.googleapis.com/projects/%s/locations/%s/jobs/%s',
+       LOWER(resource.labels.project_id), resource.labels.location, resource.labels.job_name)
+-- BigQuery table, from a lineage id bq://p/d/t:
+FORMAT('//bigquery.googleapis.com/projects/%s/datasets/%s/tables/%s',
+       LOWER(SPLIT(SUBSTR(bq_id, 6), '/')[OFFSET(0)]),
+       SPLIT(SUBSTR(bq_id, 6), '/')[OFFSET(1)],
+       SPLIT(SPLIT(SUBSTR(bq_id, 6), '/')[OFFSET(2)], '#')[OFFSET(0)])
+-- BigQuery job:
+FORMAT('//bigquery.googleapis.com/projects/%s/locations/%s/jobs/%s',
+       LOWER(project_id), location, job_id)
 ```
 
 ## Property graph and GQL

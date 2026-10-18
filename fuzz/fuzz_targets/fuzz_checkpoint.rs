@@ -167,8 +167,7 @@ fuzz_target!(|data: &[u8]| {
 
     let none_named = ElementSpec::default();
     assert_eq!(
-        index_checkpoint_with_elements(data, None, Some(&none_named))
-            .map_err(|e| e.to_string()),
+        index_checkpoint_with_elements(data, None, Some(&none_named)).map_err(|e| e.to_string()),
         Ok(unfiltered.clone()),
         "a spec that names no type is not the scan that asked for nothing",
     );

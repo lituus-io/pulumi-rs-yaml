@@ -27,8 +27,10 @@
 //! `--backend-url` names where the stack's state lives (Pulumi Cloud or a
 //! `gs://`, `s3://`, `azblob://` or `file://` backend); without it the
 //! `PULUMI_BACKEND_URL` environment variable, then `backend.url` in
-//! `Pulumi.yaml`, are used. A known backend adds `stack_uri`,
-//! `referenced_stack_uri` and `resource_uri` to the graph.
+//! `Pulumi.yaml`, then the Pulumi workspace's current backend are used --
+//! the one resolver the Python binding uses too -- and `backend_source`
+//! names which. A known backend adds `stack_uri`, `referenced_stack_uri` and
+//! `resource_uri` to the graph.
 //!
 //! `json` (default) prints one pretty document to stdout. `ndjson`
 //! writes `nodes.ndjson` and `edges.ndjson` (one flat row per line) to
@@ -229,13 +231,10 @@ pub fn run_graph(args: &[String]) -> i32 {
         }
     };
     let project_name = prepass.name;
-    let environment_backend = std::env::var("PULUMI_BACKEND_URL").ok();
-    let backend_url = pulumi_rs_yaml_core::stack_uri::resolve_backend_url(
+    let (backend_url, backend_source) = pulumi_rs_yaml_core::stack_uri::discover_backend(
         parsed.backend_url.as_deref(),
-        environment_backend.as_deref(),
         prepass.backend_url.as_deref(),
-    )
-    .map(str::to_owned);
+    );
 
     let dir_str = parsed.dir.to_string_lossy().into_owned();
     let scoped = prepass.provider_templated_packages;
@@ -273,6 +272,8 @@ pub fn run_graph(args: &[String]) -> i32 {
         source_map: Some(&source_map),
         schema_store: None,
         backend_url: backend_url.as_deref(),
+        backend_source: backend_url.is_some().then_some(backend_source),
+        ..Default::default()
     };
     let (graph, diags) = export_resource_graph(&template, &opts);
     for diag in diags.iter() {
@@ -306,6 +307,7 @@ pub fn run_graph(args: &[String]) -> i32 {
             sql_sources: sql_sources.as_ref(),
             include_statements: parsed.sql_statements,
             script_column_lineage: parsed.script_column_lineage,
+            config: None,
         };
         let (lineage, lineage_diags) = export_sql_lineage(&template, &graph, &lineage_opts);
         for diag in lineage_diags.iter() {

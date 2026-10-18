@@ -68,8 +68,8 @@ fuzz_target!(|data: &[u8]| {
     // refused says so in its message.
     {
         use pulumi_rs_yaml_core::jinja::{
-            IncludeRefusal, JinjaContext, JinjaPreprocessor, RenderErrorKind,
-            TemplatePreprocessor, UndefinedMode,
+            IncludeRefusal, JinjaContext, JinjaPreprocessor, RenderErrorKind, TemplatePreprocessor,
+            UndefinedMode,
         };
         let config = std::collections::HashMap::new();
         let extra = std::collections::HashMap::new();

@@ -14,7 +14,7 @@ use crate::ast::expr::Expr;
 use crate::ast::template::{ResourceEntry, ResourceProperties};
 use crate::diag::Diagnostics;
 use crate::jinja::resolve_contained_path;
-use crate::literal_resolve::resolve_literal;
+use crate::literal_resolve::{resolve_literal, Vars};
 
 /// Where a SQL string came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -70,7 +70,7 @@ pub(crate) struct SqlText<'src> {
 /// render time and arrives here as a plain literal.
 pub(crate) fn resolve_sql_text<'src>(
     expr: &'src Expr<'src>,
-    variables: &HashMap<&'src str, &'src Expr<'src>>,
+    variables: &Vars<'src, '_>,
     project_dir: Option<&Path>,
     store: Option<&'src super::SqlSourceStore>,
     context: &str,
@@ -135,7 +135,7 @@ pub(crate) fn resolve_sql_text<'src>(
 /// Resolves a literal string property trying several key spellings.
 pub(crate) fn literal_prop<'src>(
     entry: &'src ResourceEntry<'src>,
-    variables: &HashMap<&'src str, &'src Expr<'src>>,
+    variables: &Vars<'src, '_>,
     keys: &[&str],
 ) -> Option<Cow<'src, str>> {
     let mut memo = HashMap::new();
@@ -204,7 +204,7 @@ fn collect_json_field(field: &serde_json::Value, prefix: Option<&str>, out: &mut
 /// `alterFrom` pairs.
 pub(crate) fn parse_schema_yaml<'src>(
     expr: &'src Expr<'src>,
-    variables: &HashMap<&'src str, &'src Expr<'src>>,
+    variables: &Vars<'src, '_>,
 ) -> Option<Vec<ColumnDef>> {
     let Expr::List(_, items) = expr else {
         return None;
@@ -287,7 +287,7 @@ mod tests {
         let t = parsed(
             "name: p\nruntime: yaml\nresources:\n  r:\n    type: t:m:X\n    properties:\n      sql: SELECT 1\n",
         );
-        let vars = HashMap::new();
+        let vars = crate::literal_resolve::Vars::empty();
         let mut diags = Diagnostics::new();
         let expr = get_property_by_path(&t.resources[0].resource.properties, "sql").expect("sql");
         let (text, prov) = resolve_sql_text(expr, &vars, None, None, "r.sql", &mut diags)
@@ -304,7 +304,7 @@ mod tests {
         let t = parsed(
             "name: p\nruntime: yaml\nresources:\n  r:\n    type: t:m:X\n    properties:\n      sql:\n        fn::readFile: q.sql\n",
         );
-        let vars = HashMap::new();
+        let vars = crate::literal_resolve::Vars::empty();
         let mut diags = Diagnostics::new();
         let expr = get_property_by_path(&t.resources[0].resource.properties, "sql").expect("sql");
         let (text, prov) =
@@ -321,7 +321,7 @@ mod tests {
         let t = parsed(
             "name: p\nruntime: yaml\nresources:\n  r:\n    type: t:m:X\n    properties:\n      sql:\n        fn::readFile: ../../etc/passwd\n",
         );
-        let vars = HashMap::new();
+        let vars = crate::literal_resolve::Vars::empty();
         let mut diags = Diagnostics::new();
         let expr = get_property_by_path(&t.resources[0].resource.properties, "sql").expect("sql");
         assert!(
@@ -348,7 +348,7 @@ mod tests {
         let t = parsed(
             "name: p\nruntime: yaml\nresources:\n  r:\n    type: t:m:X\n    properties:\n      columns:\n        - name: user_id\n          type: STRING\n        - name: event_kind\n          type: STRING\n          alter: rename\n          alterFrom: event_type\n",
         );
-        let vars = HashMap::new();
+        let vars = crate::literal_resolve::Vars::empty();
         let expr =
             get_property_by_path(&t.resources[0].resource.properties, "columns").expect("cols");
         let cols = parse_schema_yaml(expr, &vars).expect("parsed");

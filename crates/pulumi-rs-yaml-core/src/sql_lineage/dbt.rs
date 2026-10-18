@@ -15,7 +15,7 @@ use crate::ast::expr::Expr;
 use crate::ast::template::ResourceEntry;
 use crate::diag::Diagnostics;
 use crate::jinja::{extract_root_identifier, find_expression_end, strip_jinja_blocks};
-use crate::literal_resolve::resolve_literal;
+use crate::literal_resolve::{resolve_literal, Vars};
 
 use super::ids::{table_name, TableName, UNRESOLVED};
 use super::resolve::{get_property_by_path, literal_prop};
@@ -69,7 +69,7 @@ fn symbol_root<'src>(expr: &'src Expr<'src>) -> Option<&'src str> {
 impl DbtEnv {
     pub(crate) fn build_scope<'src>(
         resources: &'src [ResourceEntry<'src>],
-        variables: &HashMap<&'src str, &'src Expr<'src>>,
+        variables: &Vars<'src, '_>,
         diags: &mut Diagnostics,
     ) -> Self {
         let mut projects = BTreeMap::new();
@@ -141,10 +141,7 @@ impl DbtEnv {
     }
 }
 
-fn build_project<'src>(
-    entry: &'src ResourceEntry<'src>,
-    variables: &HashMap<&'src str, &'src Expr<'src>>,
-) -> DbtProject {
+fn build_project<'src>(entry: &'src ResourceEntry<'src>, variables: &Vars<'src, '_>) -> DbtProject {
     let gcp_project =
         literal_prop(entry, variables, &["gcpProject", "project"]).map(Cow::into_owned);
     let dataset = literal_prop(entry, variables, &["dataset"]).map(Cow::into_owned);
@@ -191,7 +188,7 @@ fn build_project<'src>(
 
 fn build_macro<'src>(
     entry: &'src ResourceEntry<'src>,
-    variables: &HashMap<&'src str, &'src Expr<'src>>,
+    variables: &Vars<'src, '_>,
 ) -> Option<DbtMacro> {
     let sql = literal_prop(entry, variables, &["sql"])?.into_owned();
     let mut args = Vec::new();
@@ -209,7 +206,7 @@ fn build_macro<'src>(
 
 fn build_model<'src>(
     entry: &'src ResourceEntry<'src>,
-    variables: &HashMap<&'src str, &'src Expr<'src>>,
+    variables: &Vars<'src, '_>,
     projects: &BTreeMap<String, DbtProject>,
     diags: &mut Diagnostics,
 ) -> DbtModel {
@@ -637,7 +634,7 @@ mod tests {
     );
 
     fn build_env(template: &'static TemplateDecl<'static>) -> (DbtEnv, Diagnostics) {
-        let vars = HashMap::new();
+        let vars = crate::literal_resolve::Vars::empty();
         let mut diags = Diagnostics::new();
         let env = DbtEnv::build_scope(&template.resources, &vars, &mut diags);
         (env, diags)

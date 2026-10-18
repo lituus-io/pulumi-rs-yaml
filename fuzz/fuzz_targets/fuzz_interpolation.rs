@@ -28,7 +28,8 @@ fuzz_target!(|data: &[u8]| {
 
     // parse_interpolation must never panic
     let mut diags = pulumi_rs_yaml_core::diag::Diagnostics::new();
-    let parts = pulumi_rs_yaml_core::ast::interpolation::parse_interpolation(input, None, &mut diags);
+    let parts =
+        pulumi_rs_yaml_core::ast::interpolation::parse_interpolation(input, None, &mut diags);
     for part in &parts {
         let _ = format!("{:?}", part);
     }

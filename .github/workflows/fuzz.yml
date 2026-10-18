@@ -102,6 +102,9 @@ jobs:
           - fuzz_scope_never_panics
           - fuzz_native_str
           - fuzz_checkpoint
+          - fuzz_stack_uri
+          - fuzz_cross_stack
+          - fuzz_iam_graph
     steps:
       - uses: actions/checkout@v4
 

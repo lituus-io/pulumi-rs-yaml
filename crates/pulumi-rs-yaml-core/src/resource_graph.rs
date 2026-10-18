@@ -61,10 +61,13 @@ use crate::ast::template::{
 use crate::ast::visitor::{walk_expr, AccessCollector};
 use crate::diag::Diagnostics;
 use crate::eval::graph;
-use crate::literal_resolve::{collect_literal_properties, resolve_literal};
+use crate::iam_graph::{self, IamCollector};
+use crate::literal_resolve::{
+    collect_literal_properties_sourced, resolve_literal, ConfigLookup, HostConfig, Vars,
+};
 use crate::packages;
 use crate::schema::SchemaStore;
-use crate::stack_uri::{parse_backend, Backend, StackUri};
+use crate::stack_uri::{parse_backend, Backend, BackendSource, StackUri};
 
 /// Current export schema version.
 pub const SCHEMA_VERSION: u32 = 1;
@@ -72,8 +75,11 @@ pub const SCHEMA_VERSION: u32 = 1;
 /// Maximum nested-component expansion depth.
 const MAX_COMPONENT_DEPTH: usize = 32;
 
-/// Placeholder used when no organization is configured.
-const ORG_PLACEHOLDER: &str = "organization";
+/// Placeholder used when no organization is configured -- and, on a
+/// self-managed backend, always: such a backend has no organization (Pulumi
+/// itself calls it `organization`), so every stack on it must mint the same
+/// `stackoutput::` ids whatever organization a caller happens to pass.
+pub const ORG_PLACEHOLDER: &str = "organization";
 
 /// Node kinds. Serialized snake_case; enum order is not part of the
 /// contract (nodes sort by id).
@@ -139,6 +145,15 @@ pub struct GraphNode<'src> {
     /// The resource's locator: its stack's URI with the URN as fragment.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_uri: Option<Cow<'src, str>>,
+    /// On a StackReference, when the host passed `reference_backends`: how
+    /// `referenced_stack_uri` was found -- `exact` from the host's map,
+    /// `literal` from the literal name on this stack's own backend.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolved: Option<&'static str>,
+    /// Paths in `literal_properties` whose value came from host-supplied
+    /// config (`"source": "config"`); absent without config.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub config_properties: Vec<Cow<'src, str>>,
 }
 
 /// One typed edge. Composite key: (source_id, target_id, relationship).
@@ -166,6 +181,10 @@ pub struct ResourceGraph<'src> {
     /// Where the exported stack's state lives, when a backend is known.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stack_uri: Option<Cow<'src, str>>,
+    /// Which source named the backend, when the caller resolved one through
+    /// [`crate::stack_uri::discover_backend`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backend_source: Option<BackendSource>,
     pub nodes: Vec<GraphNode<'src>>,
     pub edges: Vec<GraphEdge<'src>>,
 }
@@ -203,7 +222,10 @@ fn serialize_pairs_as_object<S: serde::Serializer>(
 }
 
 /// Options for [`export_resource_graph`].
-#[derive(Default)]
+///
+/// Every field after `backend_url` is optional and additive: left at its
+/// default, the export is byte-identical to one that never knew it.
+#[derive(Default, Clone, Copy)]
 pub struct GraphExportOptions<'src> {
     /// Pulumi organization; empty uses a documented placeholder in
     /// cross-stack ids (with a warning).
@@ -220,6 +242,58 @@ pub struct GraphExportOptions<'src> {
     /// resource URIs are derived. `None`, or a backend this crate does not
     /// recognise, adds none of them, and the output is what it always was.
     pub backend_url: Option<&'src str>,
+    /// The project the stack is deployed as, when the host renames it (a
+    /// path-canonical identity, say). Replaces `project` in every id and URI;
+    /// config keys stay namespaced by the program's own name.
+    pub project_override: Option<&'src str>,
+    /// The stack name the host deploys under, when it renames the stack.
+    pub stack_override: Option<&'src str>,
+    /// The exact backend of each referenced stack, keyed by its name as a
+    /// StackReference writes it (`org/project/stack`, `project/stack` or
+    /// `stack`; normalized like the reference). A StackReference found here
+    /// gets `referenced_stack_uri` on THAT backend and `resolved: exact`;
+    /// one not found falls back to this stack's backend, `resolved: literal`.
+    pub reference_backends: Option<&'src HashMap<String, String>>,
+    /// The stack's plaintext config, `Pulumi.<stack>.yaml` keys to values,
+    /// with every `secure:` value already dropped by the host. Config-valued
+    /// properties then resolve the way the deploy resolves them, and are
+    /// listed in `config_properties`. See [`crate::literal_resolve`].
+    pub config: Option<&'src HostConfig>,
+    /// Recorded on the graph as `backend_source`, for a caller that resolved
+    /// `backend_url` through [`crate::stack_uri::discover_backend`].
+    pub backend_source: Option<BackendSource>,
+}
+
+impl<'src> GraphExportOptions<'src> {
+    /// These options with the host's identity applied.
+    fn effective(&self) -> Self {
+        Self {
+            project: self.project_override.unwrap_or(self.project),
+            stack: self.stack_override.unwrap_or(self.stack),
+            ..*self
+        }
+    }
+
+    /// Whether the backend is a self-managed one, whose state paths carry no
+    /// organization.
+    fn self_managed(&self) -> bool {
+        matches!(
+            self.backend_url.and_then(parse_backend),
+            Some(Backend::SelfManaged { .. })
+        )
+    }
+
+    /// The organization ids embed, and whether it is the placeholder because
+    /// none was given.
+    fn identity_org(&self) -> (&'src str, bool) {
+        if self.organization.is_empty() {
+            (ORG_PLACEHOLDER, true)
+        } else if self.self_managed() {
+            (ORG_PLACEHOLDER, false)
+        } else {
+            (self.organization, false)
+        }
+    }
 }
 
 /// Exports the static dependency graph of a template.
@@ -232,17 +306,42 @@ pub fn export_resource_graph<'src>(
     template: &'src TemplateDecl<'src>,
     opts: &GraphExportOptions<'src>,
 ) -> (ResourceGraph<'src>, Diagnostics) {
+    let (graph, diags, _) = export_with_iam(template, opts, false);
+    (graph, diags)
+}
+
+/// The export, plus the IAM bindings it met when `collect_iam` is set. One
+/// walk serves both, so the IAM graph's resource ids are the infra graph's
+/// by construction.
+pub(crate) fn export_with_iam<'src>(
+    template: &'src TemplateDecl<'src>,
+    opts: &GraphExportOptions<'src>,
+    collect_iam: bool,
+) -> (ResourceGraph<'src>, Diagnostics, Option<IamCollector<'src>>) {
     let mut diags = Diagnostics::new();
+    // The program's own name namespaces its config, whatever identity the
+    // host exports it under.
+    let namespace = template.name.as_deref().unwrap_or(opts.project);
+    let opts = &opts.effective();
 
     let (_, sort_diags) = graph::topological_sort_with_sources(template, opts.source_map);
     let failed = sort_diags.has_errors();
     diags.extend(sort_diags);
     if failed {
-        return (empty_graph(opts), diags);
+        return (empty_graph(opts), diags, None);
     }
 
-    let mut ctx = Ctx::new(template, opts);
-    if ctx.org_placeholder && (!template.outputs.is_empty() || template_has_stack_ref(template)) {
+    let config = opts
+        .config
+        .map(|host| ConfigLookup::new(namespace, &template.config, host));
+    let mut ctx = Ctx::new(template, opts, config.as_ref());
+    if collect_iam {
+        ctx.iam = Some(IamCollector::default());
+    }
+    if ctx.org_placeholder
+        && !opts.self_managed()
+        && (!template.outputs.is_empty() || template_has_stack_ref(template))
+    {
         diags.warning(
             None,
             "organization not set; cross-stack ids use placeholder 'organization'",
@@ -275,14 +374,17 @@ pub fn export_resource_graph<'src>(
         stack_uri: ctx.own_stack_uri().map(Cow::Owned),
         referenced_stack_uri: None,
         resource_uri: None,
+        resolved: None,
+        config_properties: Vec::new(),
     });
 
-    // Top-level scope.
+    // Top-level scope: the only one host config reaches.
     let scope = Scope::build(
         &ctx,
         &template.resources,
         &template.variables,
         None,
+        ctx.config,
         &mut diags,
     );
 
@@ -330,6 +432,8 @@ pub fn export_resource_graph<'src>(
             stack_uri: None,
             referenced_stack_uri: None,
             resource_uri: None,
+            resolved: None,
+            config_properties: Vec::new(),
         });
         targets.clear();
         resolver.targets_of_expr(&output.value, &mut targets);
@@ -348,7 +452,7 @@ pub fn export_resource_graph<'src>(
     }
 
     let graph = finalize(opts, &ctx, nodes, edges, &mut diags);
-    (graph, diags)
+    (graph, diags, ctx.iam)
 }
 
 // ---------- internal machinery ----------
@@ -427,7 +531,7 @@ impl<'src> EdgeMap<'src> {
     }
 
     /// The interned id of every resource in `scope`, by index.
-    fn intern_scope(&mut self, scope: &Scope<'src>) -> Vec<usize> {
+    fn intern_scope(&mut self, scope: &Scope<'src, '_>) -> Vec<usize> {
         scope.infos.iter().map(|i| self.intern(&i.id)).collect()
     }
 
@@ -439,7 +543,7 @@ impl<'src> EdgeMap<'src> {
     #[allow(clippy::too_many_arguments)]
     fn add_target(
         &mut self,
-        scope: &Scope<'src>,
+        scope: &Scope<'src, '_>,
         ids: &[usize],
         source: usize,
         target: Target<'src>,
@@ -497,6 +601,12 @@ struct Ctx<'src, 'o> {
     opts: &'o GraphExportOptions<'src>,
     org: &'src str,
     org_placeholder: bool,
+    /// Host config for the top-level scope.
+    config: Option<&'o ConfigLookup<'src>>,
+    /// Referenced stacks' backends by normalized `org/project/stack`.
+    reference_backends: Option<HashMap<String, Option<Backend<'src>>>>,
+    /// IAM bindings, collected only for [`crate::iam_graph::export_iam_graph`].
+    iam: Option<IamCollector<'src>>,
     /// Accepted instance tokens → component decl.
     component_tokens: HashMap<String, &'src ComponentDecl<'src>>,
     /// Component key → verbatim registered token `{pkg}:index:{key}`.
@@ -506,13 +616,12 @@ struct Ctx<'src, 'o> {
 }
 
 impl<'src, 'o> Ctx<'src, 'o> {
-    fn new(template: &'src TemplateDecl<'src>, opts: &'o GraphExportOptions<'src>) -> Self {
-        let org_placeholder = opts.organization.is_empty();
-        let org = if org_placeholder {
-            ORG_PLACEHOLDER
-        } else {
-            opts.organization
-        };
+    fn new(
+        template: &'src TemplateDecl<'src>,
+        opts: &'o GraphExportOptions<'src>,
+        config: Option<&'o ConfigLookup<'src>>,
+    ) -> Self {
+        let (org, org_placeholder) = opts.identity_org();
         let pkg = template.name.as_deref().unwrap_or("yaml-components");
         let mut component_tokens = HashMap::new();
         let mut component_canonical = HashMap::new();
@@ -524,20 +633,69 @@ impl<'src, 'o> Ctx<'src, 'o> {
             component_tokens.insert(key.to_string(), comp);
             component_canonical.insert(key, canonical);
         }
-        Self {
+        let mut ctx = Self {
             opts,
             org,
             org_placeholder,
+            config,
+            reference_backends: None,
+            iam: None,
             component_tokens,
             component_canonical,
             backend: opts.backend_url.and_then(parse_backend),
+        };
+        if let Some(map) = opts.reference_backends {
+            let normalized = map
+                .iter()
+                .map(|(name, url)| (normalize_stack_fq(&ctx, name), parse_backend(url)))
+                .collect();
+            ctx.reference_backends = Some(normalized);
         }
+        ctx
     }
 
     /// The URI of stack `project`/`stack` in `organization`, on this backend.
     fn stack_uri(&self, organization: &str, project: &str, stack: &str) -> Option<String> {
+        self.stack_uri_on(self.backend?, organization, project, stack)
+    }
+
+    /// The URI of stack `project`/`stack` in `organization`, on `backend`.
+    fn stack_uri_on(
+        &self,
+        backend: Backend<'_>,
+        organization: &str,
+        project: &str,
+        stack: &str,
+    ) -> Option<String> {
         let known = organization != ORG_PLACEHOLDER || !self.org_placeholder;
-        StackUri::new(self.backend?, organization, known, project, stack).map(|u| u.to_string())
+        StackUri::new(backend, organization, known, project, stack).map(|u| u.to_string())
+    }
+
+    /// Where the stack `fq` (`org/project/stack`) keeps its state, and how
+    /// that was found: the host's exact map first, else this stack's backend.
+    fn referenced_stack_uri(&self, fq: &str) -> (Option<String>, Option<&'static str>) {
+        let mut parts = fq.splitn(3, '/');
+        let (Some(org), Some(project), Some(stack)) = (parts.next(), parts.next(), parts.next())
+        else {
+            return (None, None);
+        };
+        let Some(map) = &self.reference_backends else {
+            return (self.stack_uri(org, project, stack), None);
+        };
+        match map.get(fq) {
+            // The host named a backend this crate does not recognise: no URI
+            // rather than a same-bucket guess.
+            Some(None) => (None, None),
+            Some(Some(backend)) => (
+                self.stack_uri_on(*backend, org, project, stack),
+                Some("exact"),
+            ),
+            None => {
+                let uri = self.stack_uri(org, project, stack);
+                let resolved = uri.is_some().then_some("literal");
+                (uri, resolved)
+            }
+        }
     }
 
     /// The exported stack's own URI.
@@ -597,10 +755,10 @@ struct ResInfo<'src> {
 
 /// One namespace of resources/variables/config (the top level, or one
 /// component instance's body).
-struct Scope<'src> {
+struct Scope<'src, 'c> {
     infos: Vec<ResInfo<'src>>,
     by_name: HashMap<&'src str, usize>,
-    variables: HashMap<&'src str, &'src Expr<'src>>,
+    variables: Vars<'src, 'c>,
     // Config/input roots need no set: they simply match neither
     // `by_name` nor `variables`, so no edge is produced for them.
 }
@@ -615,22 +773,20 @@ struct InstancePrefix<'a, 'src> {
     source_file: Option<&'src str>,
 }
 
-impl<'src> Scope<'src> {
+impl<'src, 'c> Scope<'src, 'c> {
     fn build(
         ctx: &Ctx<'src, '_>,
         resources: &'src [ResourceEntry<'src>],
         variables: &'src [VariableEntry<'src>],
         prefix: Option<&InstancePrefix<'_, 'src>>,
+        config: Option<&'c ConfigLookup<'src>>,
         diags: &mut Diagnostics,
     ) -> Self {
         let mut by_name = HashMap::new();
         let mut infos: Vec<ResInfo<'src>> = Vec::with_capacity(resources.len());
         // Built once per scope; StackReference names and literal properties
         // both resolve through it.
-        let variables: HashMap<&'src str, &'src Expr<'src>> = variables
-            .iter()
-            .map(|v| (v.key.as_ref(), &v.value))
-            .collect();
+        let variables = Vars::from_entries(variables).with_config(config);
 
         // Pass 1: names, kinds, tokens.
         for entry in resources {
@@ -803,7 +959,7 @@ fn resolve_qualified(
 fn stack_reference_fq<'src>(
     ctx: &Ctx<'src, '_>,
     entry: &'src ResourceEntry<'src>,
-    var_map: &HashMap<&'src str, &'src Expr<'src>>,
+    var_map: &Vars<'src, '_>,
     diags: &mut Diagnostics,
 ) -> Option<String> {
     let name_prop = match &entry.resource.properties {
@@ -843,6 +999,11 @@ fn stack_reference_fq<'src>(
 
 fn normalize_stack_fq(ctx: &Ctx<'_, '_>, raw: &str) -> String {
     match raw.split('/').count() {
+        // A self-managed backend has one organization, whatever a name says.
+        3 if ctx.opts.self_managed() => match raw.split_once('/') {
+            Some((_, rest)) => format!("{}/{}", ORG_PLACEHOLDER, rest),
+            None => raw.to_string(),
+        },
         3 => raw.to_string(),
         2 => format!("{}/{}", ctx.org, raw),
         _ => format!("{}/{}/{}", ctx.org, ctx.opts.project, raw),
@@ -862,14 +1023,14 @@ enum Target<'src> {
 
 /// Resolves property accesses to targets, collapsing variables/config.
 struct ScopeResolver<'s, 'src> {
-    scope: &'s Scope<'src>,
+    scope: &'s Scope<'src, 's>,
     var_memo: HashMap<&'src str, Vec<Target<'src>>>,
     /// Reused across expressions.
     accesses: Vec<&'src PropertyAccess<'src>>,
 }
 
 impl<'s, 'src> ScopeResolver<'s, 'src> {
-    fn new(scope: &'s Scope<'src>) -> Self {
+    fn new(scope: &'s Scope<'src, 's>) -> Self {
         Self {
             scope,
             var_memo: HashMap::new(),
@@ -977,7 +1138,7 @@ fn output_key_of<'src>(access: &'src PropertyAccess<'src>) -> Option<&'src str> 
 /// component instances.
 fn emit_scope<'src>(
     ctx: &mut Ctx<'src, '_>,
-    scope: &Scope<'src>,
+    scope: &Scope<'src, '_>,
     nodes: &mut Vec<GraphNode<'src>>,
     edges: &mut EdgeMap<'src>,
     instantiation_stack: &mut Vec<&'src str>,
@@ -989,18 +1150,15 @@ fn emit_scope<'src>(
         StackUri::new(backend, ctx.org, known, ctx.opts.project, ctx.opts.stack)
     });
     for info in &scope.infos {
-        let referenced_stack_uri = match (&info.stack_fq, info.kind) {
+        let (referenced_stack_uri, resolved) = match (&info.stack_fq, info.kind) {
             (Some(fq), NodeKind::StackReference) => {
-                let mut parts = fq.splitn(3, '/');
-                match (parts.next(), parts.next(), parts.next()) {
-                    (Some(org), Some(project), Some(stack)) => {
-                        ctx.stack_uri(org, project, stack).map(Cow::Owned)
-                    }
-                    _ => None,
-                }
+                let (uri, resolved) = ctx.referenced_stack_uri(fq);
+                (uri.map(Cow::Owned), resolved)
             }
-            _ => None,
+            _ => (None, None),
         };
+        let (literal_properties, config_properties) =
+            collect_literal_properties_sourced(info.entry, &scope.variables);
         nodes.push(GraphNode {
             id: Cow::Owned(info.id.clone()),
             kind: info.kind,
@@ -1015,17 +1173,22 @@ fn emit_scope<'src>(
                 .or_else(|| info.component_id.clone().map(Cow::Owned)),
             component_id: info.component_id.clone().map(Cow::Owned),
             source_file: info.source_file,
-            literal_properties: collect_literal_properties(info.entry, &scope.variables),
+            literal_properties,
             organization: Cow::Borrowed(ctx.org),
             project: Cow::Borrowed(ctx.opts.project),
             stack: Cow::Borrowed(ctx.opts.stack),
             stack_uri: None,
             referenced_stack_uri,
             resource_uri: own_stack.map(|s| Cow::Owned(s.resource(&info.id).to_string())),
+            resolved,
+            config_properties,
         });
     }
 
     emit_typed_edges(scope, edges);
+    if let Some(iam) = ctx.iam.as_mut() {
+        collect_iam_bindings(scope, iam);
+    }
 
     // Expand local component instances.
     for info in &scope.infos {
@@ -1059,11 +1222,14 @@ fn emit_scope<'src>(
             instance_id: &info.id,
             source_file: info.source_file,
         };
+        // A name inside a component body that is not a variable is one of the
+        // component's inputs, never stack config.
         let child_scope = Scope::build(
             ctx,
             &comp.component.resources,
             &comp.component.variables,
             Some(&prefix),
+            None,
             diags,
         );
         for child in &child_scope.infos {
@@ -1084,7 +1250,7 @@ fn package_of<'src>(token: &Cow<'src, str>) -> Option<Cow<'src, str>> {
 
 /// Typed edges for every resource in a scope (replaces the untyped
 /// merged walk in `eval::graph`).
-fn emit_typed_edges<'src>(scope: &Scope<'src>, edges: &mut EdgeMap<'src>) {
+fn emit_typed_edges<'src>(scope: &Scope<'src, '_>, edges: &mut EdgeMap<'src>) {
     let mut resolver = ScopeResolver::new(scope);
     let mut targets: Vec<Target<'src>> = Vec::new();
     let ids = edges.intern_scope(scope);
@@ -1233,11 +1399,7 @@ fn emit_typed_edges<'src>(scope: &Scope<'src>, edges: &mut EdgeMap<'src>) {
 }
 
 fn empty_graph<'src>(opts: &GraphExportOptions<'src>) -> ResourceGraph<'src> {
-    let org = if opts.organization.is_empty() {
-        ORG_PLACEHOLDER
-    } else {
-        opts.organization
-    };
+    let (org, placeholder) = opts.identity_org();
     ResourceGraph {
         schema_version: SCHEMA_VERSION,
         organization: Cow::Borrowed(org),
@@ -1247,15 +1409,10 @@ fn empty_graph<'src>(opts: &GraphExportOptions<'src>) -> ResourceGraph<'src> {
             .backend_url
             .and_then(parse_backend)
             .and_then(|backend| {
-                StackUri::new(
-                    backend,
-                    org,
-                    !opts.organization.is_empty(),
-                    opts.project,
-                    opts.stack,
-                )
-                .map(|u| Cow::Owned(u.to_string()))
+                StackUri::new(backend, org, !placeholder, opts.project, opts.stack)
+                    .map(|u| Cow::Owned(u.to_string()))
             }),
+        backend_source: opts.backend_source,
         nodes: Vec::new(),
         edges: Vec::new(),
     }
@@ -1302,8 +1459,56 @@ fn finalize<'src>(
         project: Cow::Borrowed(opts.project),
         stack: Cow::Borrowed(opts.stack),
         stack_uri: ctx.own_stack_uri().map(Cow::Owned),
+        backend_source: opts.backend_source,
         nodes,
         edges,
+    }
+}
+
+/// Records every IAM binding in `scope`: each member as a literal, a value
+/// read from config, the resource(s) whose output it is, or unresolved; the
+/// role likewise; and the resources the grant is on.
+fn collect_iam_bindings<'src>(scope: &Scope<'src, '_>, iam: &mut IamCollector<'src>) {
+    let mut resolver = ScopeResolver::new(scope);
+    let mut targets: Vec<Target<'src>> = Vec::new();
+    for info in &scope.infos {
+        if !matches!(info.kind, NodeKind::Resource | NodeKind::ComponentChild) {
+            continue;
+        }
+        let Some(shape) = iam_graph::binding_shape(&info.token) else {
+            continue;
+        };
+        let ResourceProperties::Map(props) = &info.entry.resource.properties else {
+            iam.unreadable(&info.id);
+            continue;
+        };
+        let mut resource_ids = |expr: &'src Expr<'src>, out: &mut Vec<String>| {
+            targets.clear();
+            resolver.targets_of_expr(expr, &mut targets);
+            for t in &targets {
+                if let Target::Node(i) = *t {
+                    let node = &scope.infos[i];
+                    if matches!(
+                        node.kind,
+                        NodeKind::Resource
+                            | NodeKind::ComponentChild
+                            | NodeKind::External
+                            | NodeKind::Component
+                    ) && !out.contains(&node.id)
+                    {
+                        out.push(node.id.clone());
+                    }
+                }
+            }
+        };
+        iam_graph::record_binding(
+            iam,
+            &info.id,
+            shape,
+            props,
+            &scope.variables,
+            &mut resource_ids,
+        );
     }
 }
 
@@ -1793,8 +1998,41 @@ mod tests {
         assert_eq!(props.get("replicas.1"), Some(&"r2"));
         assert!(
             !props.contains_key("envName"),
-            "config values are not literals"
+            "config values are not literals without host config"
         );
+        assert!(node(&graph, "ds").config_properties.is_empty());
+    }
+
+    #[test]
+    fn host_config_makes_config_values_literal_and_marks_them() {
+        let yaml = "name: proj\nruntime: yaml\nconfig:\n  env:\n    type: string\nresources:\n  ds:\n    type: gcp:bigquery:Dataset\n    properties:\n      datasetId: analytics\n      envName: ${env}\n";
+        let (template, d) = parse_template(yaml, None);
+        assert!(!d.has_errors());
+        let template: &'static TemplateDecl<'static> = Box::leak(Box::new(template));
+        let host: &'static HostConfig = Box::leak(Box::new(
+            [("proj:env".to_string(), "prod".to_string())]
+                .into_iter()
+                .collect(),
+        ));
+        let opts = GraphExportOptions {
+            organization: "org",
+            project: "proj",
+            stack: "dev",
+            config: Some(host),
+            ..Default::default()
+        };
+        let (graph, _) = export_resource_graph(template, &opts);
+        let n = node(&graph, "ds");
+        assert!(n
+            .literal_properties
+            .iter()
+            .any(|(k, v)| k == "envName" && v == "prod"));
+        assert_eq!(n.config_properties, vec![Cow::Borrowed("envName")]);
+        let json = graph.to_json().expect("json");
+        assert!(json.contains("\"config_properties\""));
+        // Without config the key is absent from the JSON altogether.
+        let (plain, _) = export(yaml);
+        assert!(!plain.to_json().expect("json").contains("config_properties"));
     }
 
     #[test]
@@ -1820,6 +2058,198 @@ mod tests {
             !props.contains_key("mixed"),
             "resource refs are not literals"
         );
+    }
+
+    // ---- host identity, reference backends, organization ----
+
+    fn export_opts(
+        yaml: &str,
+        opts: GraphExportOptions<'static>,
+    ) -> (ResourceGraph<'static>, Diagnostics) {
+        let (template, d) = parse_template(yaml, None);
+        assert!(!d.has_errors(), "{d}");
+        let template: &'static TemplateDecl<'static> = Box::leak(Box::new(template));
+        export_resource_graph(template, &opts)
+    }
+
+    const REF: &str = "name: app\nruntime: yaml\nresources:\n  near:\n    type: pulumi:pulumi:StackReference\n    properties:\n      name: base/prod\n  far:\n    type: pulumi:pulumi:StackReference\n    properties:\n      name: shared/prod\n  t:\n    type: gcp:bigquery:Table\n    properties:\n      datasetId: ${near.outputs.ds}\n";
+
+    #[test]
+    fn overrides_set_the_identity_ids_and_uris_are_built_on() {
+        let opts = GraphExportOptions {
+            project: "app",
+            stack: "dev",
+            project_override: Some("svc-dir"),
+            stack_override: Some("svc-dir"),
+            backend_url: Some("gs://state/prefix"),
+            ..Default::default()
+        };
+        let (g, _) = export_opts(REF, opts);
+        assert_eq!(g.project, "svc-dir");
+        assert_eq!(g.stack, "svc-dir");
+        assert_eq!(
+            g.stack_uri.as_deref(),
+            Some("gs://state/prefix/.pulumi/stacks/svc-dir/svc-dir.json")
+        );
+        assert_eq!(
+            node(&g, "t").id,
+            "urn:pulumi:svc-dir::svc-dir::gcp:bigquery/table:Table::t"
+        );
+        // Without overrides, the identity is the caller's, as before.
+        let (plain, _) = export_opts(
+            REF,
+            GraphExportOptions {
+                project: "app",
+                stack: "dev",
+                backend_url: Some("gs://state/prefix"),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            plain.stack_uri.as_deref(),
+            Some("gs://state/prefix/.pulumi/stacks/app/dev.json")
+        );
+    }
+
+    #[test]
+    fn reference_backends_give_the_exact_location() {
+        let refs: &'static HashMap<String, String> = Box::leak(Box::new(
+            [(
+                "shared/prod".to_string(),
+                "gs://other-bucket/team".to_string(),
+            )]
+            .into_iter()
+            .collect(),
+        ));
+        let opts = GraphExportOptions {
+            project: "app",
+            stack: "dev",
+            backend_url: Some("gs://state"),
+            reference_backends: Some(refs),
+            ..Default::default()
+        };
+        let (g, _) = export_opts(REF, opts);
+        let far = node(&g, "far");
+        assert_eq!(
+            far.referenced_stack_uri.as_deref(),
+            Some("gs://other-bucket/team/.pulumi/stacks/shared/prod.json")
+        );
+        assert_eq!(far.resolved, Some("exact"));
+        let near = node(&g, "near");
+        assert_eq!(
+            near.referenced_stack_uri.as_deref(),
+            Some("gs://state/.pulumi/stacks/base/prod.json")
+        );
+        assert_eq!(near.resolved, Some("literal"));
+        // Not passing the map adds no `resolved` key.
+        let (plain, _) = export_opts(
+            REF,
+            GraphExportOptions {
+                project: "app",
+                stack: "dev",
+                backend_url: Some("gs://state"),
+                ..Default::default()
+            },
+        );
+        assert!(!plain.to_json().expect("json").contains("\"resolved\""));
+    }
+
+    #[test]
+    fn an_unrecognised_reference_backend_gives_no_uri_rather_than_a_guess() {
+        let refs: &'static HashMap<String, String> = Box::leak(Box::new(
+            [(
+                "organization/shared/prod".to_string(),
+                "gs://u:p@b".to_string(),
+            )]
+            .into_iter()
+            .collect(),
+        ));
+        let opts = GraphExportOptions {
+            project: "app",
+            stack: "dev",
+            backend_url: Some("gs://state"),
+            reference_backends: Some(refs),
+            ..Default::default()
+        };
+        let (g, _) = export_opts(REF, opts);
+        let far = node(&g, "far");
+        assert_eq!(far.referenced_stack_uri, None);
+        assert_eq!(far.resolved, None);
+        assert!(!g.to_json().expect("json").contains("u:p"));
+    }
+
+    #[test]
+    fn a_self_managed_backend_uses_one_organization_and_does_not_warn() {
+        let yaml = "name: proj\nruntime: yaml\nresources:\n  a:\n    type: test:mod:A\n  r:\n    type: pulumi:pulumi:StackReference\n    properties:\n      name: acme/other/prod\noutputs:\n  x: ${a.id}\n";
+        for org in ["", "acme", "team-b"] {
+            let (g, d) = export_opts(
+                yaml,
+                GraphExportOptions {
+                    organization: org,
+                    project: "proj",
+                    stack: "dev",
+                    backend_url: Some("gs://s"),
+                    ..Default::default()
+                },
+            );
+            assert_eq!(
+                node(&g, "x").id,
+                "stackoutput::organization/proj/dev::x",
+                "{org}"
+            );
+            assert_eq!(g.organization, "organization");
+            assert!(
+                !d.iter().any(|d| d.summary.contains("organization not set")),
+                "{org}"
+            );
+            assert_eq!(
+                node(&g, "r").referenced_stack_uri.as_deref(),
+                Some("gs://s/.pulumi/stacks/other/prod.json")
+            );
+        }
+        // Pulumi Cloud keeps the real organization.
+        let (cloud, _) = export_opts(
+            yaml,
+            GraphExportOptions {
+                organization: "acme",
+                project: "proj",
+                stack: "dev",
+                backend_url: Some("https://api.pulumi.com"),
+                ..Default::default()
+            },
+        );
+        assert_eq!(node(&cloud, "x").id, "stackoutput::acme/proj/dev::x");
+        assert_eq!(
+            cloud.stack_uri.as_deref(),
+            Some("https://app.pulumi.com/acme/proj/dev")
+        );
+    }
+
+    #[test]
+    fn backend_source_is_recorded_only_when_given() {
+        let (g, _) = export_opts(
+            BASIC,
+            GraphExportOptions {
+                project: "proj",
+                stack: "dev",
+                backend_url: Some("gs://s"),
+                backend_source: Some(BackendSource::Workspace),
+                ..Default::default()
+            },
+        );
+        assert!(g
+            .to_json()
+            .expect("json")
+            .contains("\"backend_source\": \"workspace\""));
+        let (plain, _) = export_opts(
+            BASIC,
+            GraphExportOptions {
+                project: "proj",
+                stack: "dev",
+                ..Default::default()
+            },
+        );
+        assert!(!plain.to_json().expect("json").contains("backend_source"));
     }
 
     #[test]

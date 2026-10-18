@@ -1,0 +1,14 @@
+name: network
+runtime: yaml
+resources:
+  shared:
+    type: gcp:bigquery:Dataset
+    properties:
+      datasetId: shared
+  landing:
+    type: gcp:storage:Bucket
+    properties:
+      location: US
+outputs:
+  datasetId: ${shared.datasetId}
+  bucketName: ${landing.name}

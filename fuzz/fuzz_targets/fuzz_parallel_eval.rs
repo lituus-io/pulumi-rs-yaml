@@ -74,10 +74,7 @@ fuzz_target!(|data: &[u8]| {
     // sequential eagerly breaks on first error within a level, while parallel
     // lets the entire level complete).
     if !seq_errors {
-        assert!(
-            !par_errors,
-            "sequential succeeded but parallel failed"
-        );
+        assert!(!par_errors, "sequential succeeded but parallel failed");
         assert_eq!(
             seq_reg_count, par_reg_count,
             "sequential registered {} resources but parallel registered {}",

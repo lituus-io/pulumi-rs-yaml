@@ -1,0 +1,19 @@
+config:
+  gcp:project: sample-proj
+  graph-iam-bindings:group01: g-finance@example.com
+  graph-iam-bindings:group02: g-sales@example.com
+  graph-iam-bindings:group03: g-ops@example.com
+  graph-iam-bindings:group04: g-eng@example.com
+  graph-iam-bindings:group05: g-exec@example.com
+  graph-iam-bindings:group06: g-hr@example.com
+  graph-iam-bindings:group07: g-legal@example.com
+  graph-iam-bindings:sa01: ingest@sample-proj.iam.gserviceaccount.com
+  graph-iam-bindings:sa02: transform@sample-proj.iam.gserviceaccount.com
+  graph-iam-bindings:sa03: export@sample-proj.iam.gserviceaccount.com
+  graph-iam-bindings:sa04: monitor@sample-proj.iam.gserviceaccount.com
+  graph-iam-bindings:sa05: backfill@sample-proj.iam.gserviceaccount.com
+  graph-iam-bindings:opsDomain: ops.example.com
+  graph-iam-bindings:auditUser: audit@example.com
+  graph-iam-bindings:partnerGroup: partners@example.com
+  graph-iam-bindings:apiToken:
+    secure: v1:CIPHERTEXT-NEVER-EXPORTED

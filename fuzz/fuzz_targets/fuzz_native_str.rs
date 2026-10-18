@@ -65,11 +65,19 @@ fuzz_target!(|input: Input| {
 
     let (token, mut a) = match input.which {
         Which::Match => (
-            if input.slashed { "str:regexp/match:match" } else { "str:regexp:match" },
+            if input.slashed {
+                "str:regexp/match:match"
+            } else {
+                "str:regexp:match"
+            },
             args(&[("string", &input.subject), ("pattern", &input.pattern)]),
         ),
         Which::Replace => (
-            if input.slashed { "str:regexp/replace:replace" } else { "str:regexp:replace" },
+            if input.slashed {
+                "str:regexp/replace:replace"
+            } else {
+                "str:regexp:replace"
+            },
             args(&[
                 ("string", &input.subject),
                 ("old", &input.pattern),
@@ -77,7 +85,11 @@ fuzz_target!(|input: Input| {
             ]),
         ),
         Which::Split | Which::SplitWithCount(_) => (
-            if input.slashed { "str:regexp/split:split" } else { "str:regexp:split" },
+            if input.slashed {
+                "str:regexp/split:split"
+            } else {
+                "str:regexp:split"
+            },
             args(&[("string", &input.subject), ("on", &input.pattern)]),
         ),
         Which::Unhandled => (

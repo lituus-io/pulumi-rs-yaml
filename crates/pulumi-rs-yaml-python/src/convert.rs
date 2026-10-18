@@ -92,6 +92,41 @@ pub fn py_to_value(obj: &Bound<'_, PyAny>) -> PyResult<Value<'static>> {
     Ok(Value::String(Cow::Owned(s)))
 }
 
+/// Converts host-supplied stack config to the plaintext map the exporters
+/// take. A `str` passes through; a `bool`, `int` or `float` is rendered as
+/// the stack file writes it (`true`, `30`, `1.5`). A `{"secure": ...}` value
+/// is REFUSED -- secure config never crosses into the engine -- and any other
+/// structured value is left out, since no structured value can resolve to a
+/// scalar literal.
+pub fn py_config_map(dict: &Bound<'_, PyDict>) -> PyResult<HashMap<String, String>> {
+    let mut map = HashMap::with_capacity(dict.len());
+    for (k, v) in dict.iter() {
+        let key: String = k.extract()?;
+        if let Ok(d) = v.cast::<PyDict>() {
+            if d.contains("secure")? {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "config '{}' is a secure value; secure config is never accepted -- drop it before the call",
+                    key
+                )));
+            }
+            continue;
+        }
+        let rendered = if let Ok(b) = v.cast::<PyBool>() {
+            if b.is_true() { "true" } else { "false" }.to_string()
+        } else if let Ok(i) = v.cast::<PyInt>() {
+            i.extract::<i64>()?.to_string()
+        } else if let Ok(f) = v.cast::<PyFloat>() {
+            f.extract::<f64>()?.to_string()
+        } else if let Ok(s) = v.cast::<PyString>() {
+            s.extract()?
+        } else {
+            continue;
+        };
+        map.insert(key, rendered);
+    }
+    Ok(map)
+}
+
 /// Converts a Python dict to `HashMap<String, String>`.
 pub fn py_dict_to_string_map(dict: &Bound<'_, PyDict>) -> PyResult<HashMap<String, String>> {
     let mut map = HashMap::new();

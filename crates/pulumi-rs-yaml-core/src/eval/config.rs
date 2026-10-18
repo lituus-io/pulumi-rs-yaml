@@ -140,7 +140,7 @@ pub fn validate_config_type(value: &Value<'_>, declared: &str, key: &str, diags:
 }
 
 /// Parses a raw string config value into a typed Value.
-fn parse_config_value<'src>(
+pub(crate) fn parse_config_value<'src>(
     raw: &str,
     expected_type: ConfigType,
     diags: &mut Diagnostics,

@@ -1,0 +1,523 @@
+name: graph-iam-bindings
+runtime: yaml
+description: Graph-export acceptance -- IAM bindings shaped like a data platform's access stack (literal, config-valued and resource-output members).
+config:
+  gcp:project:
+    type: string
+  group01:
+    type: string
+  group02:
+    type: string
+  group03:
+    type: string
+  group04:
+    type: string
+  group05:
+    type: string
+  group06:
+    type: string
+  group07:
+    type: string
+  sa01:
+    type: string
+  sa02:
+    type: string
+  sa03:
+    type: string
+  sa04:
+    type: string
+  sa05:
+    type: string
+  opsDomain:
+    type: string
+  auditUser:
+    type: string
+  partnerGroup:
+    type: string
+  apiToken:
+    type: string
+    secret: true
+variables:
+  teamDomain: example.com
+  platformSa: platform-runner@sample-proj.iam.gserviceaccount.com
+resources:
+  etlSa:
+    type: gcp:serviceaccount:Account
+    properties:
+      accountId: etl-loader
+  reportSa:
+    type: gcp:serviceaccount:Account
+    properties:
+      accountId: report-runner
+  raw:
+    type: gcp:bigquery:Dataset
+    properties:
+      datasetId: raw
+      project: ${gcp:project}
+  curated:
+    type: gcp:bigquery:Dataset
+    properties:
+      datasetId: curated
+      project: ${gcp:project}
+  marts:
+    type: gcp:bigquery:Dataset
+    properties:
+      datasetId: marts
+      project: ${gcp:project}
+  sandbox:
+    type: gcp:bigquery:Dataset
+    properties:
+      datasetId: sandbox
+      project: ${gcp:project}
+  landing:
+    type: gcp:storage:Bucket
+    properties:
+      location: US
+  events:
+    type: gcp:pubsub:Topic
+  api:
+    type: gcp:cloudrunv2:Service
+    properties:
+      location: us-central1
+      template:
+        containers:
+          - image: us-docker.pkg.dev/cloudrun/container/hello
+  grant01:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${raw.datasetId}
+      project: ${raw.project}
+      role: roles/bigquery.dataViewer
+      member: "user:analyst01@example.com"
+  grant02:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${curated.datasetId}
+      project: ${curated.project}
+      role: roles/bigquery.dataEditor
+      member: "user:analyst02@example.com"
+  grant03:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${marts.datasetId}
+      project: ${marts.project}
+      role: roles/bigquery.dataViewer
+      member: "user:analyst03@example.com"
+  grant04:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${sandbox.datasetId}
+      project: ${sandbox.project}
+      role: roles/bigquery.dataEditor
+      member: "user:analyst04@example.com"
+  grant05:
+    type: gcp:storage:BucketIAMMember
+    properties:
+      bucket: ${landing.name}
+      role: roles/storage.objectViewer
+      member: "user:analyst05@example.com"
+  grant06:
+    type: gcp:projects:IAMMember
+    properties:
+      project: sample-proj
+      role: roles/bigquery.jobUser
+      member: "user:analyst06@example.com"
+  grant07:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${raw.datasetId}
+      project: ${raw.project}
+      role: roles/bigquery.dataViewer
+      member: "user:analyst07@example.com"
+  grant08:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${curated.datasetId}
+      project: ${curated.project}
+      role: roles/bigquery.dataEditor
+      member: "user:analyst08@example.com"
+  grant09:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${marts.datasetId}
+      project: ${marts.project}
+      role: roles/bigquery.dataViewer
+      member: "user:analyst09@example.com"
+  grant10:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${sandbox.datasetId}
+      project: ${sandbox.project}
+      role: roles/bigquery.dataEditor
+      member: "user:analyst10@example.com"
+  grant11:
+    type: gcp:storage:BucketIAMMember
+    properties:
+      bucket: ${landing.name}
+      role: roles/storage.objectViewer
+      member: "user:analyst11@example.com"
+  grant12:
+    type: gcp:projects:IAMMember
+    properties:
+      project: sample-proj
+      role: roles/bigquery.jobUser
+      member: "user:analyst12@example.com"
+  grant13:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${raw.datasetId}
+      project: ${raw.project}
+      role: roles/bigquery.dataViewer
+      member: "user:analyst13@example.com"
+  grant14:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${curated.datasetId}
+      project: ${curated.project}
+      role: roles/bigquery.dataEditor
+      member: "user:analyst14@example.com"
+  grant15:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${marts.datasetId}
+      project: ${marts.project}
+      role: roles/bigquery.dataViewer
+      member: "user:analyst15@example.com"
+  grant16:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${sandbox.datasetId}
+      project: ${sandbox.project}
+      role: roles/bigquery.dataEditor
+      member: "user:analyst16@example.com"
+  grant17:
+    type: gcp:storage:BucketIAMMember
+    properties:
+      bucket: ${landing.name}
+      role: roles/storage.objectViewer
+      member: "user:analyst17@example.com"
+  grant18:
+    type: gcp:projects:IAMMember
+    properties:
+      project: sample-proj
+      role: roles/bigquery.jobUser
+      member: "user:analyst18@example.com"
+  grant19:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${raw.datasetId}
+      project: ${raw.project}
+      role: roles/bigquery.dataViewer
+      member: "user:analyst19@example.com"
+  grant20:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${curated.datasetId}
+      project: ${curated.project}
+      role: roles/bigquery.dataEditor
+      member: "user:analyst20@example.com"
+  grant21:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${marts.datasetId}
+      project: ${marts.project}
+      role: roles/bigquery.dataViewer
+      member: "group:team01@example.com"
+  grant22:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${sandbox.datasetId}
+      project: ${sandbox.project}
+      role: roles/bigquery.dataEditor
+      member: "group:team02@example.com"
+  grant23:
+    type: gcp:storage:BucketIAMMember
+    properties:
+      bucket: ${landing.name}
+      role: roles/storage.objectViewer
+      member: "group:team03@example.com"
+  grant24:
+    type: gcp:projects:IAMMember
+    properties:
+      project: sample-proj
+      role: roles/bigquery.jobUser
+      member: "group:team04@example.com"
+  grant25:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${raw.datasetId}
+      project: ${raw.project}
+      role: roles/bigquery.dataViewer
+      member: "group:team05@example.com"
+  grant26:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${curated.datasetId}
+      project: ${curated.project}
+      role: roles/bigquery.dataEditor
+      member: "group:team06@example.com"
+  grant27:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${marts.datasetId}
+      project: ${marts.project}
+      role: roles/bigquery.dataViewer
+      member: "group:team07@example.com"
+  grant28:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${sandbox.datasetId}
+      project: ${sandbox.project}
+      role: roles/bigquery.dataEditor
+      member: "group:team08@example.com"
+  grant29:
+    type: gcp:storage:BucketIAMMember
+    properties:
+      bucket: ${landing.name}
+      role: roles/storage.objectViewer
+      member: "group:team09@example.com"
+  grant30:
+    type: gcp:projects:IAMMember
+    properties:
+      project: sample-proj
+      role: roles/bigquery.jobUser
+      member: "group:team10@example.com"
+  grant31:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${raw.datasetId}
+      project: ${raw.project}
+      role: roles/bigquery.dataViewer
+      member: "serviceAccount:svc01@sample-proj.iam.gserviceaccount.com"
+  grant32:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${curated.datasetId}
+      project: ${curated.project}
+      role: roles/bigquery.dataEditor
+      member: "serviceAccount:svc02@sample-proj.iam.gserviceaccount.com"
+  grant33:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${marts.datasetId}
+      project: ${marts.project}
+      role: roles/bigquery.dataViewer
+      member: "serviceAccount:svc03@sample-proj.iam.gserviceaccount.com"
+  grant34:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${sandbox.datasetId}
+      project: ${sandbox.project}
+      role: roles/bigquery.dataEditor
+      member: "serviceAccount:svc04@sample-proj.iam.gserviceaccount.com"
+  grant35:
+    type: gcp:storage:BucketIAMMember
+    properties:
+      bucket: ${landing.name}
+      role: roles/storage.objectViewer
+      member: "serviceAccount:svc05@sample-proj.iam.gserviceaccount.com"
+  grant36:
+    type: gcp:projects:IAMMember
+    properties:
+      project: sample-proj
+      role: roles/bigquery.jobUser
+      member: "serviceAccount:svc06@sample-proj.iam.gserviceaccount.com"
+  grant37:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${raw.datasetId}
+      project: ${raw.project}
+      role: roles/bigquery.dataViewer
+      member: "serviceAccount:svc07@sample-proj.iam.gserviceaccount.com"
+  grant38:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${curated.datasetId}
+      project: ${curated.project}
+      role: roles/bigquery.dataEditor
+      member: "serviceAccount:svc08@sample-proj.iam.gserviceaccount.com"
+  grant39:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${marts.datasetId}
+      project: ${marts.project}
+      role: roles/bigquery.dataViewer
+      member: "domain:${teamDomain}"
+  grant40:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${sandbox.datasetId}
+      project: ${sandbox.project}
+      role: roles/bigquery.dataEditor
+      member: "serviceAccount:${platformSa}"
+  grant41:
+    type: gcp:storage:BucketIAMMember
+    properties:
+      bucket: ${landing.name}
+      role: roles/storage.objectViewer
+      member: "user:Mixed.Case1@Example.com"
+  grant42:
+    type: gcp:projects:IAMMember
+    properties:
+      project: sample-proj
+      role: roles/bigquery.jobUser
+      member: "user:Mixed.Case2@Example.com"
+  grant43:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${raw.datasetId}
+      project: ${raw.project}
+      role: roles/bigquery.dataViewer
+      member: "user:Mixed.Case3@Example.com"
+  grant44:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${curated.datasetId}
+      project: ${curated.project}
+      role: roles/bigquery.dataEditor
+      member: "user:Mixed.Case4@Example.com"
+  grant45:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${marts.datasetId}
+      project: ${marts.project}
+      role: roles/bigquery.dataViewer
+      member: "group:data-readers@example.com"
+  grant46:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${sandbox.datasetId}
+      project: ${sandbox.project}
+      role: roles/bigquery.dataEditor
+      member: "user:auditor@example.com"
+  grant47:
+    type: gcp:storage:BucketIAMMember
+    properties:
+      bucket: ${landing.name}
+      role: roles/storage.objectViewer
+      member: "allAuthenticatedUsers"
+  grant48:
+    type: gcp:projects:IAMMember
+    properties:
+      project: sample-proj
+      role: roles/bigquery.jobUser
+      member: "principalSet://iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/ci/attribute.repository/org/repo"
+  grant49:
+    type: gcp:pubsub:TopicIAMMember
+    properties:
+      topic: ${events.name}
+      role: roles/pubsub.subscriber
+      member: "group:${group01}"
+  grant50:
+    type: gcp:cloudrunv2:ServiceIamMember
+    properties:
+      name: ${api.name}
+      location: us-central1
+      role: roles/run.invoker
+      member: "group:${group02}"
+  grant51:
+    type: gcp:projects:IAMMember
+    properties:
+      project: ${gcp:project}
+      role: roles/bigquery.user
+      member: "group:${group03}"
+  grant52:
+    type: gcp:pubsub:TopicIAMMember
+    properties:
+      topic: ${events.name}
+      role: roles/pubsub.subscriber
+      member: "group:${group04}"
+  grant53:
+    type: gcp:cloudrunv2:ServiceIamMember
+    properties:
+      name: ${api.name}
+      location: us-central1
+      role: roles/run.invoker
+      member: "group:${group05}"
+  grant54:
+    type: gcp:projects:IAMMember
+    properties:
+      project: ${gcp:project}
+      role: roles/bigquery.user
+      member: "group:${group06}"
+  grant55:
+    type: gcp:pubsub:TopicIAMMember
+    properties:
+      topic: ${events.name}
+      role: roles/pubsub.subscriber
+      member: "group:${group07}"
+  grant56:
+    type: gcp:cloudrunv2:ServiceIamMember
+    properties:
+      name: ${api.name}
+      location: us-central1
+      role: roles/run.invoker
+      member: "serviceAccount:${sa01}"
+  grant57:
+    type: gcp:projects:IAMMember
+    properties:
+      project: ${gcp:project}
+      role: roles/bigquery.user
+      member: "serviceAccount:${sa02}"
+  grant58:
+    type: gcp:pubsub:TopicIAMMember
+    properties:
+      topic: ${events.name}
+      role: roles/pubsub.subscriber
+      member: "serviceAccount:${sa03}"
+  grant59:
+    type: gcp:cloudrunv2:ServiceIamMember
+    properties:
+      name: ${api.name}
+      location: us-central1
+      role: roles/run.invoker
+      member: "serviceAccount:${sa04}"
+  grant60:
+    type: gcp:projects:IAMMember
+    properties:
+      project: ${gcp:project}
+      role: roles/bigquery.user
+      member: "serviceAccount:${sa05}"
+  grant61:
+    type: gcp:pubsub:TopicIAMMember
+    properties:
+      topic: ${events.name}
+      role: roles/pubsub.subscriber
+      member: "domain:${opsDomain}"
+  grant62:
+    type: gcp:cloudrunv2:ServiceIamMember
+    properties:
+      name: ${api.name}
+      location: us-central1
+      role: roles/run.invoker
+      member: "user:${auditUser}"
+  grant63:
+    type: gcp:projects:IAMMember
+    properties:
+      project: ${gcp:project}
+      role: roles/bigquery.user
+      member: "group:${partnerGroup}"
+  grant64:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${raw.datasetId}
+      role: roles/bigquery.dataEditor
+      member: serviceAccount:${etlSa.email}
+  grant65:
+    type: gcp:storage:BucketIAMMember
+    properties:
+      bucket: ${landing.name}
+      role: roles/storage.objectAdmin
+      member: ${etlSa.member}
+  grant66:
+    type: gcp:bigquery:DatasetIamMember
+    properties:
+      datasetId: ${marts.datasetId}
+      role: roles/bigquery.dataViewer
+      member: serviceAccount:${reportSa.email}
+  grant67:
+    type: gcp:projects:IAMMember
+    properties:
+      project: sample-proj
+      role: roles/bigquery.jobUser
+      member: ${reportSa.member}

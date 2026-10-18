@@ -3,6 +3,104 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.38
+
+### Where a referenced stack really is
+
+A graph's `stack_uri` was built from the identity the program declares, and a
+StackReference's `referenced_stack_uri` guessed that the other stack lives on
+the same backend. Both are wrong when a host deploys under another identity or
+keeps one state prefix per stack. All additive, all optional; without them the
+output is byte-identical to 0.5.37.
+
+- `GraphExportOptions::project_override` / `stack_override` (Python
+  `project_override=`, `stack_override=`): the identity the stack is deployed
+  as. Every id and URI uses it.
+- `reference_backends` (Python `reference_backends={name: backend}`): the
+  exact backend of each referenced stack. Such a reference carries
+  `"resolved": "exact"`; one not in the map `"resolved": "literal"`.
+- On a self-managed backend (`gs://`, `s3://`, `azblob://`, `file://`) there is
+  no organization, so every stack mints `stackoutput::organization/...` ids
+  whatever organization a caller passed, and the "organization not set"
+  warning is gone there. Exporter and consumer ids now line up by
+  construction. Pulumi Cloud is unchanged.
+- `cross_stack::resolve_cross_stack` (Python `resolve_cross_stack([graph,
+  ...])`): joins every `consumes_stack_output` edge to the resources the
+  exporting stack's `exports` edges name. Linear, borrowed, sorted.
+
+### One backend resolver
+
+The CLI read `PULUMI_BACKEND_URL`; the Python binding did not. Both now call
+`stack_uri::discover_backend`: the argument, `PULUMI_BACKEND_URL`, the
+project's `backend.url`, then the Pulumi workspace's current backend
+(`current` in `$PULUMI_HOME/credentials.json`; nothing else in it is read).
+The graph carries `backend_source` (`argument`, `env`, `project`,
+`workspace`) when one applied. `backend_url=""` still turns every fallback
+off. **Behaviour change:** a Python caller that passes no backend now gets
+URIs when the environment or workspace names one, as the CLI always did.
+
+### Host-supplied plaintext config
+
+`GraphExportOptions::config` and `SqlLineageOptions::config` (Python
+`config={...}` on all three exporters) take the stack's plaintext config. A
+name that is not a variable then falls back to it exactly as the deploy reads
+it: `${k}`, `${proj:k}` and `${gcp:k}`; `{project}:{key}`, then `{key}`, then
+`value:`, then `default:`; parsed by the declared type with the deploy's own
+parser. A `secret: true` key never resolves, the binding refuses a
+`{"secure": ...}` value, and a config-sourced literal is listed in the node's
+`config_properties`. Top-level scope only. Without `config` nothing reads
+config, and the two tests that pinned "config is never a literal" now pin it
+"without host config".
+
+A fixture settles that a `Pulumi.<stack>.yaml` beside the program is never
+read as a resource file: with `config:` and nothing else it is skipped whole,
+and with only `encryptionsalt:` or `config: {}` it merges nothing.
+
+### IAM graph
+
+`iam_graph::export_iam_graph` (Python `export_iam_graph`): `principal` and
+`role` nodes and `has_role` edges to the resource each role is held on, from
+every `*IAMMember`, `*IAMBinding` and `gcp:bigquery:DatasetAccess`. A member
+that is a resource output is an edge from that resource. `summary` accounts
+for every member (`member_resolved`, `member_from_config`,
+`member_from_resource`, `member_unresolved`). A projection of the infra walk,
+so its URNs are the infra graph's.
+
+### Resource keys
+
+`resource_key::resource_key(type, provider_id)` gives
+`//{service}.googleapis.com/{relative-name}` for BigQuery datasets, tables,
+routines and transfer configs, Workflows, Cloud Scheduler jobs, Cloud Run
+services and jobs, buckets, Pub/Sub topics and subscriptions, Dataproc
+batches, Batch jobs and service accounts; `resource_key_from_properties` builds
+one from literal properties; `bq_to_resource_key` maps a lineage id or SQL
+reference onto the same key; `bq_job_resource_key` keys a BigQuery job. The
+table is in `GRAPH.md` with its SQL. Lineage ids now accept a domain-scoped
+project (`example.com:proj.d.t`), which used to fail to parse.
+
+### CI
+
+The `binary-size` job now FAILS when any artefact -- both host builds, the
+converter, the Python extension -- grows more than 2% against the previous
+release, built in the same job.
+
+### Tests
+
+- Unit: config resolution (types, namespaces, value/default, secrets,
+  shadowing, invoke arguments), overrides, reference backends, organization,
+  backend order, credentials file, cross-stack join, IAM shapes and principal
+  kinds, every resource-key template and the keys the runtime capture builds.
+- Integration: `graph-multistack-gcs` (three stacks, one GCS prefix each:
+  exact URIs, four cross-stack links) and `graph-iam-bindings` (67 bindings:
+  48 literal, 15 config, 4 resource output; 63/67 resolved = 94.0%, the rest
+  resource edges, none unaccounted for).
+- Security (174 -> 178): credentialed reference backends, hostile override
+  names, secret config in every export, default output byte-identical.
+- Fuzz (23 -> 26 targets): `fuzz_stack_uri`, `fuzz_cross_stack`,
+  `fuzz_iam_graph`; `fuzz_resource_graph` exports with every host option.
+- Bench: `export_resource_graph_200_nodes_uris_config`,
+  `cross_stack_join_{100,1000}_stacks`, `iam_graph_{67,670}_bindings`.
+
 ## 0.5.37
 
 ### Column lineage through scripts

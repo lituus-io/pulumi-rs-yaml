@@ -1,0 +1,4 @@
+warning: dataset 'raw' identity not statically resolvable; project or datasetId is dynamic; lineage node omitted
+warning: dataset 'curated' identity not statically resolvable; project or datasetId is dynamic; lineage node omitted
+warning: dataset 'marts' identity not statically resolvable; project or datasetId is dynamic; lineage node omitted
+warning: dataset 'sandbox' identity not statically resolvable; project or datasetId is dynamic; lineage node omitted

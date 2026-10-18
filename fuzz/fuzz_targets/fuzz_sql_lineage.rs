@@ -79,7 +79,8 @@ fuzz_target!(|data: &[u8]| {
         "name: fuzz\nruntime: yaml\nresources:\n  r:\n    type: gcp:bigquery:Routine\n    properties:\n      project: proj\n      datasetId: ds\n      routineId: r\n      routineType: PROCEDURE\n      definitionBody: {}\n",
         serde_yaml::to_string(&input).unwrap_or_else(|_| "''".to_string())
     );
-    let (routine_template, _) = pulumi_rs_yaml_core::ast::parse::parse_template(&routine_yaml, None);
+    let (routine_template, _) =
+        pulumi_rs_yaml_core::ast::parse::parse_template(&routine_yaml, None);
     let (routine_infra, _) = export_resource_graph(&routine_template, &graph_opts);
     let (r1, _) = export_sql_lineage(&routine_template, &routine_infra, opts);
     let (r2, _) = export_sql_lineage(&routine_template, &routine_infra, opts);
@@ -106,7 +107,10 @@ fuzz_target!(|data: &[u8]| {
     for st in &s1.statements {
         if let Some(text) = &st.text {
             let digest = pulumi_rs_yaml_core::sha256::digest(text.as_bytes());
-            assert_eq!(st.id, format!("sql:{}", pulumi_rs_yaml_core::sha256::hex(&digest)));
+            assert_eq!(
+                st.id,
+                format!("sql:{}", pulumi_rs_yaml_core::sha256::hex(&digest))
+            );
             assert_eq!(st.byte_len, text.len());
         }
     }

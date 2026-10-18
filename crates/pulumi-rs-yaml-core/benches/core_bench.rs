@@ -798,6 +798,130 @@ fn bench_export_resource_graph(c: &mut Criterion) {
             black_box(graph.nodes.len())
         })
     });
+
+    // Every host option on: identity overrides, a reference-backend map and
+    // plaintext config. Held within 5% of the backend-only export above.
+    let refs: std::collections::HashMap<String, String> = (0..20)
+        .map(|i| (format!("org/producer{i}/prod"), format!("gs://other-{i}")))
+        .chain([(
+            "org/producer/prod".to_string(),
+            "gs://producer-state".to_string(),
+        )])
+        .collect();
+    let config: std::collections::HashMap<String, String> = (0..50)
+        .map(|i| (format!("bench:key{i}"), format!("value-{i}")))
+        .collect();
+    c.bench_function("export_resource_graph_200_nodes_uris_config", |b| {
+        b.iter(|| {
+            let opts = GraphExportOptions {
+                organization: "org",
+                project: "bench",
+                stack: "dev",
+                backend_url: Some("gs://bench-state"),
+                project_override: Some("bench-dir"),
+                stack_override: Some("bench-dir"),
+                reference_backends: Some(&refs),
+                config: Some(&config),
+                ..Default::default()
+            };
+            let (graph, _) = export_resource_graph(black_box(template), &opts);
+            black_box(graph.nodes.len())
+        })
+    });
+}
+
+/// Cross-stack resolution over N exported stacks (one producer with N
+/// outputs, N consumers each reading one): linear in edges.
+fn bench_cross_stack(c: &mut Criterion) {
+    use pulumi_rs_yaml_core::cross_stack::resolve_cross_stack;
+    use pulumi_rs_yaml_core::resource_graph::{export_resource_graph, GraphExportOptions};
+
+    for n in [100usize, 1000] {
+        let mut producer = String::from("name: producer\nruntime: yaml\nresources:\n");
+        for i in 0..n {
+            producer.push_str(&format!("  ds{i}:\n    type: gcp:bigquery:Dataset\n"));
+        }
+        producer.push_str("outputs:\n");
+        for i in 0..n {
+            producer.push_str(&format!("  out{i}: ${{ds{i}.datasetId}}\n"));
+        }
+        let mut sources = vec![producer];
+        for i in 0..n {
+            sources.push(format!(
+                "name: c{i}\nruntime: yaml\nresources:\n  ref:\n    type: pulumi:pulumi:StackReference\n    properties:\n      name: producer/prod\n  t:\n    type: gcp:bigquery:Table\n    properties:\n      datasetId: ${{ref.outputs.out{i}}}\n"
+            ));
+        }
+        let sources: &'static [String] = Box::leak(sources.into_boxed_slice());
+        let graphs: Vec<_> = sources
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let t = Box::leak(Box::new(parse_template(s, None).0));
+                let project: &'static str = Box::leak(
+                    if i == 0 {
+                        "producer".to_string()
+                    } else {
+                        format!("c{i}")
+                    }
+                    .into_boxed_str(),
+                );
+                let opts = GraphExportOptions {
+                    project,
+                    stack: "prod",
+                    backend_url: Some("gs://s"),
+                    ..Default::default()
+                };
+                export_resource_graph(t, &opts).0
+            })
+            .collect();
+        c.bench_function(&format!("cross_stack_join_{n}_stacks"), |b| {
+            b.iter(|| black_box(resolve_cross_stack(black_box(&graphs)).len()))
+        });
+    }
+}
+
+/// The IAM graph of N bindings (literal, config and resource-output
+/// members in the proportions of a data platform's access stack): linear.
+fn bench_iam_graph(c: &mut Criterion) {
+    use pulumi_rs_yaml_core::iam_graph::export_iam_graph;
+    use pulumi_rs_yaml_core::resource_graph::GraphExportOptions;
+
+    for n in [67usize, 670] {
+        let mut yaml = String::from("name: bench\nruntime: yaml\nconfig:\n");
+        for i in 0..n {
+            yaml.push_str(&format!("  g{i}:\n    type: string\n"));
+        }
+        yaml.push_str("resources:\n  sa:\n    type: gcp:serviceaccount:Account\n  ds:\n    type: gcp:bigquery:Dataset\n");
+        let mut config = std::collections::HashMap::new();
+        for i in 0..n {
+            let member = match i % 17 {
+                0..=11 => format!("user:u{i}@example.com"),
+                12..=15 => {
+                    config.insert(format!("bench:g{i}"), format!("grp{i}@example.com"));
+                    format!("group:${{g{i}}}")
+                }
+                _ => "serviceAccount:${sa.email}".to_string(),
+            };
+            yaml.push_str(&format!(
+                "  b{i}:\n    type: gcp:bigquery:DatasetIamMember\n    properties:\n      datasetId: ${{ds.datasetId}}\n      role: roles/bigquery.dataViewer\n      member: \"{member}\"\n"
+            ));
+        }
+        let template = Box::leak(Box::new(parse_template(&yaml, None).0));
+        let config: &'static _ = Box::leak(Box::new(config));
+        c.bench_function(&format!("iam_graph_{n}_bindings"), |b| {
+            b.iter(|| {
+                let opts = GraphExportOptions {
+                    organization: "org",
+                    project: "bench",
+                    stack: "dev",
+                    config: Some(config),
+                    ..Default::default()
+                };
+                let (g, _) = export_iam_graph(black_box(template), &opts);
+                black_box(g.edges.len())
+            })
+        });
+    }
 }
 
 /// Two hundred independent resources: one topological level, evaluated
@@ -1280,6 +1404,8 @@ criterion_group!(
     bench_sql_lineage_routine_script,
     bench_sql_statement_layer,
     bench_export_resource_graph,
+    bench_cross_stack,
+    bench_iam_graph,
     bench_eval_wide_level,
     bench_native_str_regexp,
     bench_resolve_literal,
