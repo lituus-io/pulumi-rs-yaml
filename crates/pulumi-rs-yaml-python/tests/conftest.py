@@ -9,6 +9,18 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolated_pulumi_workspace(tmp_path_factory, monkeypatch):
+    """No test reads the machine's backend.
+
+    The graph exporters fall back, as Pulumi does, to PULUMI_BACKEND_URL and
+    then the workspace's current backend; a developer's own login must not
+    leak into what a test exports.
+    """
+    monkeypatch.delenv("PULUMI_BACKEND_URL", raising=False)
+    monkeypatch.setenv("PULUMI_HOME", str(tmp_path_factory.mktemp("pulumi-home")))
+
+
 @pytest.fixture
 def acceptance_dir():
     """Path to the acceptance test fixtures (17 real project directories)."""

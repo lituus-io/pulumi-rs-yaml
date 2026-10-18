@@ -19,8 +19,8 @@ use pulumi_rs_yaml_core::eval::value::Value;
 use pulumi_rs_yaml_core::packages::canonicalize_function_token;
 
 use convert::{
-    expr_to_py, json_to_py, py_dict_to_string_map, py_to_value, resource_options_to_py,
-    resource_properties_to_py, value_to_py,
+    expr_to_py, json_to_py, py_config_map, py_dict_to_string_map, py_to_value,
+    resource_options_to_py, resource_properties_to_py, value_to_py,
 };
 
 /// Parse a YAML template string and return its structure as a Python dict.
@@ -1109,8 +1109,18 @@ fn get_resource_schema(
 /// engine URN format so exports from independent stacks join in a
 /// shared graph store; see the core `resource_graph` module docs for
 /// the full ID contract.
+///
+/// The backend is the caller's `backend_url`, else `PULUMI_BACKEND_URL`,
+/// else the project's `backend.url`, else the Pulumi workspace's current
+/// backend -- the resolver the CLI uses -- and `backend_source` says which.
+/// `backend_url=""` turns every fallback off. `project_override` /
+/// `stack_override` export under the identity a host deploys with;
+/// `reference_backends` maps referenced stacks to their exact backends;
+/// `config` is the stack's PLAINTEXT config (a `{"secure": ...}` value is
+/// refused). Each is optional, and without them the output is unchanged.
 #[pyfunction]
-#[pyo3(signature = (project_dir, stack, organization="", jinja_context=None, schema_dir=None, backend_url=None))]
+#[pyo3(signature = (project_dir, stack, organization="", jinja_context=None, schema_dir=None, backend_url=None, project_override=None, stack_override=None, reference_backends=None, config=None))]
+#[allow(clippy::too_many_arguments)]
 fn export_dependency_graph(
     py: Python<'_>,
     project_dir: &str,
@@ -1119,31 +1129,43 @@ fn export_dependency_graph(
     jinja_context: Option<&Bound<'_, PyDict>>,
     schema_dir: Option<&str>,
     backend_url: Option<&str>,
+    project_override: Option<&str>,
+    stack_override: Option<&str>,
+    reference_backends: Option<&Bound<'_, PyDict>>,
+    config: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    // The context dictionary is read under the GIL; everything after it --
+    let args = GraphCallArgs::extract(
+        jinja_context,
+        reference_backends,
+        config,
+        project_override,
+        stack_override,
+    )?;
+    // The dictionaries are read under the GIL; everything after it --
     // reading and rendering the project, the export, the serialization --
     // runs with the GIL released, so a caller's other threads keep going.
-    let ctx_map = jinja_context.map(py_dict_to_string_map).transpose()?;
     let exported = py.detach(|| -> Result<(serde_json::Value, Diagnostics), String> {
-        let loaded = load_graph_project(project_dir, stack, organization, ctx_map)?;
+        let loaded = load_graph_project(project_dir, stack, organization, args.ctx_map)?;
         let (template, source_map) = loaded.merged.into_parts();
         let schema_store = schema_dir.and_then(|sd| {
             pulumi_rs_yaml_core::schema::SchemaStore::load(std::path::Path::new(sd)).ok()
         });
-        // The caller's backend, else the project's `backend.url`; an empty
-        // string turns the fallback off. The environment is not read: the
-        // export stays a function of its arguments and the project.
-        let backend_url = match backend_url {
-            Some(url) => (!url.is_empty()).then_some(url),
-            None => loaded.backend_url.as_deref(),
-        };
+        let (backend_url, backend_source) = pulumi_rs_yaml_core::stack_uri::discover_backend(
+            backend_url,
+            loaded.backend_url.as_deref(),
+        );
         let opts = pulumi_rs_yaml_core::resource_graph::GraphExportOptions {
             organization: &loaded.organization,
             project: &loaded.project,
             stack: &loaded.stack,
             source_map: Some(&source_map),
             schema_store: schema_store.as_ref(),
-            backend_url,
+            backend_url: backend_url.as_deref(),
+            project_override: args.project_override.as_deref(),
+            stack_override: args.stack_override.as_deref(),
+            reference_backends: args.reference_backends.as_ref(),
+            config: args.config.as_ref(),
+            backend_source: backend_url.is_some().then_some(backend_source),
         };
         let (graph, diags) =
             pulumi_rs_yaml_core::resource_graph::export_resource_graph(&template, &opts);
@@ -1156,6 +1178,187 @@ fn export_dependency_graph(
     });
     let (json, diags) = exported.map_err(PyValueError::new_err)?;
     graph_json_to_py(py, &json, &diags)
+}
+
+/// Export the stack's static IAM graph: `principal` and `role` nodes, and
+/// `has_role` edges from each principal -- or from the resource whose output
+/// a member is -- to the resource the role is held on, plus a `summary`
+/// counting every member (`member_resolved`, `member_from_resource`,
+/// `member_unresolved`). Same arguments as `export_dependency_graph`; pass
+/// the stack's plaintext `config` for config-valued members to resolve.
+#[pyfunction]
+#[pyo3(signature = (project_dir, stack, organization="", jinja_context=None, schema_dir=None, backend_url=None, project_override=None, stack_override=None, config=None))]
+#[allow(clippy::too_many_arguments)]
+fn export_iam_graph(
+    py: Python<'_>,
+    project_dir: &str,
+    stack: &str,
+    organization: &str,
+    jinja_context: Option<&Bound<'_, PyDict>>,
+    schema_dir: Option<&str>,
+    backend_url: Option<&str>,
+    project_override: Option<&str>,
+    stack_override: Option<&str>,
+    config: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let args = GraphCallArgs::extract(
+        jinja_context,
+        None,
+        config,
+        project_override,
+        stack_override,
+    )?;
+    let exported = py.detach(|| -> Result<(serde_json::Value, Diagnostics), String> {
+        let loaded = load_graph_project(project_dir, stack, organization, args.ctx_map)?;
+        let (template, source_map) = loaded.merged.into_parts();
+        let schema_store = schema_dir.and_then(|sd| {
+            pulumi_rs_yaml_core::schema::SchemaStore::load(std::path::Path::new(sd)).ok()
+        });
+        let (backend_url, _) = pulumi_rs_yaml_core::stack_uri::discover_backend(
+            backend_url,
+            loaded.backend_url.as_deref(),
+        );
+        let opts = pulumi_rs_yaml_core::resource_graph::GraphExportOptions {
+            organization: &loaded.organization,
+            project: &loaded.project,
+            stack: &loaded.stack,
+            source_map: Some(&source_map),
+            schema_store: schema_store.as_ref(),
+            backend_url: backend_url.as_deref(),
+            project_override: args.project_override.as_deref(),
+            stack_override: args.stack_override.as_deref(),
+            config: args.config.as_ref(),
+            ..Default::default()
+        };
+        let (graph, diags) = pulumi_rs_yaml_core::iam_graph::export_iam_graph(&template, &opts);
+        if diags.has_errors() {
+            return Err(format!("Failed to export IAM graph: {}", diags));
+        }
+        let json = serde_json::to_value(&graph)
+            .map_err(|e| format!("Failed to serialize graph: {}", e))?;
+        Ok((json, diags))
+    });
+    let (json, diags) = exported.map_err(PyValueError::new_err)?;
+    graph_json_to_py(py, &json, &diags)
+}
+
+/// Joins several stacks' exported graphs: every `consumes_stack_output`
+/// edge to the resources the exporting stack's `exports` edges name.
+/// Returns `[{"consumer_edge": {"source_id", "target_id"},
+/// "exporter_resource_id", "output_key"}]`, sorted. Only each graph's
+/// `edges` are read.
+#[pyfunction]
+fn resolve_cross_stack(py: Python<'_>, graphs: &Bound<'_, PyList>) -> PyResult<Py<PyAny>> {
+    use pulumi_rs_yaml_core::resource_graph::{EdgeKind, GraphEdge};
+    let mut edges: Vec<GraphEdge<'static>> = Vec::new();
+    for graph in graphs.iter() {
+        let graph = graph.cast::<PyDict>()?;
+        let Some(list) = graph.get_item("edges")? else {
+            continue;
+        };
+        for edge in list.cast::<PyList>()?.iter() {
+            let edge = edge.cast::<PyDict>()?;
+            let field = |name: &str| -> PyResult<String> {
+                edge.get_item(name)?
+                    .ok_or_else(|| PyValueError::new_err(format!("edge without '{}'", name)))?
+                    .extract()
+            };
+            let relationship = match field("relationship")?.as_str() {
+                "exports" => EdgeKind::Exports,
+                "consumes_stack_output" => EdgeKind::ConsumesStackOutput,
+                _ => continue,
+            };
+            let property_paths: Vec<Cow<'static, str>> = match edge.get_item("property_paths")? {
+                Some(p) => p
+                    .extract::<Vec<String>>()?
+                    .into_iter()
+                    .map(Cow::Owned)
+                    .collect(),
+                None => Vec::new(),
+            };
+            edges.push(GraphEdge {
+                source_id: Cow::Owned(field("source_id")?),
+                target_id: Cow::Owned(field("target_id")?),
+                relationship,
+                property_paths,
+                organization: Cow::Borrowed(""),
+                project: Cow::Borrowed(""),
+                stack: Cow::Borrowed(""),
+            });
+        }
+    }
+    let json = py.detach(|| {
+        let links = pulumi_rs_yaml_core::cross_stack::resolve_cross_stack_edges(edges.iter());
+        serde_json::to_value(&links)
+    });
+    let json =
+        json.map_err(|e| PyValueError::new_err(format!("Failed to serialize links: {}", e)))?;
+    json_to_py(py, &json)
+}
+
+/// `//{service}.googleapis.com/{relative-name}` for a deployed resource,
+/// from its Pulumi type and provider id; `None` for an unsupported type or
+/// an id of the wrong shape. The per-type table is in `GRAPH.md`.
+#[pyfunction]
+fn resource_key(pulumi_type: &str, provider_id: &str) -> Option<String> {
+    pulumi_rs_yaml_core::resource_key::resource_key(pulumi_type, provider_id)
+}
+
+/// The resource key of a BigQuery lineage id (`bq://p/d/t`,
+/// `bq-routine://p/d/r`) or SQL reference (`p.d.t`); `None` when it names
+/// no BigQuery object.
+#[pyfunction]
+fn bq_to_resource_key(bq_id: &str) -> Option<String> {
+    pulumi_rs_yaml_core::resource_key::bq_to_resource_key(bq_id)
+}
+
+/// The resource key built from a resource's literal properties (`project`,
+/// `location`/`region`, `name`, `datasetId`, ...), for a provider id that is
+/// not the relative name; `None` when a needed property is missing.
+#[pyfunction]
+fn resource_key_from_properties(
+    pulumi_type: &str,
+    properties: HashMap<String, String>,
+) -> Option<String> {
+    pulumi_rs_yaml_core::resource_key::resource_key_from_properties(
+        pulumi_type,
+        properties.iter().map(|(k, v)| (k.as_str(), v.as_str())),
+    )
+}
+
+/// The key of a BigQuery job (a runtime object):
+/// `//bigquery.googleapis.com/projects/{p}/locations/{l}/jobs/{id}`.
+#[pyfunction]
+fn bq_job_resource_key(project: &str, location: &str, job_id: &str) -> Option<String> {
+    pulumi_rs_yaml_core::resource_key::bq_job_resource_key(project, location, job_id)
+}
+
+/// The optional arguments the graph exporters share, read under the GIL.
+struct GraphCallArgs {
+    ctx_map: Option<HashMap<String, String>>,
+    reference_backends: Option<HashMap<String, String>>,
+    config: Option<HashMap<String, String>>,
+    project_override: Option<String>,
+    stack_override: Option<String>,
+}
+
+impl GraphCallArgs {
+    fn extract(
+        jinja_context: Option<&Bound<'_, PyDict>>,
+        reference_backends: Option<&Bound<'_, PyDict>>,
+        config: Option<&Bound<'_, PyDict>>,
+        project_override: Option<&str>,
+        stack_override: Option<&str>,
+    ) -> PyResult<Self> {
+        let nonempty = |s: Option<&str>| s.filter(|s| !s.is_empty()).map(str::to_owned);
+        Ok(Self {
+            ctx_map: jinja_context.map(py_dict_to_string_map).transpose()?,
+            reference_backends: reference_backends.map(py_dict_to_string_map).transpose()?,
+            config: config.map(py_config_map).transpose()?,
+            project_override: nonempty(project_override),
+            stack_override: nonempty(stack_override),
+        })
+    }
 }
 
 /// Export the stack's SQL lineage graph (data objects layered on the
@@ -1179,7 +1382,7 @@ fn export_dependency_graph(
 /// in routines, jobs and scheduled queries.
 #[cfg(feature = "sql-lineage")]
 #[pyfunction]
-#[pyo3(signature = (project_dir, stack, organization="", jinja_context=None, schema_dir=None, default_bq_project=None, include_statements=false, script_column_lineage=false))]
+#[pyo3(signature = (project_dir, stack, organization="", jinja_context=None, schema_dir=None, default_bq_project=None, include_statements=false, script_column_lineage=false, config=None))]
 #[allow(clippy::too_many_arguments)]
 fn export_sql_lineage(
     py: Python<'_>,
@@ -1191,8 +1394,10 @@ fn export_sql_lineage(
     default_bq_project: Option<&str>,
     include_statements: bool,
     script_column_lineage: bool,
+    config: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
     let ctx_map = jinja_context.map(py_dict_to_string_map).transpose()?;
+    let config = config.map(py_config_map).transpose()?;
     let exported = py.detach(|| -> Result<(serde_json::Value, Diagnostics), String> {
         let loaded = load_graph_project(project_dir, stack, organization, ctx_map)?;
         let (template, source_map) = loaded.merged.into_parts();
@@ -1205,6 +1410,7 @@ fn export_sql_lineage(
             stack: &loaded.stack,
             source_map: Some(&source_map),
             schema_store: schema_store.as_ref(),
+            config: config.as_ref(),
             ..Default::default()
         };
         let (infra, infra_diags) =
@@ -1233,6 +1439,7 @@ fn export_sql_lineage(
             sql_sources: Some(&sql_sources),
             include_statements,
             script_column_lineage,
+            config: config.as_ref(),
         };
         let (lineage, diags) =
             pulumi_rs_yaml_core::sql_lineage::export_sql_lineage(&template, &infra, &lineage_opts);
@@ -1397,6 +1604,12 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(index_checkpoints, m)?)?;
     m.add_function(wrap_pyfunction!(create_execution_plan, m)?)?;
     m.add_function(wrap_pyfunction!(export_dependency_graph, m)?)?;
+    m.add_function(wrap_pyfunction!(export_iam_graph, m)?)?;
+    m.add_function(wrap_pyfunction!(resolve_cross_stack, m)?)?;
+    m.add_function(wrap_pyfunction!(resource_key, m)?)?;
+    m.add_function(wrap_pyfunction!(bq_to_resource_key, m)?)?;
+    m.add_function(wrap_pyfunction!(resource_key_from_properties, m)?)?;
+    m.add_function(wrap_pyfunction!(bq_job_resource_key, m)?)?;
     #[cfg(feature = "sql-lineage")]
     m.add_function(wrap_pyfunction!(export_sql_lineage, m)?)?;
     m.add_function(wrap_pyfunction!(validate_and_classify, m)?)?;
