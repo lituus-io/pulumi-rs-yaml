@@ -10,6 +10,7 @@ from pulumi_yaml_rs import (
     bq_job_resource_key,
     bq_to_resource_key,
     resource_key_from_properties,
+    resource_key_with_properties,
     export_dependency_graph,
     export_iam_graph,
     export_sql_lineage,
@@ -237,6 +238,9 @@ class TestResourceKeys:
         ("gcp:storage:Bucket", "b", "//storage.googleapis.com/projects/_/buckets/b"),
         ("gcp:compute:Instance", "projects/p/zones/z/instances/i", None),
         ("gcp:bigquery:Table", "projects/p/datasets/d", None),
+        ("gcp:cloudrun/service:Service", "locations/l/namespaces/P/services/s", "//run.googleapis.com/projects/p/locations/l/services/s"),
+        ("gcp:cloudrun:Service", "locations/l/namespaces/123456/services/s", None),
+        ("gcp:bigquery/job:Job", "projects/p/jobs/j", None),
     ])
     def test_resource_key(self, ptype, pid, want):
         assert resource_key(ptype, pid) == want
@@ -252,3 +256,16 @@ class TestResourceKeys:
         ) == "//cloudscheduler.googleapis.com/projects/p/locations/l/jobs/j"
         assert resource_key_from_properties("gcp:workflows:Workflow", {"name": "w"}) is None
         assert bq_job_resource_key("P", "US", "job_1") == "//bigquery.googleapis.com/projects/p/locations/US/jobs/job_1"
+
+    def test_keys_for_the_added_types(self):
+        job = "//bigquery.googleapis.com/projects/p/locations/US/jobs/j"
+        assert resource_key_with_properties("gcp:bigquery/job:Job", "projects/P/jobs/j", {"location": "US"}) == job
+        assert resource_key_with_properties("gcp:bigquery/job:Job", "projects/p/jobs/j", {}) is None
+        assert job == bq_job_resource_key("p", "US", "j")
+        assert resource_key_with_properties(
+            "gcp:cloudrun:Service", "locations/l/namespaces/p/services/s", {}
+        ) == resource_key("gcp:cloudrunv2:Service", "projects/p/locations/l/services/s")
+        sa = "//iam.googleapis.com/projects/p/serviceAccounts/runner@p.iam.gserviceaccount.com"
+        assert resource_key_from_properties("gcp:serviceaccount:Account", {"accountId": "runner", "project": "p"}) == sa
+        assert resource_key("gcp:serviceaccount:Account", "projects/p/serviceAccounts/runner@p.iam.gserviceaccount.com") == sa
+        assert resource_key_from_properties("gcp:serviceaccount:Account", {"accountId": "a/b", "project": "p"}) is None

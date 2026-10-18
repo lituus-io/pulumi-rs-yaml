@@ -1381,9 +1381,71 @@ fn bench_derive_string(c: &mut Criterion) {
     group.finish();
 }
 
+/// Resource keys for the deployed ids of one stack: every relative-name type,
+/// a bucket, and the property path -- the per-resource cost of a graph join.
+fn bench_resource_keys(c: &mut Criterion) {
+    use pulumi_rs_yaml_core::resource_key::{resource_key, resource_key_from_properties};
+    let ids: &[(&str, &str)] = &[
+        (
+            "gcp:bigquery/dataset:Dataset",
+            "projects/sample-proj/datasets/analytics",
+        ),
+        (
+            "gcp:bigquery/table:Table",
+            "projects/Sample-Proj/datasets/analytics/tables/events$20240101",
+        ),
+        (
+            "gcp:bigquery/routine:Routine",
+            "projects/sample-proj/datasets/analytics/routines/score",
+        ),
+        (
+            "gcp:workflows/workflow:Workflow",
+            "projects/sample-proj/locations/us-central1/workflows/nightly",
+        ),
+        (
+            "gcp:cloudscheduler/job:Job",
+            "projects/sample-proj/locations/us-central1/jobs/nightly",
+        ),
+        (
+            "gcp:cloudrunv2/service:Service",
+            "projects/sample-proj/locations/us-central1/services/api",
+        ),
+        ("gcp:storage/bucket:Bucket", "sample-proj-landing"),
+        (
+            "gcp:pubsub/topic:Topic",
+            "projects/sample-proj/topics/events",
+        ),
+        (
+            "gcp:serviceaccount/account:Account",
+            "projects/sample-proj/serviceAccounts/runner@sample-proj.iam.gserviceaccount.com",
+        ),
+        (
+            "gcp:compute/instance:Instance",
+            "projects/sample-proj/zones/z/instances/i",
+        ),
+    ];
+    let props = [
+        ("project", "sample-proj"),
+        ("region", "us-central1"),
+        ("name", "nightly"),
+    ];
+    c.bench_function("resource_keys_one_stack", |b| {
+        b.iter(|| {
+            for (ty, id) in ids {
+                black_box(resource_key(black_box(ty), black_box(id)));
+            }
+            black_box(resource_key_from_properties(
+                black_box("gcp:cloudscheduler:Job"),
+                black_box(props),
+            ));
+        })
+    });
+}
+
 criterion_group!(
     benches,
     bench_parse_simple,
+    bench_resource_keys,
     bench_parse_complex,
     bench_eval_simple,
     bench_protobuf_round_trip,
