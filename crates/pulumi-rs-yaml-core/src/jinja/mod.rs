@@ -1059,13 +1059,20 @@ impl JinjaPreprocessor<'_> {
         );
 
         let compiled: &str = effective_source.as_ref();
+        // Compiling this file involves no other template.
+        env.add_template(filename, compiled)
+            .map_err(|e| build_render_diagnostic(source, compiled, filename, &e))?;
+
+        // The text of an included template, for an error that arose in one:
+        // minijinja attaches it to the error only in debug builds.
+        let template_text =
+            |name: &str| env.get_template(name).ok().map(|t| t.source().to_string());
         let fail = |e: &minijinja::Error| {
-            let mut diag = build_render_diagnostic(source, compiled, filename, e);
+            let mut diag =
+                build_render_diagnostic_with(source, compiled, filename, e, template_text);
             explain_limit(&mut diag, &limits);
             diag
         };
-        env.add_template(filename, compiled).map_err(|e| fail(&e))?;
-
         let tmpl = env.get_template(filename).map_err(|e| fail(&e))?;
 
         // Rendered into a writer that refuses to grow past the output limit,
@@ -1336,6 +1343,21 @@ fn build_render_diagnostic<'src>(
     filename: &str,
     err: &minijinja::Error,
 ) -> RenderDiagnostic<'src> {
+    build_render_diagnostic_with(source, compiled, filename, err, |_| None)
+}
+
+/// [`build_render_diagnostic`], with `template_text` answering the source of
+/// another template by name when the error does not carry it.
+fn build_render_diagnostic_with<'src, T>(
+    source: &'src str,
+    compiled: &str,
+    filename: &str,
+    err: &minijinja::Error,
+    template_text: T,
+) -> RenderDiagnostic<'src>
+where
+    T: Fn(&str) -> Option<String>,
+{
     // A fault inside an imported macro surfaces unwrapped, located in the
     // macro's own file. Its line is not a line of this one, so this file's
     // location is left unknown and the origin carries the real one.
@@ -1361,7 +1383,7 @@ fn build_render_diagnostic<'src>(
     // an include puts round it.
     let chain = error_chain(err);
     let root = chain.last().copied().unwrap_or(err);
-    let origin = include_origin(&chain, filename);
+    let origin = include_origin(&chain, filename, template_text);
     let mut message = match root.detail() {
         Some(detail) => detail.to_string(),
         None => root.kind().to_string(),
@@ -1401,14 +1423,28 @@ fn build_render_diagnostic<'src>(
 
 /// Where in an included template the root cause of `chain` lies, when it
 /// lies in one at all. `None` for a fault in the file being rendered.
-fn include_origin(chain: &[&minijinja::Error], filename: &str) -> Option<Box<IncludeOrigin>> {
+fn include_origin<T>(
+    chain: &[&minijinja::Error],
+    filename: &str,
+    template_text: T,
+) -> Option<Box<IncludeOrigin>>
+where
+    T: Fn(&str) -> Option<String>,
+{
     let root = chain.last()?;
     let file = root.name()?;
     if file == filename {
         return None;
     }
     let line = root.line().unwrap_or(0) as u32;
-    let text = root.template_source().unwrap_or("");
+    let fetched;
+    let text = match root.template_source() {
+        Some(text) => text,
+        None => {
+            fetched = template_text(file).unwrap_or_default();
+            fetched.as_str()
+        }
+    };
     let source_line = text
         .lines()
         .nth(line.saturating_sub(1) as usize)
