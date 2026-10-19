@@ -10,10 +10,10 @@ is the reference; every example in it is executed by the test suite.
 
 ### Conformance with reference Jinja2
 
-A corpus of 317 cases -- every statement, expression form, whitespace rule
+A corpus of 336 cases -- every statement, expression form, whitespace rule
 and error class, and one case per filter, test and global Jinja2 3.1.6 ships
 -- renders through the runtime and must equal pinned Jinja2's output byte for
-byte. 263 do; the 54 that differ are listed with reasons in
+byte. 279 do; the 57 that differ are listed with reasons in
 `tests/jinja_conformance/DIVERGENCES.md` (value formatting deployed stacks
 already depend on, extensions, refusals by design), with the runtime's own
 output pinned. `MATRIX.md` is generated from the corpus and both registries.
@@ -60,6 +60,10 @@ No known behavioural gap against Jinja2 remains:
 - a macro naming `varargs` or `kwargs` takes extra arguments into them
   (including through `call` and imports); one that does not still refuses.
 
+`*` and `**` are Python's too: a string or list times a count repeats it
+(nothing for a count of zero or less), and an integer to a negative power
+is a float, `0 ** -1` a `ZeroDivisionError`.
+
 What stays different is by design: random/lipsum (a deploy must render
 repeatably), the HTML filters (output is YAML), and the value formatting
 deployed stacks already depend on.
@@ -97,6 +101,62 @@ heaviest real file measured used 6,575), recursion 500, output 16 MiB
 out-of-memory. Override with `PULUMI_YAML_JINJA_LIMITS=fuel=..,recursion=..,
 output=..,range=..` or the Python `limits=` argument; a malformed value is
 refused by name. `render_with_stats` reports the fuel used.
+
+### Every builtin, held to hostile counts and widths
+
+The fuzzer found minijinja's `divisibleby` test computing a remainder
+unchecked: `9 is divisibleby(false)` panicked, which in a release build is
+a process abort. An exhaustive audit followed -- every filter, test,
+method, global and operator, called with zero, `False`, negatives and the
+i64 and i128 extremes, 1.13 million calls -- and found three more of the
+class: `tojson(indent)` and `indent(width)` allocated their width unchecked
+(an allocation abort), `[] * 9223372036854775807` spun for ever, and
+`slice(9223372036854775807)` was a capacity panic. Each now answers as
+Python does or refuses with a typed error:
+- `divisibleby` is `value % num == 0`, so a zero divisor is a
+  `ZeroDivisionError`, as in Jinja2;
+- `slice` and `batch` are Jinja2's (a zero `slice` count raises, a
+  negative one yields nothing, `batch(0)` is `[[], [...]]`); the number of
+  slices is bounded by the range limit;
+- a repeated list is bounded by the range limit and a repeated string by
+  four times the output limit (the formatter, which knows the line, refuses
+  one that is written); an empty repeat answers at once;
+- `tojson` and `indent` refuse a width past the output limit and stop
+  their text growing past it;
+- `round` with a huge precision answers as Python does (`round(2.5, 10**9)`
+  is `2.5`, `round(2.5, -10**9)` is `0.0`), where it formatted a
+  billion-digit string; `ceil`/`floor` raise Python's errors there;
+- `i128::MIN // -1` is exact and `i128::MIN % -1` is `0`, where the
+  machine division overflowed; a float past 2**127 through `int` is
+  refused, never saturated to a wrong number;
+- `wordwrap` refuses a width below 1 and `truncate` reports the length it
+  was given, as Jinja2 does.
+
+Every input is a conformance case, a security test and a fuzz seed.
+
+### Recursion reaches its limit on any stack
+
+Windows gives a main thread 1 MiB of stack, and the language host
+overflowed it ("has overflowed its stack") before a self-recursive macro
+reached the recursion limit -- an abort where a typed error belongs.
+Rendering now runs on the engine's deep-stack worker, the 64 MiB thread SQL
+parsing already used; the two share it rather than each keeping one. A
+render crosses to it as owned data and its diagnostic comes back re-sliced
+from the caller's source, so no signature changed. A test renders to the
+limit from a 1 MiB thread.
+
+### One error, one kind
+
+A refused include whose name contained the text `readFile:` was reported as
+a readFile failure: the classifier matched that tag anywhere in the message,
+and a refusal quotes the name it was given. Tags are now matched where they
+are written, at the start (found by fuzz_jinja).
+
+Errors raised inside an expression the prepass rewrote -- `/`, `%`, `*`,
+dates -- now carry their column again: the rewrite records where it changed
+the text and the diagnostic maps back through it, so the caret is under what
+the author wrote. An undefined operand there is an undefined variable, not
+a type error.
 
 ### Two engine crashes, found by fuzzing
 

@@ -16,6 +16,30 @@
 
 [[entry]]
 version = "0.5.40"
+heading = "Every builtin, held to hostile counts and widths"
+tests = [
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::divisibleby_by_zero_is_a_zero_division_error",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::huge_counts_and_widths_are_refused_before_allocating",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_repeat_is_bounded_and_an_empty_one_is_instant",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::extreme_precisions_answer_as_python_does",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::i128_extremes_divide_exactly",
+]
+
+[[entry]]
+version = "0.5.40"
+heading = "Recursion reaches its limit on any stack"
+tests = ["crates/pulumi-rs-yaml-core/tests/security_tests.rs::the_recursion_limit_is_reached_on_a_one_mebibyte_stack"]
+
+[[entry]]
+version = "0.5.40"
+heading = "One error, one kind"
+tests = [
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_refused_name_holding_the_readfile_tag_is_still_a_refusal",
+    "crates/pulumi-rs-yaml-core/tests/jinja_error_goldens.rs::every_error_kind_reads_exactly_as_its_golden",
+]
+
+[[entry]]
+version = "0.5.40"
 heading = "Conformance with reference Jinja2"
 tests = [
   "crates/pulumi-rs-yaml-core/tests/jinja_conformance.rs::every_case_matches_jinja2_or_is_a_listed_divergence",

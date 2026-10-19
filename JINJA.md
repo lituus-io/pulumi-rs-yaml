@@ -22,7 +22,7 @@ page and the engine ever disagree, CI fails.
 
 The engine is [minijinja](https://github.com/mitsuhiko/minijinja) 2, extended
 and configured to behave as Jinja2 does, and held to it: the conformance
-corpus (`tests/jinja_conformance/`) renders 317 cases and 73 method
+corpus (`tests/jinja_conformance/`) renders 336 cases and 73 method
 cases through this runtime
 and compares each byte for byte with what pinned reference Jinja2 produces.
 The generated [capability matrix](tests/jinja_conformance/MATRIX.md) lists
@@ -133,6 +133,19 @@ the output limit.
 
 ```text
 -2 -4 3.5 a-007|ab    | 3.14 dev/2
+```
+
+`*` repeats a string or list by a count (nothing for zero or less), and
+`**` takes a negative exponent to a float. Counts given to filters behave as
+in Jinja2: `slice(n)` makes `n` lists, `batch(n)` lists of `n`, and
+`9 is divisibleby(0)` raises, as `9 % 0` does.
+
+```jinja
+{{ 'ab' * 2 }} {{ [0] * 3 }} {{ 'x' * -1 }}| {{ 2 ** -1 }} {{ [1, 2, 3, 4, 5] | slice(2) | list }} {{ [1, 2, 3] | batch(2) | list }}
+```
+
+```text
+abab [0, 0, 0] | 0.5 [[1, 2, 3], [4, 5]] [[1, 2], [3]]
 ```
 
 ```jinja
@@ -353,9 +366,9 @@ or an out-of-memory.
 | Limit | Default | Kind | Bounds |
 |---|---|---|---|
 | `fuel` | 100,000 instructions | `FuelExhausted` | time: every loop, macro and filter call spends fuel |
-| `recursion` | 500 (the engine maximum) | `RecursionLimit`, `IncludeCycle` | nesting: a macro call costs about 4, an include 10 |
-| `output` | 16 MiB | `OutputTooLarge` | the rendered file, `readFile()` contents included |
-| `range` | 100,000 elements | `RangeTooLarge` | one `range()` call (Jinja2's own limit) |
+| `recursion` | 500 (the engine maximum) | `RecursionLimit`, `IncludeCycle` | nesting: a macro call costs about 4, an include 10; reached on any caller's stack (rendering runs on a 64 MiB worker) |
+| `output` | 16 MiB | `OutputTooLarge` | the rendered file, `readFile()` contents included; also any one value a filter builds from a width (`indent`, `tojson`, `center`), and a repeated string at four times this |
+| `range` | 100,000 elements | `RangeTooLarge` | one `range()` call (Jinja2's own limit), a repeated list, and `slice`'s count |
 
 The defaults were set from measurement: the heaviest of 4,583 production
 project files used 6,575 instructions and rendered 61 KB, so the budget is
