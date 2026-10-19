@@ -22,7 +22,7 @@
 //! channel, so it must be owned and `Send`, and listing it keeps the
 //! isolation contract legible -- exactly what crosses is named here.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::sync::mpsc::{channel, Receiver, Sender};
 
 /// Stack for the worker that runs recursive work.
@@ -65,10 +65,12 @@ impl Worker {
     fn spawn() -> Result<Self, String> {
         let (jobs, job_rx) = channel::<Job>();
         let (reply_tx, replies) = channel::<Reply>();
+        SPAWNED.with(|n| n.set(n.get() + 1));
         let handle = std::thread::Builder::new()
             .stack_size(DEEP_STACK_BYTES)
             .name("deep-stack".to_string())
             .spawn(move || {
+                ON_WORKER.with(|w| w.set(true));
                 // Ends when the sender is dropped, i.e. when the calling
                 // thread goes away.
                 while let Ok(job) = job_rx.recv() {
@@ -93,6 +95,11 @@ impl Worker {
 }
 
 thread_local! {
+    /// Set on a worker's own thread: work arriving there already has the
+    /// deep stack, and runs where it is.
+    static ON_WORKER: Cell<bool> = const { Cell::new(false) };
+    /// Workers this thread has started: one for its life, unless one died.
+    static SPAWNED: Cell<usize> = const { Cell::new(0) };
     /// `None` until first use, and `None` again after a worker died -- work
     /// that cannot reach a worker is reported, never run on the caller's
     /// stack instead.
@@ -101,6 +108,9 @@ thread_local! {
 
 /// Runs `job` on this thread's worker, starting it on first use.
 pub(crate) fn run(job: Job) -> Result<Reply, String> {
+    if ON_WORKER.with(Cell::get) {
+        return Ok(job.execute());
+    }
     WORKER.with(|cell| {
         let mut slot = cell.borrow_mut();
         if slot.is_none() {
@@ -113,6 +123,12 @@ pub(crate) fn run(job: Job) -> Result<Reply, String> {
         }
         out
     })
+}
+
+/// How many workers this thread has started.
+#[cfg(test)]
+pub(crate) fn spawned_on_this_thread() -> usize {
+    SPAWNED.with(Cell::get)
 }
 
 /// The worker parked for this thread, if any.
@@ -130,4 +146,54 @@ pub(crate) fn install_dead_worker() -> std::thread::ThreadId {
     let id = std::thread::current().id();
     WORKER.with(|c| *c.borrow_mut() = Some(Worker { jobs, replies, id }));
     id
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::jinja::{JinjaContext, JinjaLimits, JinjaPreprocessor, UndefinedMode};
+    use std::collections::HashMap;
+
+    /// Counted, not timed: a thread starts its worker once, for its first
+    /// render that can recurse, and never again; a render that cannot
+    /// recurse starts none.
+    #[test]
+    fn a_render_starts_no_thread_of_its_own() {
+        std::thread::spawn(|| {
+            let (config, extra) = (HashMap::new(), HashMap::new());
+            let ctx = JinjaContext {
+                project_name: "p",
+                stack_name: "s",
+                cwd: ".",
+                organization: "",
+                root_directory: ".",
+                config: &config,
+                project_dir: ".",
+                undefined: UndefinedMode::Strict,
+                provider_templated_packages: &[],
+                extra: &extra,
+                limits: JinjaLimits::default(),
+            };
+            let pre = JinjaPreprocessor::new(&ctx);
+            for _ in 0..50 {
+                assert_eq!(pre.render("a: {{ 1 + 1 }}", "P.yaml").unwrap(), "a: 2");
+            }
+            assert_eq!(
+                super::spawned_on_this_thread(),
+                0,
+                "plain renders run inline"
+            );
+            let deep = "{% macro m(n) %}{{ n }}{% endmacro %}a: {{ m(3) }}";
+            for _ in 0..50 {
+                assert_eq!(pre.render(deep, "P.yaml").unwrap(), "a: 3");
+            }
+            assert_eq!(super::spawned_on_this_thread(), 1, "one worker, reused");
+            #[cfg(feature = "sql-lineage")]
+            {
+                assert!(crate::sql_lineage::analyze_select("SELECT a FROM `p.d.t`").is_ok());
+                assert_eq!(super::spawned_on_this_thread(), 1, "SQL parsing shares it");
+            }
+        })
+        .join()
+        .unwrap();
+    }
 }

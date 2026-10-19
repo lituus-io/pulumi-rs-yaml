@@ -42,6 +42,8 @@ pub mod registry;
 mod resolve;
 mod source_store;
 mod sql;
+#[cfg(test)]
+pub(crate) use sql::analyze_select;
 pub(crate) use sql::{Job, Reply};
 
 use std::borrow::Cow;

@@ -967,6 +967,16 @@ impl TemplatePreprocessor for JinjaPreprocessor<'_> {
     }
 }
 
+/// Whether a template can recurse past its own nesting: it names a macro
+/// (`macro`, `call`, `caller`), another template (`include`, `import`,
+/// `extends`) or a recursive loop. A byte scan, so a word that merely
+/// contains one of these (`callback`) costs a handoff, never a crash.
+fn may_recurse(source: &str) -> bool {
+    ["macro", "call", "include", "import", "extends", "recursive"]
+        .iter()
+        .any(|w| source.contains(w))
+}
+
 /// A render, owned so that it can cross to the deep-stack worker: the
 /// source and every context value are copied (a render's own cost dwarfs
 /// the copy), and the answer comes back with byte ranges where a
@@ -1148,9 +1158,17 @@ impl JinjaPreprocessor<'_> {
             };
             return Ok((Cow::Borrowed(source), stats));
         }
-        // Rendering recurses as deep as the recursion limit allows, which
-        // the caller's stack may not hold (1 MiB on a Windows main thread),
-        // so it runs on the deep-stack worker, as SQL parsing does.
+        // A render recurses as deep as the recursion limit allows only
+        // through macros, call blocks, other templates and recursive loops;
+        // without them its depth is the template's own nesting, which the
+        // parser bounds. Those renders, which the caller's stack may not
+        // hold (1 MiB on a Windows main thread), run on the deep-stack
+        // worker, as SQL parsing does; the rest stay on the caller's thread,
+        // where the handoff (two thread wake-ups, ~35us on a Linux VM) would
+        // cost more than the render.
+        if !may_recurse(source) {
+            return self.render_deep(source, filename);
+        }
         let job = Box::new(RenderJob::new(self.context, source, filename));
         let reply = match crate::deep_stack::run(crate::deep_stack::Job::Render(job)) {
             Ok(crate::deep_stack::Reply::Render(reply)) => reply,

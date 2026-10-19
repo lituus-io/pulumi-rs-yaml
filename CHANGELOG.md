@@ -168,6 +168,16 @@ render crosses to it as owned data and its diagnostic comes back re-sliced
 from the caller's source, so no signature changed. A test renders to the
 limit from a 1 MiB thread.
 
+Only a render that can recurse past its own nesting -- one naming a macro,
+a call block, another template or a recursive loop -- is handed over; the
+rest render on the caller's thread as before, since their depth is the
+template's nesting, which the parser caps (a release build renders the
+deepest it accepts in under 256 KiB, tested on 1 MiB). The handoff is a
+blocking round trip between two threads, measured at about 10us on macOS
+and 35-140us on Linux VMs; a thread starts one worker for its life (a
+counted test holds it to that), and work arriving on the worker runs
+where it is.
+
 ### One error, one kind
 
 A refused include whose name contained the text `readFile:` was reported as

@@ -4483,6 +4483,67 @@ mod jinja_deep_stack_security {
             .unwrap()
     }
 
+    /// Without macros, includes or recursive loops a template renders on the
+    /// caller's own thread; its depth is its nesting, which the parser caps
+    /// at 150. In a release build -- what ships -- the deepest it accepts
+    /// renders on a 1 MiB stack (measured: every shape needs under 256 KiB),
+    /// and one level past is a syntax error, not a crash. Unoptimised frames
+    /// are about ten times larger, so a debug build checks the same templates
+    /// on a stack sized for them.
+    #[test]
+    fn the_deepest_plain_template_renders_on_a_one_mebibyte_stack() {
+        const STACK: usize = if cfg!(debug_assertions) {
+            16 * WINDOWS_MAIN_STACK
+        } else {
+            WINDOWS_MAIN_STACK
+        };
+        fn on_small_stack(source: String) -> Result<String, RenderErrorKind> {
+            std::thread::Builder::new()
+                .stack_size(STACK)
+                .spawn(move || {
+                    let (config, extra) = (HashMap::new(), HashMap::new());
+                    let ctx = JinjaContext {
+                        project_name: "p",
+                        stack_name: "s",
+                        cwd: ".",
+                        organization: "",
+                        root_directory: ".",
+                        config: &config,
+                        project_dir: ".",
+                        undefined: UndefinedMode::Strict,
+                        provider_templated_packages: &[],
+                        extra: &extra,
+                        limits: JinjaLimits::default(),
+                    };
+                    JinjaPreprocessor::new(&ctx)
+                        .render(&source, "Pulumi.yaml")
+                        .map(|c| c.into_owned())
+                        .map_err(|d| d.kind)
+                })
+                .unwrap()
+                .join()
+                .unwrap()
+        }
+        let parens = |n: usize| format!("{{{{ {}1{} }}}}", "(".repeat(n), ")".repeat(n));
+        let ifs = |n: usize| format!("{}x{}", "{% if true %}".repeat(n), "{% endif %}".repeat(n));
+        let fors = |n: usize| {
+            format!(
+                "{}y{}",
+                "{% for i in [1] %}".repeat(n),
+                "{% endfor %}".repeat(n)
+            )
+        };
+        // The deepest of each shape the parser accepts (it counts a bracket
+        // twice over).
+        assert_eq!(on_small_stack(parens(74)).as_deref(), Ok("1"));
+        assert_eq!(on_small_stack(ifs(149)).as_deref(), Ok("x"));
+        assert_eq!(on_small_stack(fors(147)).as_deref(), Ok("y"));
+        assert_eq!(
+            on_small_stack(parens(400)),
+            Err(RenderErrorKind::JinjaSyntax)
+        );
+    }
+
     #[test]
     fn the_recursion_limit_is_reached_on_a_one_mebibyte_stack() {
         for src in [
