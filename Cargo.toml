@@ -59,6 +59,14 @@ opt-level = "z"
 [profile.release.package.starlark]
 opt-level = "s"
 
+# The template engine renders each project file once per deploy; size-tuned
+# it costs a few percent per render (measured in the jinja_* benches) and
+# keeps the language host inside the +2% size gate with 0.5.40's methods,
+# containers and dates.
+[profile.release.package.minijinja]
+opt-level = "s"
+
+
 # Mirrored onto the bench profile so the benchmark regression gate measures the
 # same codegen the shipped binary uses.
 [profile.bench.package.polyglot-sql]
@@ -66,6 +74,10 @@ opt-level = "z"
 
 [profile.bench.package.starlark]
 opt-level = "s"
+
+[profile.bench.package.minijinja]
+opt-level = "s"
+
 
 [profile.release-small]
 inherits = "release"

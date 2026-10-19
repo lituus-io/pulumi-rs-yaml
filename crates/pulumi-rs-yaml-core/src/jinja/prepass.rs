@@ -434,6 +434,11 @@ pub(super) struct Refusal {
 /// a namespace that would hold itself. A template that does not parse is
 /// returned as it is, for the compiler to report.
 pub(super) fn prepare<'s>(source: &'s str, name: &str) -> Result<Cow<'s, str>, Refusal> {
+    // Text with no Jinja delimiters -- most included files -- holds no
+    // expression at all; three substring searches settle it.
+    if !super::has_jinja_syntax(source) {
+        return Ok(Cow::Borrowed(source));
+    }
     let want = Want {
         slices: may_have_stepped_slice(source),
         containers: may_mutate(source),

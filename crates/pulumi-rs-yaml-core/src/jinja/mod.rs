@@ -1236,7 +1236,19 @@ fn explain_limit(diag: &mut RenderDiagnostic<'_>, limits: &JinjaLimits) {
 /// unambiguously jinjanator syntax that must be rendered before the file
 /// reaches the Pulumi CLI's YAML parser.
 pub fn has_jinja_syntax(s: &str) -> bool {
-    s.contains("{{") || s.contains("{%") || s.contains("{#")
+    // One pass: every delimiter starts with `{`, which `find(char)` locates
+    // with memchr; three substring searches were three full passes, and
+    // the loader now asks this of every included file.
+    let bytes = s.as_bytes();
+    let mut from = 0;
+    while let Some(off) = s[from..].find('{') {
+        let at = from + off;
+        if matches!(bytes.get(at + 1), Some(b'{' | b'%' | b'#')) {
+            return true;
+        }
+        from = at + 1;
+    }
+    false
 }
 
 /// Turns the runtime's own Jinja pass off: `PULUMI_YAML_JINJA=off`.
