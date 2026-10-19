@@ -11,10 +11,10 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 
 ## Totals
 
-- cases: 317 (263 byte-identical to Jinja2, 54 listed divergences)
+- cases: 336 (279 byte-identical to Jinja2, 57 listed divergences)
 - rows extension: 24
-- rows partial: 35
-- rows supported: 306
+- rows partial: 38
+- rows supported: 309
 - rows unit-tested: 1
 - rows unsupported: 6
 
@@ -26,7 +26,7 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `attr` | partial | filter_attr | intended (filter_attr) |
 | `base64_decode` | extension | ext_filter_base64_decode | extension (ext_filter_base64_decode) |
 | `base64_encode` | extension | ext_filter_base64_encode | extension (ext_filter_base64_encode) |
-| `batch` | partial | filter_batch | intended (filter_batch) |
+| `batch` | partial | filter_batch, filter_batch_counts | intended (filter_batch) |
 | `bool` | extension | ext_filter_bool | extension (ext_filter_bool) |
 | `capitalize` | supported | filter_capitalize | - |
 | `center` | supported | filter_center | - |
@@ -44,7 +44,7 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `format` | supported | filter_format, filter_format_kwargs, filter_format_multibyte_key_error | - |
 | `groupby` | supported | filter_groupby, filter_groupby_tuple | - |
 | `indent` | supported | filter_indent, filter_indent_kwargs | - |
-| `int` | supported | filter_int | - |
+| `int` | partial | filter_int, filter_int_large_float, filter_int_past_128_bits | intended (filter_int_past_128_bits) |
 | `items` | partial | filter_items | intended (filter_items) |
 | `join` | supported | filter_join | - |
 | `last` | supported | filter_last | - |
@@ -61,11 +61,11 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `rejectattr` | supported | filter_rejectattr | - |
 | `replace` | supported | filter_replace | - |
 | `reverse` | supported | filter_reverse | - |
-| `round` | supported | filter_round | - |
+| `round` | supported | filter_round, filter_round_ceil_overflow_error, filter_round_extreme_precision, filter_round_floor_underflow_error | - |
 | `safe` | supported | filter_safe | - |
 | `select` | partial | filter_select | intended (filter_select) |
 | `selectattr` | partial | filter_selectattr | intended (filter_selectattr) |
-| `slice` | supported | filter_slice | - |
+| `slice` | partial | filter_slice, filter_slice_counts, filter_slice_zero_error | intended (filter_slice_counts) |
 | `sort` | partial | filter_sort | intended (filter_sort) |
 | `split` | extension | ext_filter_split | extension (ext_filter_split) |
 | `string` | supported | filter_string | - |
@@ -85,7 +85,7 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `urlencode` | supported | filter_urlencode | - |
 | `urlize` | unsupported | filter_urlize | unsupported (filter_urlize) |
 | `wordcount` | supported | filter_wordcount | - |
-| `wordwrap` | supported | filter_wordwrap | - |
+| `wordwrap` | supported | filter_wordwrap, filter_wordwrap_zero_width_error | - |
 | `xmlattr` | unsupported | filter_xmlattr | unsupported (filter_xmlattr) |
 | `zip` | extension | ext_filter_zip | extension (ext_filter_zip) |
 
@@ -102,7 +102,7 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `boolean` | supported | test_boolean | - |
 | `callable` | supported | test_callable | - |
 | `defined` | supported | test_defined | - |
-| `divisibleby` | supported | test_divisibleby | - |
+| `divisibleby` | supported | test_divisibleby, test_divisibleby_false_error, test_divisibleby_float_zero_error, test_divisibleby_values, test_divisibleby_zero_error | - |
 | `endingwith` | extension | ext_test_endingwith | extension (ext_test_endingwith) |
 | `eq` | supported | test_eq | - |
 | `equalto` | supported | test_equalto | - |
@@ -198,7 +198,9 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `expr_floor_div` | supported | - |
 | `expr_floordiv_signs` | supported | - |
 | `expr_floordiv_zero_error` | supported | - |
+| `expr_i128_edge_division` | supported | - |
 | `expr_in` | supported | - |
+| `expr_int_past_128_bits` | partial | intended (expr_int_past_128_bits) |
 | `expr_is_not` | supported | - |
 | `expr_list_concat` | supported | - |
 | `expr_list_render_strings` | partial | intended (expr_list_render_strings) |
@@ -213,6 +215,8 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `expr_mod` | supported | - |
 | `expr_mod_floats` | supported | - |
 | `expr_mod_zero_error` | supported | - |
+| `expr_mul_numbers` | supported | - |
+| `expr_mul_repeat` | supported | - |
 | `expr_nested_data` | partial | intended (expr_nested_data) |
 | `expr_percent_format` | supported | - |
 | `expr_percent_format_flags` | supported | - |
@@ -222,6 +226,8 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `expr_percent_format_too_few_error` | supported | - |
 | `expr_percent_format_too_many_error` | supported | - |
 | `expr_percent_format_type_error` | supported | - |
+| `expr_pow_python` | supported | - |
+| `expr_pow_zero_negative_error` | supported | - |
 | `expr_precedence` | supported | - |
 | `expr_slice` | supported | - |
 | `expr_slice_dynamic_step` | supported | - |

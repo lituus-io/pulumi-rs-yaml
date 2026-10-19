@@ -429,7 +429,10 @@ fn classify_jinja_error(err: &minijinja::Error) -> (RenderErrorKind, Option<&'st
     let chain = error_chain(err);
     let root = chain.last().copied().unwrap_or(err);
     let detail = root.detail().unwrap_or("");
-    if detail.contains("readFile:") {
+    // Every readFile failure starts with its tag. Anchored, as the tags
+    // below are: a refused include quotes the name it was given, and a name
+    // may contain any text, the tag included.
+    if detail.starts_with("readFile:") {
         return (
             RenderErrorKind::JinjaFilterError,
             Some("Check the file path. Relative paths are resolved from the project directory."),
@@ -441,7 +444,7 @@ fn classify_jinja_error(err: &minijinja::Error) -> (RenderErrorKind, Option<&'st
     if detail.starts_with(OUTPUT_TAG) {
         return (RenderErrorKind::OutputTooLarge, Some(OUTPUT_SUGGESTION));
     }
-    if detail.starts_with(limits::RANGE_TAG) {
+    if detail.starts_with(limits::RANGE_TAG) || detail.starts_with(limits::LIST_TAG) {
         return (RenderErrorKind::RangeTooLarge, Some(RANGE_SUGGESTION));
     }
     if detail.starts_with("recursion limit exceeded") {
@@ -964,6 +967,150 @@ impl TemplatePreprocessor for JinjaPreprocessor<'_> {
     }
 }
 
+/// A render, owned so that it can cross to the deep-stack worker: the
+/// source and every context value are copied (a render's own cost dwarfs
+/// the copy), and the answer comes back with byte ranges where a
+/// [`RenderDiagnostic`] borrows, re-sliced from the caller's source.
+pub(crate) struct RenderJob {
+    source: String,
+    filename: String,
+    project_name: String,
+    stack_name: String,
+    cwd: String,
+    organization: String,
+    root_directory: String,
+    config: HashMap<String, String>,
+    project_dir: String,
+    undefined: UndefinedMode,
+    provider_templated_packages: Vec<String>,
+    extra: HashMap<String, String>,
+    limits: JinjaLimits,
+}
+
+/// A render's answer: the output and its cost, or where and why it failed.
+pub(crate) type RenderReply = Result<(String, RenderStats), OwnedDiagnostic>;
+
+/// A [`RenderDiagnostic`] with its two borrowed slices as byte ranges of
+/// the source the job carried, which is byte-identical to the caller's.
+pub(crate) struct OwnedDiagnostic {
+    kind: RenderErrorKind,
+    line: u32,
+    column: u32,
+    end_column: u32,
+    source_line: std::ops::Range<usize>,
+    expression: std::ops::Range<usize>,
+    message: String,
+    suggestion: Option<&'static str>,
+    origin: Option<Box<IncludeOrigin>>,
+}
+
+/// Where `part` lies inside `whole`, or an empty range when it does not
+/// (an empty `""`, which carries no place).
+fn range_in(whole: &str, part: &str) -> std::ops::Range<usize> {
+    let (w, p) = (whole.as_ptr() as usize, part.as_ptr() as usize);
+    if p >= w && p + part.len() <= w + whole.len() {
+        p - w..p - w + part.len()
+    } else {
+        0..0
+    }
+}
+
+impl OwnedDiagnostic {
+    fn of(source: &str, d: RenderDiagnostic<'_>) -> Self {
+        OwnedDiagnostic {
+            kind: d.kind,
+            line: d.line,
+            column: d.column,
+            end_column: d.end_column,
+            source_line: range_in(source, d.source_line),
+            expression: range_in(source, d.expression),
+            message: d.message,
+            suggestion: d.suggestion,
+            origin: d.origin,
+        }
+    }
+
+    /// The render never ran: no worker could be reached.
+    fn unplaced(message: String) -> Self {
+        OwnedDiagnostic {
+            kind: RenderErrorKind::RecursionLimit,
+            line: 0,
+            column: 0,
+            end_column: 0,
+            source_line: 0..0,
+            expression: 0..0,
+            message,
+            suggestion: None,
+            origin: None,
+        }
+    }
+
+    /// Back to a diagnostic borrowing the caller's `source`.
+    fn on(self, source: &str) -> RenderDiagnostic<'_> {
+        RenderDiagnostic {
+            kind: self.kind,
+            line: self.line,
+            column: self.column,
+            end_column: self.end_column,
+            source_line: source.get(self.source_line).unwrap_or(""),
+            expression: source.get(self.expression).unwrap_or(""),
+            message: self.message,
+            suggestion: self.suggestion,
+            origin: self.origin,
+        }
+    }
+}
+
+impl RenderJob {
+    fn new(ctx: &JinjaContext<'_>, source: &str, filename: &str) -> Self {
+        RenderJob {
+            source: source.to_string(),
+            filename: filename.to_string(),
+            project_name: ctx.project_name.to_string(),
+            stack_name: ctx.stack_name.to_string(),
+            cwd: ctx.cwd.to_string(),
+            organization: ctx.organization.to_string(),
+            root_directory: ctx.root_directory.to_string(),
+            config: ctx.config.clone(),
+            project_dir: ctx.project_dir.to_string(),
+            undefined: ctx.undefined,
+            provider_templated_packages: ctx
+                .provider_templated_packages
+                .iter()
+                .map(|p| p.to_string())
+                .collect(),
+            extra: ctx.extra.clone(),
+            limits: ctx.limits,
+        }
+    }
+
+    /// Runs on the deep-stack worker.
+    pub(crate) fn execute(self) -> RenderReply {
+        let packages: Vec<&str> = self
+            .provider_templated_packages
+            .iter()
+            .map(String::as_str)
+            .collect();
+        let ctx = JinjaContext {
+            project_name: &self.project_name,
+            stack_name: &self.stack_name,
+            cwd: &self.cwd,
+            organization: &self.organization,
+            root_directory: &self.root_directory,
+            config: &self.config,
+            project_dir: &self.project_dir,
+            undefined: self.undefined,
+            provider_templated_packages: &packages,
+            extra: &self.extra,
+            limits: self.limits,
+        };
+        match JinjaPreprocessor::new(&ctx).render_deep(&self.source, &self.filename) {
+            Ok((out, stats)) => Ok((out.into_owned(), stats)),
+            Err(d) => Err(OwnedDiagnostic::of(&self.source, d)),
+        }
+    }
+}
+
 impl JinjaPreprocessor<'_> {
     /// The render itself, with the diagnostic's lifetime tied to `source`
     /// alone.
@@ -1001,6 +1148,28 @@ impl JinjaPreprocessor<'_> {
             };
             return Ok((Cow::Borrowed(source), stats));
         }
+        // Rendering recurses as deep as the recursion limit allows, which
+        // the caller's stack may not hold (1 MiB on a Windows main thread),
+        // so it runs on the deep-stack worker, as SQL parsing does.
+        let job = Box::new(RenderJob::new(self.context, source, filename));
+        let reply = match crate::deep_stack::run(crate::deep_stack::Job::Render(job)) {
+            Ok(crate::deep_stack::Reply::Render(reply)) => reply,
+            #[cfg(feature = "sql-lineage")]
+            Ok(crate::deep_stack::Reply::Sql(_)) => unreachable!("a render answers a render"),
+            Err(message) => Err(OwnedDiagnostic::unplaced(message)),
+        };
+        reply
+            .map(|(out, stats)| (Cow::Owned(out), stats))
+            .map_err(|d| d.on(source))
+    }
+
+    /// The render past the fast path, on a stack sized for the recursion
+    /// limit.
+    fn render_deep<'src>(
+        &self,
+        source: &'src str,
+        filename: &str,
+    ) -> Result<(Cow<'src, str>, RenderStats), RenderDiagnostic<'src>> {
         let limits = self.context.limits;
 
         // Scope out text addressed to a provider before anything else looks at
@@ -1017,8 +1186,10 @@ impl JinjaPreprocessor<'_> {
             Cow::Borrowed(scoped_source)
         };
 
-        // Slow path: render through minijinja
-        let mut env = minijinja::Environment::new();
+        // Slow path: render through minijinja. Built from empty: the engine's
+        // defaults include builtins this engine replaces, which would stay in
+        // the binary, unreachable, if they were registered first.
+        let mut env = minijinja::Environment::empty();
         env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
         // Output is YAML, never HTML. Said explicitly: minijinja picks an
         // escape from the template name, and with its `json` feature on a
@@ -1044,6 +1215,7 @@ impl JinjaPreprocessor<'_> {
         });
         env.add_function(prepass::SLICE_FN, prepass::slice);
         env.add_global(methods::OUTPUT_LIMIT_GLOBAL, limits.output_bytes);
+        env.add_global(limits::RANGE_LIMIT_GLOBAL, limits.range);
         let range_limit = limits.range;
         env.add_function(
             "range",
@@ -1070,13 +1242,19 @@ impl JinjaPreprocessor<'_> {
 
         // Slices that could step backwards go through a safe implementation;
         // see `slice`. Borrowed unless the template has one.
-        let rewritten = match prepass::prepare(effective_source.as_ref(), filename) {
-            Ok(rewritten) => rewritten,
-            Err(refusal) => return Err(prepass_refusal(source, refusal)),
+        let mut edits = Vec::new();
+        let rewritten =
+            match prepass::prepare_mapped(effective_source.as_ref(), filename, &mut edits) {
+                Ok(rewritten) => rewritten,
+                Err(refusal) => return Err(prepass_refusal(source, refusal)),
+            };
+        let compiled = Compiled {
+            text: rewritten.as_ref(),
+            original: effective_source.as_ref(),
+            edits: &edits,
         };
-        let compiled: &str = rewritten.as_ref();
         // Compiling this file involves no other template.
-        env.add_template(filename, compiled)
+        env.add_template(filename, compiled.text)
             .map_err(|e| build_render_diagnostic(source, compiled, filename, &e))?;
 
         // The text of an included template, for an error that arose in one:
@@ -1188,7 +1366,7 @@ fn output_too_large<'src>(len: usize, limits: &JinjaLimits) -> RenderDiagnostic<
 
 /// The words every output-limit refusal starts with, read back by the
 /// classifier.
-const OUTPUT_TAG: &str = "the render crossed the output limit";
+pub(super) const OUTPUT_TAG: &str = "the render crossed the output limit";
 
 const FUEL_SUGGESTION: &str = "a loop or recursion runs far longer than any real stack needs; \
      look for an unbounded or nested loop. If the work is real, raise the budget with \
@@ -1336,9 +1514,10 @@ pub fn validate_jinja_syntax<'src>(
     // Compiled, never rendered: nothing is evaluated, so there is no
     // undefined behaviour to choose -- a name that will not resolve is the
     // render's to report, with the context in hand.
-    let mut env = minijinja::Environment::new();
+    // Compiling needs no filter, test or global.
+    let mut env = minijinja::Environment::empty();
     env.add_template(filename, source)
-        .map_err(|e| build_render_diagnostic(source, source, filename, &e))?;
+        .map_err(|e| build_render_diagnostic(source, Compiled::plain(source), filename, &e))?;
     Ok(())
 }
 
@@ -1386,9 +1565,29 @@ fn scope_diagnostic<'src>(
 ///
 /// The message is the fault alone: minijinja's `Display` appends
 /// `(in <name>:<line>)`, which repeats the location the caller already has.
+/// The text a template was compiled from, and how it relates to the text
+/// the prepass was given: where errors are located.
+#[derive(Clone, Copy)]
+struct Compiled<'a> {
+    text: &'a str,
+    original: &'a str,
+    edits: &'a [prepass::Edit],
+}
+
+impl<'a> Compiled<'a> {
+    /// Text compiled as it was written: no rewrites to map through.
+    fn plain(text: &'a str) -> Self {
+        Compiled {
+            text,
+            original: text,
+            edits: &[],
+        }
+    }
+}
+
 fn build_render_diagnostic<'src>(
     source: &'src str,
-    compiled: &str,
+    compiled: Compiled<'_>,
     filename: &str,
     err: &minijinja::Error,
 ) -> RenderDiagnostic<'src> {
@@ -1399,7 +1598,7 @@ fn build_render_diagnostic<'src>(
 /// another template by name when the error does not carry it.
 fn build_render_diagnostic_with<'src, T>(
     source: &'src str,
-    compiled: &str,
+    compiled: Compiled<'_>,
     filename: &str,
     err: &minijinja::Error,
     template_text: T,
@@ -1498,7 +1697,8 @@ where
         .lines()
         .nth(line.saturating_sub(1) as usize)
         .unwrap_or("");
-    let (column, end_column, expression) = locate_expression(source_line, text, root);
+    let (column, end_column, expression) =
+        locate_expression(source_line, Compiled::plain(text), root);
     // Every error in the chain names the template it arose in and the line
     // there: for a wrapper that is the include statement, for the root the
     // fault itself.
@@ -1544,19 +1744,34 @@ where
 /// rather than to a panic.
 fn locate_expression<'src>(
     source_line: &'src str,
-    compiled: &str,
+    compiled: Compiled<'_>,
     err: &minijinja::Error,
 ) -> (u32, u32, &'src str) {
     let Some(range) = err.range() else {
         return (0, 0, "");
     };
     if range.start >= range.end
-        || range.end > compiled.len()
-        || !compiled.is_char_boundary(range.start)
-        || !compiled.is_char_boundary(range.end)
+        || range.end > compiled.text.len()
+        || !compiled.text.is_char_boundary(range.start)
+        || !compiled.text.is_char_boundary(range.end)
     {
         return (0, 0, "");
     }
+    // Where the prepass rewrote the text, the range is mapped back to what
+    // the author wrote before it is looked for.
+    let (compiled, range) = if compiled.edits.is_empty() {
+        (compiled.text, range)
+    } else {
+        let (s, e) = prepass::to_source(compiled.edits, range.start, range.end);
+        if s >= e
+            || e > compiled.original.len()
+            || !compiled.original.is_char_boundary(s)
+            || !compiled.original.is_char_boundary(e)
+        {
+            return (0, 0, "");
+        }
+        (compiled.original, s..e)
+    };
     let line_start = compiled[..range.start].rfind('\n').map_or(0, |i| i + 1);
     let col = range.start - line_start;
     let Some(expr) = compiled.get(range.start..range.end) else {
@@ -2065,6 +2280,7 @@ fn register_template_loader(
 // ---------------------------------------------------------------------------
 
 fn register_custom_filters(env: &mut minijinja::Environment<'_>) {
+    compat::builtins(env);
     env.add_filter("to_json", |v: minijinja::Value| -> String {
         yaml_safe_json(serde_json::to_string(&v).unwrap_or_default())
     });
@@ -2075,7 +2291,6 @@ fn register_custom_filters(env: &mut minijinja::Environment<'_>) {
     // is reported per file the stack then read as *missing* rather than
     // broken. Same class as the `indent` kwargs gap fixed in 0.5.19: the
     // semantics were already here, under a name real templates never use.
-    env.add_filter("tojson", tojson_compat);
 
     env.add_filter("to_yaml", |v: minijinja::Value| -> String {
         serde_yaml::to_string(&v).unwrap_or_default()
@@ -2111,7 +2326,6 @@ fn register_custom_filters(env: &mut minijinja::Environment<'_>) {
     // is positional-only, so the kwargs map lands in `width` and fails with
     // "cannot convert map to usize". Accept both spellings; the positional
     // form keeps the builtin's exact semantics.
-    env.add_filter("indent", indent_compat);
 
     // Three Jinja2 string filters minijinja does not carry. A template that
     // names one fails the render, and because a render fault is reported per
@@ -2123,9 +2337,6 @@ fn register_custom_filters(env: &mut minijinja::Environment<'_>) {
     // and `wordwrap`'s hyphen breaking are each odd enough to get wrong by
     // reading the documentation. Every case in the tests carries the value the
     // reference implementation produces.
-    env.add_filter("truncate", truncate_compat);
-    env.add_filter("center", center_compat);
-    env.add_filter("wordwrap", wordwrap_compat);
 
     // Jinja2's own filters, tests, globals and methods where minijinja's
     // differ or are missing; registered last so they replace the builtins.
@@ -2144,37 +2355,54 @@ fn register_custom_filters(env: &mut minijinja::Environment<'_>) {
 /// Serialisation cannot fail for a renderable `Value`, but an unserialisable
 /// one returns an error rather than an empty string: a silently empty JSON
 /// literal is a corrupt template that renders green.
-fn tojson_compat(
+pub(super) fn tojson_compat(
+    state: &minijinja::State<'_, '_>,
     value: minijinja::Value,
     args: &[minijinja::Value],
     kwargs: minijinja::value::Kwargs,
-) -> Result<String, minijinja::Error> {
+) -> Result<minijinja::Value, minijinja::Error> {
     let indent = match args.first() {
-        Some(v) => v.as_i64().map(|n| n.max(0) as usize),
-        None => kwargs.get::<Option<usize>>("indent")?,
+        Some(v) => v.as_i64().map(|n| n.max(0) as u64),
+        None => kwargs
+            .get::<Option<i64>>("indent")?
+            .map(|n| n.max(0) as u64),
     };
     kwargs.assert_all_used()?;
 
     let rendered = match indent {
         Some(width) => {
-            let mut buf = Vec::new();
-            let indent_bytes = " ".repeat(width);
+            // The indent is written once per nesting level per line, so
+            // the text can outgrow the width many times over: the buffer
+            // itself refuses to pass the output limit.
+            let cap = methods::output_cap(state);
+            if width > cap as u64 {
+                return Err(output_refused("tojson's indent", width, cap));
+            }
+            let mut buf = limits::LimitedBuf::new(cap);
+            let indent_bytes = " ".repeat(width as usize);
             let fmt = serde_json::ser::PrettyFormatter::with_indent(indent_bytes.as_bytes());
             let mut ser = serde_json::Serializer::with_formatter(&mut buf, fmt);
-            serde::Serialize::serialize(&value, &mut ser)
-                .map_err(|e| json_error(&e))
-                .and_then(|()| {
-                    String::from_utf8(buf).map_err(|e| {
-                        minijinja::Error::new(
-                            minijinja::ErrorKind::InvalidOperation,
-                            format!("tojson produced invalid UTF-8: {}", e),
-                        )
-                    })
-                })?
+            let done = serde::Serialize::serialize(&value, &mut ser);
+            if buf.over {
+                return Err(output_refused(
+                    "tojson's output",
+                    buf.bytes.len() as u64,
+                    cap,
+                ));
+            }
+            let buf = buf.bytes;
+            done.map_err(|e| json_error(&e)).and_then(|()| {
+                String::from_utf8(buf).map_err(|e| {
+                    minijinja::Error::new(
+                        minijinja::ErrorKind::InvalidOperation,
+                        format!("tojson produced invalid UTF-8: {}", e),
+                    )
+                })
+            })?
         }
         None => serde_json::to_string(&value).map_err(|e| json_error(&e))?,
     };
-    Ok(yaml_safe_json(rendered))
+    Ok(minijinja::Value::from(yaml_safe_json(rendered)))
 }
 
 /// JSON that YAML reads back unchanged.
@@ -2208,6 +2436,14 @@ fn yaml_safe_json(json: String) -> String {
     out
 }
 
+/// A filter that would write past the output limit, classified with it.
+fn output_refused(what: &str, size: u64, cap: usize) -> minijinja::Error {
+    minijinja::Error::new(
+        minijinja::ErrorKind::InvalidOperation,
+        format!("{OUTPUT_TAG}: {what} needs {size} bytes, past the {cap}-byte limit"),
+    )
+}
+
 fn json_error(e: &serde_json::Error) -> minijinja::Error {
     minijinja::Error::new(
         minijinja::ErrorKind::InvalidOperation,
@@ -2220,14 +2456,18 @@ fn json_error(e: &serde_json::Error) -> minijinja::Error {
 /// Delegates to the builtin semantics: `width` spaces prepended to every
 /// non-blank line, `first` also indenting line 1, `blank` also indenting
 /// empty lines.
-fn indent_compat(
-    value: String,
+pub(super) fn indent_compat(
+    state: &minijinja::State<'_, '_>,
+    value: minijinja::Value,
     args: &[minijinja::Value],
     kwargs: minijinja::value::Kwargs,
-) -> Result<String, minijinja::Error> {
+) -> Result<minijinja::Value, minijinja::Error> {
+    // minijinja's builtin took any value as its text, as its `String`
+    // argument did here.
+    let value = value.to_string();
     let width = match args.first() {
-        Some(v) => usize::try_from(v.as_i64().unwrap_or(4).max(0) as u64).unwrap_or(4),
-        None => kwargs.get::<Option<usize>>("width")?.unwrap_or(4),
+        Some(v) => v.as_i64().unwrap_or(4).max(0) as u64,
+        None => kwargs.get::<Option<i64>>("width")?.unwrap_or(4).max(0) as u64,
     };
     let first = match args.get(1) {
         Some(v) => v.is_true(),
@@ -2239,8 +2479,14 @@ fn indent_compat(
     };
     kwargs.assert_all_used()?;
 
-    let prefix = " ".repeat(width);
-    let mut out = String::with_capacity(value.len() + width * 4);
+    // The prefix goes on every line: bounded by the output limit, as the
+    // width alone and as it accumulates.
+    let cap = methods::output_cap(state);
+    if width > cap as u64 {
+        return Err(output_refused("indent's width", width, cap));
+    }
+    let prefix = " ".repeat(width as usize);
+    let mut out = String::with_capacity(value.len() + prefix.len() * 4);
     for (idx, line) in value.split('\n').enumerate() {
         if idx > 0 {
             out.push('\n');
@@ -2250,8 +2496,11 @@ fn indent_compat(
             out.push_str(&prefix);
         }
         out.push_str(line);
+        if out.len() > cap {
+            return Err(output_refused("the indented text", out.len() as u64, cap));
+        }
     }
-    Ok(out)
+    Ok(minijinja::Value::from(out))
 }
 
 /// Byte offset of the `n`-th character, or the string's length when it is
@@ -2277,7 +2526,7 @@ fn char_boundary(s: &str, n: usize) -> usize {
 /// on the decision to truncate at all -- a string only a few characters over
 /// is returned whole. Both are Jinja2's, and both are easy to misread: the
 /// tests carry the reference implementation's answers.
-fn truncate_compat(
+pub(super) fn truncate_compat(
     value: minijinja::Value,
     args: &[minijinja::Value],
     kwargs: minijinja::value::Kwargs,
@@ -2288,10 +2537,11 @@ fn truncate_compat(
             "truncate: expected a string",
         ));
     };
-    let length = match args.first() {
-        Some(v) => usize::try_from(v.as_i64().unwrap_or(255).max(0)).unwrap_or(255),
-        None => kwargs.get::<Option<usize>>("length")?.unwrap_or(255),
+    let given = match args.first() {
+        Some(v) => v.as_i64().unwrap_or(255),
+        None => kwargs.get::<Option<i64>>("length")?.unwrap_or(255),
     };
+    let length = usize::try_from(given).unwrap_or(0);
     let killwords = match args.get(1) {
         Some(v) => v.is_true(),
         None => kwargs.get::<Option<bool>>("killwords")?.unwrap_or(false),
@@ -2310,13 +2560,13 @@ fn truncate_compat(
     kwargs.assert_all_used()?;
 
     let end_chars = end.chars().count();
-    if length < end_chars {
+    if given < end_chars as i64 {
         // Jinja2 asserts here. An assertion is a crash; a render error names
         // the template and the line, which is the difference between "fix this
         // filter call" and a stack trace out of the engine.
         return Err(minijinja::Error::new(
             minijinja::ErrorKind::InvalidOperation,
-            format!("truncate: expected length >= {end_chars}, got {length}"),
+            format!("truncate: expected length >= {end_chars}, got {given}"),
         ));
     }
 
@@ -2375,7 +2625,7 @@ const MAX_CENTER_PAD: usize = 1024 * 1024;
 /// diffs.
 ///
 /// A string already at or past `width` is returned borrowed.
-fn center_compat(
+pub(super) fn center_compat(
     value: minijinja::Value,
     args: &[minijinja::Value],
     kwargs: minijinja::value::Kwargs,
@@ -2473,7 +2723,7 @@ const MAX_WRAPPED_OUTPUT: usize = 8 * 1024 * 1024;
 ///
 /// Chunks borrow the input, so no word is copied. One allocation for the
 /// result, sized from the input, and one reused chunk buffer for the render.
-fn wordwrap_compat(
+pub(super) fn wordwrap_compat(
     value: minijinja::Value,
     args: &[minijinja::Value],
     kwargs: minijinja::value::Kwargs,
@@ -2485,10 +2735,19 @@ fn wordwrap_compat(
         ));
     };
     let width = match args.first() {
-        Some(v) => usize::try_from(v.as_i64().unwrap_or(79).max(1)).unwrap_or(79),
-        None => kwargs.get::<Option<usize>>("width")?.unwrap_or(79),
-    }
-    .max(1);
+        Some(v) => v.as_i64().unwrap_or(79),
+        None => kwargs.get::<Option<i64>>("width")?.unwrap_or(79),
+    };
+    // textwrap's own refusal, which Jinja2 lets through.
+    let width = usize::try_from(width)
+        .ok()
+        .filter(|w| *w > 0)
+        .ok_or_else(|| {
+            minijinja::Error::new(
+                minijinja::ErrorKind::InvalidOperation,
+                format!("invalid width {width} (must be > 0)"),
+            )
+        })?;
     let break_long_words = match args.get(1) {
         Some(v) => v.is_true(),
         None => kwargs
@@ -3045,7 +3304,7 @@ mod tests {
             .expect("registered")
             .render(minijinja::context! {})
             .expect_err("nope is undefined");
-        let diag = build_render_diagnostic(source, rewritten, "t", &err);
+        let diag = build_render_diagnostic(source, Compiled::plain(rewritten), "t", &err);
         assert_eq!(diag.line, 2);
         assert_eq!((diag.column, diag.end_column), (0, 0));
         assert_eq!(diag.expression, "");
@@ -3055,7 +3314,7 @@ mod tests {
     #[test]
     fn an_error_with_no_range_has_no_column() {
         let err = minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, "x");
-        let diag = build_render_diagnostic("a: 1\n", "a: 1\n", "t", &err);
+        let diag = build_render_diagnostic("a: 1\n", Compiled::plain("a: 1\n"), "t", &err);
         assert_eq!((diag.line, diag.column, diag.end_column), (0, 0, 0));
         assert_eq!(diag.expression, "");
         assert_eq!(diag.message, "x");
@@ -3064,7 +3323,7 @@ mod tests {
     #[test]
     fn a_message_without_detail_is_the_kind() {
         let err = minijinja::Error::from(minijinja::ErrorKind::UndefinedError);
-        let diag = build_render_diagnostic("", "", "t", &err);
+        let diag = build_render_diagnostic("", Compiled::plain(""), "t", &err);
         assert_eq!(diag.message, "undefined value");
     }
 

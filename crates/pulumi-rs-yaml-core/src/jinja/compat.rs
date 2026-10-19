@@ -20,60 +20,208 @@ use std::sync::Arc;
 use minijinja::value::{Kwargs, Object, ObjectRepr, Value, ValueKind};
 use minijinja::{Environment, Error, ErrorKind, State};
 
-/// Registers every filter, test, global and method this module provides.
-pub(super) fn register(env: &mut Environment<'_>) {
-    env.add_filter("int", int_compat);
-    env.add_filter("float", float_compat);
-    env.add_filter("round", round_compat);
-    env.add_filter("replace", replace_compat);
-    env.add_filter("join", join_compat);
-    env.add_filter("sum", sum_compat);
-    env.add_filter("max", max_compat);
-    env.add_filter("min", min_compat);
-    env.add_filter("dictsort", dictsort_compat);
-    env.add_filter("title", title_compat);
-    env.add_filter("wordcount", wordcount);
-    env.add_filter("filesizeformat", filesizeformat);
-    env.add_filter("urlencode", urlencode);
+/// `value | name(args, kwargs)`.
+type Filter = fn(Value, &[Value], Kwargs) -> Result<Value, Error>;
+/// The same, for a filter that reads the render's limits.
+type StateFilter = fn(&State<'_, '_>, Value, &[Value], Kwargs) -> Result<Value, Error>;
+/// One value in, one out: a filter, or a function of one argument.
+type Unary = fn(Value) -> Result<Value, Error>;
+/// `a <op> b`, routed by the prepass.
+type Binary = fn(&State<'_, '_>, Value, Value) -> Result<Value, Error>;
+
+// One table per shape, registered through one closure per shape: a closure
+// written once is one type whatever function it holds, so the engine's
+// argument conversion is instantiated once per shape rather than once per
+// filter -- the registrations were the largest generic code in the binary.
+const FILTERS: &[(&str, Filter)] = &[
+    ("int", int_compat),
+    ("float", float_compat),
+    ("round", round_compat),
+    ("replace", replace_compat),
+    ("join", join_compat),
+    ("sum", sum_compat),
+    ("max", max_compat),
+    ("min", min_compat),
+    ("dictsort", dictsort_compat),
+    ("filesizeformat", filesizeformat),
+    // Three Jinja2 string filters minijinja does not carry.
+    ("truncate", super::truncate_compat),
+    ("center", super::center_compat),
+    ("wordwrap", super::wordwrap_compat),
+];
+
+const STATE_FILTERS: &[(&str, StateFilter)] = &[
     // Jinja2's `format` is `value % args`: the printf core `%` uses.
     // minijinja's own sliced its input by bytes and panicked on a
     // multi-byte character inside a `%(...)` key.
-    env.add_filter("format", format_filter);
+    ("format", format_filter),
+    ("tojson", super::tojson_compat),
+    ("indent", super::indent_compat),
+    ("slice", super::arith::slice),
+    ("batch", super::arith::batch),
+];
+
+const UNARY_FILTERS: &[(&str, Unary)] = &[
+    ("title", title_compat),
+    ("wordcount", wordcount),
+    ("urlencode", urlencode),
+    ("to_date", super::dates::to_date),
+    ("to_datetime", super::dates::to_datetime),
+];
+
+const UNARY_FUNCTIONS: &[(&str, Unary)] = &[
+    // The converters are callable as functions as well as filters.
+    ("to_date", super::dates::to_date),
+    ("to_datetime", super::dates::to_datetime),
+    (super::containers::LIST_FN, super::containers::wrap_list),
+    (super::containers::DICT_FN, super::containers::wrap_dict),
+    (super::containers::OWN_FN, super::containers::own),
+];
+
+const OPERATORS: &[(&str, Binary)] = &[
+    // Date `+`/`-`, and Python's `/`, `//`, `%`, `*` and `**`.
+    (super::prepass::ADD_FN, super::dates::add),
+    (super::prepass::SUB_FN, super::dates::sub),
+    (super::arith::DIV_FN, super::arith::div),
+    (super::arith::FLOORDIV_FN, super::arith::floordiv),
+    (super::arith::MOD_FN, super::arith::modulo),
+    (super::arith::MUL_FN, super::arith::mul),
+    (super::arith::POW_FN, super::arith::pow),
+];
+
+/// The engine's own filters, tests and globals that Jinja2 has and this
+/// module does not replace: minijinja's default set, less `debug` and less
+/// every name `register` gives its own implementation. Registering the
+/// replaced ones too would keep their code in the binary for nothing.
+pub(super) fn builtins(env: &mut Environment<'_>) {
+    use minijinja::{filters as f, functions as g, tests as t};
+    env.add_filter("safe", f::safe);
+    env.add_filter("escape", f::escape);
+    env.add_filter("e", f::escape);
+    env.add_filter("lower", f::lower);
+    env.add_filter("upper", f::upper);
+    env.add_filter("capitalize", f::capitalize);
+    env.add_filter("length", f::length);
+    env.add_filter("count", f::length);
+    env.add_filter("items", f::items);
+    env.add_filter("reverse", f::reverse);
+    env.add_filter("trim", f::trim);
+    env.add_filter("split", f::split);
+    env.add_filter("lines", f::lines);
+    env.add_filter("default", f::default);
+    env.add_filter("d", f::default);
+    env.add_filter("abs", f::abs);
+    env.add_filter("attr", f::attr);
+    env.add_filter("first", f::first);
+    env.add_filter("last", f::last);
+    env.add_filter("sort", f::sort);
+    env.add_filter("list", f::list);
+    env.add_filter("string", f::string);
+    env.add_filter("bool", f::bool);
+    env.add_filter("select", f::select);
+    env.add_filter("reject", f::reject);
+    env.add_filter("selectattr", f::selectattr);
+    env.add_filter("rejectattr", f::rejectattr);
+    env.add_filter("map", f::map);
+    env.add_filter("groupby", f::groupby);
+    env.add_filter("unique", f::unique);
+    env.add_filter("chain", f::chain);
+    env.add_filter("zip", f::zip);
+    env.add_filter("pprint", f::pprint);
+
+    env.add_test("undefined", t::is_undefined);
+    env.add_test("defined", t::is_defined);
+    env.add_test("none", t::is_none);
+    env.add_test("safe", t::is_safe);
+    env.add_test("escaped", t::is_safe);
+    env.add_test("boolean", t::is_boolean);
+    env.add_test("odd", t::is_odd);
+    env.add_test("even", t::is_even);
+    env.add_test("number", t::is_number);
+    env.add_test("integer", t::is_integer);
+    env.add_test("int", t::is_integer);
+    env.add_test("float", t::is_float);
+    env.add_test("string", t::is_string);
+    env.add_test("iterable", t::is_iterable);
+    env.add_test("mapping", t::is_mapping);
+    env.add_test("startingwith", t::is_startingwith);
+    env.add_test("endingwith", t::is_endingwith);
+    env.add_test("lower", t::is_lower);
+    env.add_test("upper", t::is_upper);
+    env.add_test("sameas", t::is_sameas);
+    for name in ["eq", "equalto", "=="] {
+        env.add_test(name, t::is_eq);
+    }
+    for name in ["ne", "!="] {
+        env.add_test(name, t::is_ne);
+    }
+    for name in ["lt", "lessthan", "<"] {
+        env.add_test(name, t::is_lt);
+    }
+    for name in ["le", "<="] {
+        env.add_test(name, t::is_le);
+    }
+    for name in ["gt", "greaterthan", ">"] {
+        env.add_test(name, t::is_gt);
+    }
+    for name in ["ge", ">="] {
+        env.add_test(name, t::is_ge);
+    }
+    env.add_test("in", t::is_in);
+    env.add_test("true", t::is_true);
+    env.add_test("false", t::is_false);
+    env.add_test("filter", t::is_filter);
+    env.add_test("test", t::is_test);
+
+    env.add_function("dict", g::dict);
+    env.add_function("namespace", g::namespace);
+}
+
+/// Registers every filter, test, global and method this module provides.
+pub(super) fn register(env: &mut Environment<'_>) {
+    for &(name, f) in FILTERS {
+        env.add_filter(name, move |v: Value, a: &[Value], k: Kwargs| f(v, a, k));
+    }
+    for &(name, f) in STATE_FILTERS {
+        env.add_filter(
+            name,
+            move |s: &State<'_, '_>, v: Value, a: &[Value], k: Kwargs| f(s, v, a, k),
+        );
+    }
+    for &(name, f) in UNARY_FILTERS {
+        env.add_filter(name, move |v: Value| f(v));
+    }
+    for &(name, f) in UNARY_FUNCTIONS {
+        env.add_function(name, move |v: Value| f(v));
+    }
+    for &(name, f) in OPERATORS {
+        env.add_function(name, move |s: &State<'_, '_>, a: Value, b: Value| {
+            f(s, a, b)
+        });
+    }
 
     env.add_test("callable", is_callable);
     env.add_test("sequence", is_sequence);
+    env.add_test("divisibleby", super::arith::divisibleby);
 
     env.add_function("cycler", cycler);
     env.add_function("joiner", joiner);
-    // `debug()` dumps the whole render context -- config values and every
-    // `JINJA_VAR_*` included -- into the output. Jinja2 has no such global
-    // without an extension; a deploy has no use for one.
-    env.remove_global("debug");
+    // `debug()`, which dumps the whole render context -- config values and
+    // every `JINJA_VAR_*` included -- into the output, is not registered:
+    // Jinja2 has no such global without an extension, and a deploy has no
+    // use for one.
 
     // Python's methods on values; template-built lists and dicts carry
     // their own (mutating) methods.
     env.set_unknown_method_callback(super::methods::dispatch);
-    env.add_function(super::containers::LIST_FN, super::containers::wrap_list);
-    env.add_function(super::containers::DICT_FN, super::containers::wrap_dict);
-    env.add_function(super::containers::OWN_FN, super::containers::own);
     // Naive dates; `+`/`-` reach them through the prepass.
     env.add_function("date", super::dates::date);
     env.add_function("datetime", super::dates::datetime);
     env.add_function("timedelta", super::dates::timedelta);
-    env.add_filter("to_date", super::dates::to_date);
-    env.add_filter("to_datetime", super::dates::to_datetime);
     env.add_filter("strptime", super::dates::strptime);
-    // The converters are callable as functions as well as filters.
-    env.add_function("to_date", super::dates::to_date);
-    env.add_function("to_datetime", super::dates::to_datetime);
     env.add_function("strptime", super::dates::strptime);
-    env.add_function(super::prepass::ADD_FN, super::dates::add);
-    env.add_function(super::prepass::SUB_FN, super::dates::sub);
-    // Python's division and modulo, `%` formatting, string loops, isolated
-    // includes and variadic macros, reached through the prepass.
-    env.add_function(super::arith::DIV_FN, super::arith::div);
-    env.add_function(super::arith::FLOORDIV_FN, super::arith::floordiv);
-    env.add_function(super::arith::MOD_FN, super::arith::modulo);
+    // String loops, isolated includes and variadic macros, reached through
+    // the prepass.
     env.add_function(super::arith::ITER_FN, super::arith::iter);
     env.add_function(super::arith::INCLUDE_FN, super::arith::include);
     env.add_function(super::arith::VARIADIC_FN, super::arith::variadic);
@@ -231,8 +379,14 @@ fn int_compat(value: Value, args: &[Value], kwargs: Kwargs) -> Result<Value, Err
             Ok(default.clone())
         } else if f.is_infinite() {
             Err(invalid("cannot convert float infinity to integer"))
-        } else {
+        } else if f.abs() < 2f64.powi(127) {
             Ok(Value::from(f.trunc() as i128))
+        } else {
+            // Python's int is unbounded; this engine's stops at 128 bits.
+            // Saturating would answer a wrong number, so it refuses.
+            Err(invalid(format!(
+                "int: {f} is past the 128-bit integers this engine holds"
+            )))
         }
     };
     match value.kind() {
@@ -283,6 +437,30 @@ fn round_compat(value: Value, args: &[Value], kwargs: Kwargs) -> Result<Value, E
     let x = number_to_f64(&value)
         .filter(|_| value.kind() != ValueKind::String)
         .ok_or_else(|| invalid("round: value must be a number"))?;
+    // Past these the arithmetic below has no answer (10**p overflows or
+    // underflows a float); Python's does, so give it directly. Rounding to
+    // more digits than any float carries changes nothing, and rounding to
+    // fewer than -308 leaves zero; `ceil`/`floor` scale by 10**p first and
+    // raise as Python does.
+    if precision > 330 && method == "common" {
+        return Ok(value);
+    }
+    if precision < -308 && method == "common" {
+        return Ok(if is_integer(&value) {
+            Value::from(0)
+        } else {
+            Value::from(0.0f64.copysign(x))
+        });
+    }
+    if precision > 308 && method != "common" {
+        return Err(invalid("OverflowError: int too large to convert to float"));
+    }
+    if precision < -323 && method != "common" {
+        return Err(Error::new(
+            ErrorKind::InvalidOperation,
+            "ZeroDivisionError: float division by zero",
+        ));
+    }
     let scale = 10f64.powi(precision);
     match method {
         "common" if is_integer(&value) && precision >= 0 => Ok(value),
@@ -557,7 +735,7 @@ fn format_filter(
             let v: Value = kwargs.get(&n)?;
             map.insert(Value::from(n), v);
         }
-        Value::from_iter(map)
+        Value::from_object(map)
     };
     kwargs.assert_all_used()?;
     let cap = super::methods::output_cap(state);

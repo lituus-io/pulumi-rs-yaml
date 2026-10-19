@@ -2709,13 +2709,20 @@ mod string_filter_security {
     #[test]
     fn a_zero_or_negative_width_still_terminates() {
         // `wordwrap(0)` would divide a line into zero-width pieces forever if
-        // the width were taken literally.
+        // the width were taken literally. It returns at once, refused as
+        // Python's textwrap refuses it (Jinja2 lets the ValueError through).
         for w in ["0", "-1", "-999"] {
             let out = render(&format!("{{{{ 'aaa bbb' | wordwrap({w}) }}}}"));
-            assert!(out.is_ok(), "wordwrap({w}) did not return: {out:?}");
+            let err = out.expect_err("a width below 1 is Jinja2's ValueError");
+            assert!(
+                err.contains(&format!("invalid width {w} (must be > 0)")),
+                "{err}"
+            );
         }
         assert!(render("{{ 'x' | center(-5) }}").is_ok());
-        assert!(render("{{ 'abc' | truncate(-5, False, '', 0) }}").is_ok());
+        // Jinja2's assertion, as a render error naming the length given.
+        let err = render("{{ 'abc' | truncate(-5, False, '', 0) }}").unwrap_err();
+        assert!(err.contains("expected length >= 0, got -5"), "{err}");
     }
 
     #[test]
@@ -2819,14 +2826,14 @@ mod string_filter_security {
         //             leeway   saturating_add, compared only
         //             end      appended ONCE -> output <= input + end
         //   center    width    pad bounded by MAX_CENTER_PAD
-        //   wordwrap  width    compared, and a divisor; floored at 1
+        //   wordwrap  width    compared, and a divisor; below 1 refused
         //             wrapstring  once per line -> bounded by MAX_WRAPPED_OUTPUT
         //
         // Each line below is the bound firing or the input being the bound.
         assert!(render("{{ 'abc' | truncate(999999999999999999) }}").is_ok());
         assert!(render("{{ 'abc' | truncate(60, False, '', 999999999999999999) }}").is_ok());
         assert!(render("{{ 'x' | center(999999999999999999) }}").is_err());
-        assert!(render("{{ 'aaa bbb' | wordwrap(0) }}").is_ok());
+        assert!(render("{{ 'aaa bbb' | wordwrap(0) }}").is_err());
         // The only amplifying pair, refused.
         let big = "z".repeat(4096);
         let subject = "a ".repeat(4_000);
@@ -4375,5 +4382,268 @@ mod jinja_format_filter_security {
         ] {
             let _ = JinjaPreprocessor::new(&ctx).render(src, "Pulumi.yaml");
         }
+    }
+}
+
+/// A refused include is a TemplateNotFound wherever it is reported. The
+/// refusal quotes the name it was given, and fuzz_jinja found one whose name
+/// held `readFile:`; a substring match on that tag reclassified the refusal
+/// as a readFile failure, so one error had two kinds.
+mod jinja_refusal_classification_security {
+    use pulumi_rs_yaml_core::jinja::{
+        IncludeRefusal, JinjaContext, JinjaLimits, JinjaPreprocessor, RenderErrorKind,
+        TemplatePreprocessor, UndefinedMode,
+    };
+    use std::collections::HashMap;
+
+    #[test]
+    fn a_refused_name_holding_the_readfile_tag_is_still_a_refusal() {
+        let crash = include_bytes!(
+            "../../../fuzz/corpus/fuzz_jinja/seed-refused-name-quotes-readfile-tag.bin"
+        );
+        let fuzz_input = String::from_utf8_lossy(crash).into_owned();
+        let (config, extra) = (HashMap::new(), HashMap::new());
+        let dir = "/nonexistent-refusal-root";
+        let ctx = JinjaContext {
+            project_name: "p",
+            stack_name: "s",
+            cwd: dir,
+            organization: "",
+            root_directory: dir,
+            config: &config,
+            project_dir: dir,
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits: JinjaLimits::default(),
+        };
+        for src in [
+            fuzz_input.as_str(),
+            "{% include 'a\nreadFile: b' %}",
+            "{% extends 'x\nreadFile:/base.j2' %}",
+            "{% import 'readFile:\n' as m %}",
+        ] {
+            let diag = JinjaPreprocessor::new(&ctx)
+                .preprocess(src, "fuzz.yaml")
+                .expect_err(src);
+            assert!(
+                diag.message.starts_with(IncludeRefusal::PREFIX),
+                "{src}: {}",
+                diag.message
+            );
+            assert_eq!(diag.kind, RenderErrorKind::JinjaTemplateNotFound, "{src}");
+            assert_eq!(
+                diag.suggestion,
+                IncludeRefusal::suggestion_for(&diag.message),
+                "{src}"
+            );
+        }
+    }
+}
+
+/// The recursion limit is reached on any caller's stack. Windows gives its
+/// main thread 1 MiB, and the language host overflowed it ("has overflowed
+/// its stack") before a self-recursive macro reached recursion 500 -- a
+/// process abort where a typed error belongs. The render now runs on a
+/// stack of its own, so a caller with 1 MiB gets the limit, not a crash.
+mod jinja_deep_stack_security {
+    use pulumi_rs_yaml_core::jinja::{
+        JinjaContext, JinjaLimits, JinjaPreprocessor, RenderErrorKind, UndefinedMode,
+    };
+    use std::collections::HashMap;
+
+    const WINDOWS_MAIN_STACK: usize = 1024 * 1024;
+
+    fn kind_on_small_stack(source: &'static str) -> RenderErrorKind {
+        std::thread::Builder::new()
+            .stack_size(WINDOWS_MAIN_STACK)
+            .spawn(move || {
+                let (config, extra) = (HashMap::new(), HashMap::new());
+                let ctx = JinjaContext {
+                    project_name: "p",
+                    stack_name: "s",
+                    cwd: ".",
+                    organization: "",
+                    root_directory: ".",
+                    config: &config,
+                    project_dir: ".",
+                    undefined: UndefinedMode::Strict,
+                    provider_templated_packages: &[],
+                    extra: &extra,
+                    limits: JinjaLimits::default(),
+                };
+                JinjaPreprocessor::new(&ctx)
+                    .render(source, "Pulumi.yaml")
+                    .err()
+                    .map(|d| d.kind)
+                    .expect("a render with no base case cannot succeed")
+            })
+            .unwrap()
+            .join()
+            .unwrap()
+    }
+
+    #[test]
+    fn the_recursion_limit_is_reached_on_a_one_mebibyte_stack() {
+        for src in [
+            // The host fixture that crashed on Windows.
+            "{% macro down(n) %}{{ down(n + 1) }}{% endmacro %}\noutputs:\n  n: {{ down(0) }}\n",
+            // Recursion through call blocks and filters, deeper per level.
+            "{% macro f(n) %}{{ caller() if caller is defined }}{% call f(n + 1) %}{{ (n ~ 'x') | upper | trim }}{% endcall %}{% endmacro %}{{ f(0) }}",
+            "{% macro g(xs) %}{% for x in xs %}{{ g([x, x]) }}{% endfor %}{% endmacro %}{{ g([1]) }}",
+        ] {
+            assert_eq!(kind_on_small_stack(src), RenderErrorKind::RecursionLimit, "{src}");
+        }
+    }
+}
+
+/// Every builtin filter, test and operator, called with hostile counts and
+/// widths: zero (and `False`), negatives, i64 and i128 extremes. Found by
+/// the fuzzer (`divisibleby` by a zero: a remainder panic, a process abort
+/// under `panic = "abort"`) and by an exhaustive audit run after it, which
+/// found three more of the class: an allocation abort (`tojson`'s and
+/// `indent`'s width), a hang (`[] * 9223372036854775807`, an unbounded
+/// repeat) and a capacity panic (`slice(9223372036854775807)`). Each now
+/// answers as Python does or refuses with a typed error, promptly.
+mod jinja_builtin_audit_security {
+    use pulumi_rs_yaml_core::jinja::{
+        JinjaContext, JinjaLimits, JinjaPreprocessor, RenderErrorKind, UndefinedMode,
+    };
+    use std::collections::HashMap;
+    use std::time::{Duration, Instant};
+
+    fn render(source: &str) -> Result<String, (RenderErrorKind, String)> {
+        let (config, extra) = (HashMap::new(), HashMap::new());
+        let ctx = JinjaContext {
+            project_name: "p",
+            stack_name: "s",
+            cwd: ".",
+            organization: "",
+            root_directory: ".",
+            config: &config,
+            project_dir: ".",
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits: JinjaLimits::default(),
+        };
+        let start = Instant::now();
+        let out = JinjaPreprocessor::new(&ctx)
+            .render(source, "Pulumi.yaml")
+            .map(|c| c.into_owned())
+            .map_err(|d| (d.kind, d.message));
+        assert!(start.elapsed() < Duration::from_secs(5), "slow: {source}");
+        out
+    }
+
+    fn refused(source: &str, kind: RenderErrorKind, needle: &str) {
+        match render(source) {
+            Err((k, m)) => {
+                assert_eq!(k, kind, "{source}: {m}");
+                assert!(m.contains(needle), "{source}: {m}");
+            }
+            Ok(out) => panic!("{source} rendered {} bytes", out.len()),
+        }
+    }
+
+    #[test]
+    fn divisibleby_by_zero_is_a_zero_division_error() {
+        let fuzz =
+            include_str!("../../../fuzz/corpus/fuzz_jinja_conformance/seed-divisibleby-false.txt");
+        for src in [
+            fuzz,
+            "{{ 9 is divisibleby(0) }}",
+            "{{ 9 is divisibleby(false) }}",
+            "{{ 9.0 is divisibleby 0.0 }}",
+        ] {
+            refused(src, RenderErrorKind::JinjaFilterError, "ZeroDivisionError");
+        }
+        assert_eq!(render("{{ 'y' if 9 is divisibleby 3 }}").unwrap(), "y");
+    }
+
+    #[test]
+    fn i128_extremes_divide_exactly() {
+        let m = "{% set m = -170141183460469231731687303715884105727 - 1 %}";
+        assert_eq!(
+            render(&format!("{m}{{{{ m // -1 }}}} {{{{ m % -1 }}}}")).unwrap(),
+            "170141183460469231731687303715884105728 0"
+        );
+    }
+
+    #[test]
+    fn a_repeat_is_bounded_and_an_empty_one_is_instant() {
+        assert_eq!(render("{{ [] * 9223372036854775807 }}").unwrap(), "[]");
+        assert_eq!(render("{{ 'a' * -1 }}|{{ [1] * -5 }}").unwrap(), "|[]");
+        refused(
+            "{{ [1, 2, 3] * 9223372036854775807 }}",
+            RenderErrorKind::RangeTooLarge,
+            "the repeated list",
+        );
+        refused(
+            "{% set s = 'x' * 9223372036854775807 %}",
+            RenderErrorKind::OutputTooLarge,
+            "the repeated string",
+        );
+    }
+
+    #[test]
+    fn huge_counts_and_widths_are_refused_before_allocating() {
+        refused(
+            "{{ (0,) | slice(9223372036854775807) }}",
+            RenderErrorKind::RangeTooLarge,
+            "slice(9223372036854775807)",
+        );
+        refused(
+            "{{ [1] | slice(0) }}",
+            RenderErrorKind::JinjaFilterError,
+            "ZeroDivisionError",
+        );
+        refused(
+            "{{ (0,) | tojson(9223372036854775807) }}",
+            RenderErrorKind::OutputTooLarge,
+            "tojson's indent",
+        );
+        refused(
+            "{{ [[[[1]]]] | tojson(16000000) }}",
+            RenderErrorKind::OutputTooLarge,
+            "tojson's output",
+        );
+        refused(
+            "{{ 'a' | indent(9223372036854775807, true) }}",
+            RenderErrorKind::OutputTooLarge,
+            "indent's width",
+        );
+        refused(
+            "{{ ('a\n' * 4000) | indent(8000, true) }}",
+            RenderErrorKind::OutputTooLarge,
+            "the indented text",
+        );
+        refused(
+            "{{ [1] | batch(9223372036854775807, 0) }}",
+            RenderErrorKind::OutputTooLarge,
+            "the padded batch",
+        );
+    }
+
+    #[test]
+    fn extreme_precisions_answer_as_python_does() {
+        assert_eq!(render("{{ 2.5 | round(2147483647) }}").unwrap(), "2.5");
+        assert_eq!(render("{{ -2.5 | round(-2147483647) }}").unwrap(), "-0.0");
+        assert_eq!(render("{{ 25 | round(-400) }}").unwrap(), "0");
+        refused(
+            "{{ 2.5 | round(400, 'ceil') }}",
+            RenderErrorKind::JinjaFilterError,
+            "OverflowError",
+        );
+        refused(
+            "{{ 1e300 | int }}",
+            RenderErrorKind::JinjaFilterError,
+            "128-bit",
+        );
+        refused(
+            "{{ 'ab' | wordwrap(0) }}",
+            RenderErrorKind::JinjaFilterError,
+            "invalid width 0",
+        );
     }
 }

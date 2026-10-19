@@ -150,9 +150,24 @@ pub struct RenderStats {
 /// The tag a `range()` refusal carries in its detail, read back by the
 /// classifier.
 pub(super) const RANGE_TAG: &str = "range() would produce";
+/// The same refusal for a list built from a count other than `range()`'s:
+/// `slice`'s one list per count, and a repeated list.
+pub(super) const LIST_TAG: &str = "a list past the range limit:";
 
 /// Jinja2's `range(stop)` / `range(start, stop[, step])`, refusing more
 /// than `limit` elements before allocating any.
+/// The global a render publishes its range limit under, for the filters
+/// that produce one list per count (`slice`).
+pub(super) const RANGE_LIMIT_GLOBAL: &str = "__rsyaml_range_limit";
+
+/// The render's range limit, as published in its globals.
+pub(super) fn range_cap(state: &minijinja::State<'_, '_>) -> usize {
+    state
+        .lookup(RANGE_LIMIT_GLOBAL)
+        .and_then(|v| usize::try_from(v).ok())
+        .unwrap_or(JinjaLimits::DEFAULT_RANGE)
+}
+
 pub(super) fn range(
     limit: usize,
     lower: i64,
@@ -234,6 +249,39 @@ pub(super) struct CountingSink(pub(super) usize);
 impl fmt::Write for CountingSink {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.0 += s.len();
+        Ok(())
+    }
+}
+
+/// A buffer that stops storing past `cap` and says so, for text a filter
+/// builds before it reaches the output.
+pub(super) struct LimitedBuf {
+    pub(super) bytes: Vec<u8>,
+    pub(super) over: bool,
+    cap: usize,
+}
+
+impl LimitedBuf {
+    pub(super) fn new(cap: usize) -> Self {
+        Self {
+            bytes: Vec::new(),
+            over: false,
+            cap,
+        }
+    }
+}
+
+impl io::Write for LimitedBuf {
+    fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+        if self.bytes.len().saturating_add(data.len()) > self.cap {
+            self.over = true;
+            return Err(io::Error::other("output limit"));
+        }
+        self.bytes.extend_from_slice(data);
+        Ok(data.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
 }

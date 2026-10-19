@@ -42,6 +42,7 @@ pub mod registry;
 mod resolve;
 mod source_store;
 mod sql;
+pub(crate) use sql::{Job, Reply};
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};

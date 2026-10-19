@@ -6,6 +6,10 @@
 //! - `/`, `//` and `%` by zero raise, as Python's `ZeroDivisionError` does
 //!   (minijinja rendered `1 / 0` as `inf`), and `%` takes the divisor's
 //!   sign (`7 % -3` is `-2`, not `1`);
+//! - `*` repeats a string or a list as Python does (a count of zero or less
+//!   is empty) within the output limit -- minijinja's repeat had no bound,
+//!   and `[] * 9223372036854775807` spun for ever -- and `**` takes a
+//!   negative exponent to a float, raising for a zero base;
 //! - `'%s-%05.2f' % (a, b)` is Python's printf formatting, through the core
 //!   `str.format` uses;
 //! - `for c in 'abc'` iterates a list of the characters, so `loop.length`
@@ -24,6 +28,8 @@ use super::methods::{printf, value_error};
 pub(super) const DIV_FN: &str = "__rsyaml_div";
 pub(super) const FLOORDIV_FN: &str = "__rsyaml_floordiv";
 pub(super) const MOD_FN: &str = "__rsyaml_mod";
+pub(super) const MUL_FN: &str = "__rsyaml_mul";
+pub(super) const POW_FN: &str = "__rsyaml_pow";
 pub(super) const ITER_FN: &str = "__rsyaml_iter";
 pub(super) const INCLUDE_FN: &str = "__rsyaml_include";
 pub(super) const VARIADIC_FN: &str = "__rsyaml_variadic";
@@ -45,12 +51,28 @@ pub(super) fn engine_op(
         "-" => "a - b",
         "/" => "a / b",
         "//" => "a // b",
-        _ => "a % b",
+        "*" => "a * b",
+        "**" => "a ** b",
+        "%" => "a % b",
+        _ => unreachable!("an operator the prepass does not route"),
     };
+    // Raised again without the inner expression's location, so the error
+    // is placed at the template's own line.
+    let relocated = |e: Error| Error::new(e.kind(), e.detail().unwrap_or_default().to_string());
     state
         .env()
-        .compile_expression(src)?
-        .eval(minijinja::context! { a => a, b => b })
+        .compile_expression(src)
+        .and_then(|expr| expr.eval(minijinja::context! { a => a, b => b }))
+        .map_err(relocated)
+}
+
+/// An undefined operand is an undefined variable, as it is to the engine's
+/// own operators: the prepass's call must not turn it into a type error.
+fn defined(a: &Value, b: &Value) -> Result<(), Error> {
+    if a.is_undefined() || b.is_undefined() {
+        return Err(Error::from(ErrorKind::UndefinedError));
+    }
+    Ok(())
 }
 
 /// A number as Python sees it: an exact integer or a float.
@@ -100,6 +122,7 @@ fn int_value(n: i128) -> Value {
 
 /// `__rsyaml_div(a, b)`: Python's true division.
 pub(super) fn div(state: &State<'_, '_>, a: Value, b: Value) -> Result<Value, Error> {
+    defined(&a, &b)?;
     let (Some(x), Some(y)) = (num(&a), num(&b)) else {
         return engine_op(state, a, b, "/");
     };
@@ -114,6 +137,7 @@ pub(super) fn div(state: &State<'_, '_>, a: Value, b: Value) -> Result<Value, Er
 
 /// `__rsyaml_floordiv(a, b)`: Python's floor division.
 pub(super) fn floordiv(state: &State<'_, '_>, a: Value, b: Value) -> Result<Value, Error> {
+    defined(&a, &b)?;
     let (Some(x), Some(y)) = (num(&a), num(&b)) else {
         return engine_op(state, a, b, "//");
     };
@@ -124,14 +148,15 @@ pub(super) fn floordiv(state: &State<'_, '_>, a: Value, b: Value) -> Result<Valu
         }));
     }
     Ok(match (x, y) {
-        (Num::Int(p), Num::Int(q)) => {
-            let d = p / q;
-            int_value(if p % q != 0 && ((p < 0) != (q < 0)) {
+        (Num::Int(p), Num::Int(q)) => match p.checked_div(q) {
+            Some(d) => int_value(if p % q != 0 && ((p < 0) != (q < 0)) {
                 d - 1
             } else {
                 d
-            })
-        }
+            }),
+            // i128::MIN // -1 is 2**127: past i128, inside u128, exact.
+            None => Value::from(p.unsigned_abs()),
+        },
         (x, y) => Value::from((as_f64(&x) / as_f64(&y)).floor()),
     })
 }
@@ -139,6 +164,7 @@ pub(super) fn floordiv(state: &State<'_, '_>, a: Value, b: Value) -> Result<Valu
 /// `__rsyaml_mod(a, b)`: Python's modulo (the divisor's sign), or printf
 /// formatting when `a` is a string.
 pub(super) fn modulo(state: &State<'_, '_>, a: Value, b: Value) -> Result<Value, Error> {
+    defined(&a, &b)?;
     if let Some(fmt) = a.as_str() {
         let cap = super::methods::output_cap(state);
         return Ok(Value::from(printf(fmt, &b, cap)?));
@@ -154,7 +180,8 @@ pub(super) fn modulo(state: &State<'_, '_>, a: Value, b: Value) -> Result<Value,
     }
     Ok(match (x, y) {
         (Num::Int(p), Num::Int(q)) => {
-            let r = p % q;
+            // i128::MIN % -1 overflows the machine remainder; it is 0.
+            let r = p.checked_rem(q).unwrap_or(0);
             int_value(if r != 0 && ((r < 0) != (q < 0)) {
                 r + q
             } else {
@@ -174,6 +201,224 @@ pub(super) fn modulo(state: &State<'_, '_>, a: Value, b: Value) -> Result<Value,
             Value::from(r)
         }
     })
+}
+
+/// A whole-number count: an integer or a bool, as Python's `*` takes.
+fn count(v: &Value) -> Option<i128> {
+    match num(v)? {
+        Num::Int(n) => Some(n),
+        Num::Float(_) => None,
+    }
+}
+
+/// Python's integers are unbounded; this engine's stop at 128 bits.
+fn overflow(op: &str) -> Error {
+    Error::new(
+        ErrorKind::InvalidOperation,
+        format!("OverflowError: the result of {op} is past the 128-bit integers this engine holds"),
+    )
+}
+
+fn too_large(what: &str, bytes: u128, cap: usize) -> Error {
+    Error::new(
+        ErrorKind::InvalidOperation,
+        format!(
+            "{}: {what} would be {bytes} bytes, past the {cap}-byte limit",
+            super::OUTPUT_TAG
+        ),
+    )
+}
+
+/// `__rsyaml_mul(a, b)`: Python's `*`. A string or a list times a count
+/// repeats it -- nothing for a count of zero or less; anything else is the
+/// engine's.
+///
+/// A repeat is bounded for memory, not for output: a string may be built
+/// up to four times the output limit (it may be measured or sliced rather
+/// than written, and the formatter, which knows the line, refuses one that
+/// is written), and a list up to the range limit, as `range()` is.
+pub(super) fn mul(state: &State<'_, '_>, a: Value, b: Value) -> Result<Value, Error> {
+    defined(&a, &b)?;
+    let (seq, n) = match (count(&a), count(&b)) {
+        (_, Some(n)) if matches!(a.kind(), ValueKind::String | ValueKind::Seq) => (a, n),
+        (Some(n), _) if matches!(b.kind(), ValueKind::String | ValueKind::Seq) => (b, n),
+        _ => {
+            return match (num(&a), num(&b)) {
+                (Some(Num::Int(x)), Some(Num::Int(y))) => {
+                    x.checked_mul(y).map(int_value).ok_or_else(|| overflow("*"))
+                }
+                (Some(x), Some(y)) => Ok(Value::from(as_f64(&x) * as_f64(&y))),
+                _ => engine_op(state, a, b, "*"),
+            }
+        }
+    };
+    let times = usize::try_from(n.max(0)).unwrap_or(usize::MAX);
+    if let Some(s) = seq.as_str() {
+        let cap = super::methods::output_cap(state).saturating_mul(4);
+        let bytes = s.len() as u128 * times as u128;
+        if bytes > cap as u128 {
+            return Err(too_large("the repeated string", bytes, cap));
+        }
+        return Ok(Value::from(s.repeat(times)));
+    }
+    let items: Vec<Value> = seq.try_iter()?.collect();
+    if items.is_empty() || times == 0 {
+        // Nothing to repeat: answered without counting to `times`.
+        return Ok(Value::from(Vec::<Value>::new()));
+    }
+    let len = items.len() as u128 * times as u128;
+    let limit = super::limits::range_cap(state);
+    if len > limit as u128 {
+        return Err(Error::new(
+            ErrorKind::InvalidOperation,
+            format!(
+                "{} the repeated list would hold {len} elements, more than {limit}",
+                super::limits::LIST_TAG
+            ),
+        ));
+    }
+    let mut out = Vec::with_capacity(len as usize);
+    for _ in 0..times {
+        out.extend(items.iter().cloned());
+    }
+    Ok(Value::from(out))
+}
+
+/// `__rsyaml_pow(a, b)`: Python's `**`. An integer to a negative integer
+/// power is a float, and zero to a negative power raises; the rest is the
+/// engine's.
+pub(super) fn pow(state: &State<'_, '_>, a: Value, b: Value) -> Result<Value, Error> {
+    defined(&a, &b)?;
+    let (Some(x), Some(y)) = (num(&a), num(&b)) else {
+        return engine_op(state, a, b, "**");
+    };
+    let negative = match y {
+        Num::Int(e) => e < 0,
+        Num::Float(e) => e < 0.0,
+    };
+    if !negative {
+        return match (x, y) {
+            (Num::Int(base), Num::Int(e)) => u32::try_from(e)
+                .ok()
+                .and_then(|e| base.checked_pow(e))
+                .map(int_value)
+                .ok_or_else(|| overflow("**")),
+            (x, y) => Ok(Value::from(as_f64(&x).powf(as_f64(&y)))),
+        };
+    }
+    if is_zero(&x) {
+        return Err(zero_division("0.0 cannot be raised to a negative power"));
+    }
+    Ok(Value::from(as_f64(&x).powf(as_f64(&y))))
+}
+
+/// A required argument and an optional one, positionally or by name.
+fn two(
+    args: &[Value],
+    kwargs: &Kwargs,
+    first: &str,
+    second: &str,
+) -> Result<(Value, Option<Value>), Error> {
+    if args.len() > 2 {
+        return Err(Error::from(ErrorKind::TooManyArguments));
+    }
+    let a = match args.first() {
+        Some(v) => v.clone(),
+        None => kwargs.get::<Value>(first)?,
+    };
+    let b = match args.get(1) {
+        Some(v) => Some(v.clone()),
+        None => kwargs.get::<Option<Value>>(second)?,
+    };
+    kwargs.assert_all_used()?;
+    Ok((a, b.filter(|v| !v.is_none())))
+}
+
+/// Jinja2's `slice(value, slices, fill_with=None)`: `slices` lists, the
+/// first `len % slices` one longer, a zero count a ZeroDivisionError and a
+/// negative one no lists. The count is bounded by the range limit -- each
+/// slice is a list, however short -- where minijinja reserved it unchecked
+/// and a huge count was an allocation panic.
+pub(super) fn slice(
+    state: &State<'_, '_>,
+    value: Value,
+    args: &[Value],
+    kwargs: Kwargs,
+) -> Result<Value, Error> {
+    let (slices, fill_with) = two(args, &kwargs, "slices", "fill_with")?;
+    let n = count(&slices).ok_or_else(|| value_error("slice: the count must be an integer"))?;
+    if n == 0 {
+        return Err(zero_division("integer division or modulo by zero"));
+    }
+    let slices = usize::try_from(n).unwrap_or(0);
+    let limit = super::limits::range_cap(state);
+    if slices > limit {
+        return Err(Error::new(
+            ErrorKind::InvalidOperation,
+            format!(
+                "{} slice({slices}) makes {slices} lists, more than {limit}",
+                super::limits::LIST_TAG
+            ),
+        ));
+    }
+    let items: Vec<Value> = value.try_iter()?.collect();
+    let (per, extra) = (items.len() / slices.max(1), items.len() % slices.max(1));
+    let mut out = Vec::with_capacity(slices);
+    let mut offset = 0;
+    for i in 0..slices {
+        let start = offset + i * per;
+        if i < extra {
+            offset += 1;
+        }
+        let end = offset + (i + 1) * per;
+        let mut part = items[start..end].to_vec();
+        if let (Some(fill), true) = (&fill_with, i >= extra) {
+            part.push(fill.clone());
+        }
+        out.push(Value::from(part));
+    }
+    Ok(Value::from(out))
+}
+
+/// Jinja2's `batch(value, linecount, fill_with=None)`: lists of `linecount`
+/// items, the last padded with `fill_with`. Python's loop is reproduced as
+/// it is: a count of zero yields an empty list first and a negative count
+/// one list of everything. The padding is bounded by the output limit.
+pub(super) fn batch(
+    state: &State<'_, '_>,
+    value: Value,
+    args: &[Value],
+    kwargs: Kwargs,
+) -> Result<Value, Error> {
+    let (linecount, fill_with) = two(args, &kwargs, "linecount", "fill_with")?;
+    let n = count(&linecount).ok_or_else(|| value_error("batch: the count must be an integer"))?;
+    let mut out = Vec::new();
+    let mut tmp: Vec<Value> = Vec::new();
+    for item in value.try_iter()? {
+        if tmp.len() as i128 == n {
+            out.push(Value::from(std::mem::take(&mut tmp)));
+        }
+        tmp.push(item);
+    }
+    if !tmp.is_empty() {
+        if let Some(fill) = fill_with {
+            let missing = u128::try_from(n - tmp.len() as i128).unwrap_or(0);
+            let cap = super::methods::output_cap(state);
+            if missing > cap as u128 {
+                return Err(too_large("the padded batch", missing, cap));
+            }
+            tmp.extend(std::iter::repeat_n(fill, missing as usize));
+        }
+        out.push(Value::from(tmp));
+    }
+    Ok(Value::from(out))
+}
+
+/// Jinja2's `divisibleby` test: `value % num == 0`, so a zero divisor
+/// (`False` included) is a ZeroDivisionError there too. minijinja's own
+/// computed the remainder unchecked and panicked on it.
+pub(super) fn divisibleby(state: &State<'_, '_>, value: Value, num: Value) -> Result<bool, Error> {
+    Ok(modulo(state, value, num)? == Value::from(0))
 }
 
 /// `__rsyaml_iter(x)`: a string as the list of its characters, so a loop
@@ -293,8 +538,13 @@ impl Object for Variadic {
             }
         }
         named.push(("varargs".into(), Value::from(extra.to_vec())));
-        let kwmap: std::collections::BTreeMap<Value, Value> = rest.into_iter().collect();
-        named.push(("kwargs".into(), Value::from_iter(kwmap)));
+        // Inserted, not collected: a map's FromIterator sorts its input
+        // with a sort instantiated per iterator type.
+        let mut kwmap = std::collections::BTreeMap::<Value, Value>::new();
+        for (k, v) in rest {
+            kwmap.insert(k, v);
+        }
+        named.push(("kwargs".into(), Value::from_object(kwmap)));
         let mut call_args: Vec<Value> = positional[..n].to_vec();
         call_args.push(Value::from(Kwargs::from_iter(named)));
         self.inner.call(state, &call_args)

@@ -138,7 +138,7 @@ impl Want {
     }
 }
 
-/// `/` or `%` inside an expression or a statement's tag.
+/// `/`, `%` or `*` inside an expression or a statement's tag.
 fn may_divide(source: &str) -> bool {
     let mut rest = source;
     while let Some(i) = rest.find('{') {
@@ -153,7 +153,7 @@ fn may_divide(source: &str) -> bool {
         };
         let body_end = tail[2..].find(close).map_or(tail.len(), |e| e + 2);
         let body = &tail[2..body_end];
-        if body.contains('/') || body.trim_end_matches('-').contains('%') {
+        if body.contains(['/', '*']) || body.trim_end_matches('-').contains('%') {
             return true;
         }
         rest = &tail[body_end.min(tail.len())..];
@@ -265,6 +265,8 @@ impl Walker<'_> {
                     BinOpKind::Div => Some(super::arith::DIV_FN),
                     BinOpKind::FloorDiv => Some(super::arith::FLOORDIV_FN),
                     BinOpKind::Rem => Some(super::arith::MOD_FN),
+                    BinOpKind::Mul => Some(super::arith::MUL_FN),
+                    BinOpKind::Pow => Some(super::arith::POW_FN),
                     _ => None,
                 };
                 if let (true, Some(f)) = (self.want.math, math) {
@@ -589,16 +591,30 @@ impl Walker<'_> {
 /// Writes `source[from..to]` with every site inside it replaced, outermost
 /// first; `sites` is sorted by start, wider first on a tie, so the sites a
 /// site contains follow it.
-fn emit(source: &str, sites: &[&Site], from: usize, to: usize, out: &mut String) {
+fn emit(
+    source: &str,
+    sites: &[&Site],
+    from: usize,
+    to: usize,
+    out: &mut String,
+    mut edits: Option<&mut Vec<Edit>>,
+) {
     let mut at = from;
     for (i, site) in sites.iter().enumerate() {
         if site.whole.0 < at || site.whole.1 > to {
             continue;
         }
         out.push_str(&source[at..site.whole.0]);
+        let written = out.len();
         if let Some(text) = &site.literal {
             out.push_str(text);
             at = site.whole.1;
+            if let Some(edits) = edits.as_deref_mut() {
+                edits.push(Edit {
+                    out: (written, out.len()),
+                    src: site.whole,
+                });
+            }
             continue;
         }
         let inner: Vec<&Site> = sites[i + 1..]
@@ -614,7 +630,7 @@ fn emit(source: &str, sites: &[&Site], from: usize, to: usize, out: &mut String)
                 out.push_str(", ");
             }
             match part {
-                Some((a, b)) => emit(source, &inner, *a, *b, out),
+                Some((a, b)) => emit(source, &inner, *a, *b, out, None),
                 None => out.push_str("none"),
             }
         }
@@ -629,8 +645,46 @@ fn emit(source: &str, sites: &[&Site], from: usize, to: usize, out: &mut String)
             .sum();
         out.extend(std::iter::repeat_n('\n', all.saturating_sub(kept)));
         at = site.whole.1;
+        if let Some(edits) = edits.as_deref_mut() {
+            edits.push(Edit {
+                out: (written, out.len()),
+                src: site.whole,
+            });
+        }
     }
     out.push_str(&source[at..to]);
+}
+
+/// One outermost rewrite: the bytes `out` of the prepared text stand for
+/// the bytes `src` of the source. Text between rewrites is the source's,
+/// shifted by what the rewrites before it changed.
+#[derive(Clone, Copy)]
+pub(super) struct Edit {
+    out: (usize, usize),
+    src: (usize, usize),
+}
+
+/// The source range a range of the prepared text stands for: shifted
+/// where it lies between rewrites, the whole original expression where it
+/// falls inside one -- so an error raised in a routed call is placed at
+/// what the author wrote.
+pub(super) fn to_source(edits: &[Edit], start: usize, end: usize) -> (usize, usize) {
+    let map = |p: usize, is_end: bool| -> usize {
+        let mut shift: isize = 0;
+        for e in edits {
+            let past = if is_end { p > e.out.1 } else { p >= e.out.1 };
+            let inside = if is_end { p > e.out.0 } else { p >= e.out.0 };
+            if past {
+                shift += (e.src.1 - e.src.0) as isize - (e.out.1 - e.out.0) as isize;
+            } else if inside {
+                return if is_end { e.src.1 } else { e.src.0 };
+            } else {
+                break;
+            }
+        }
+        (p as isize + shift).max(0) as usize
+    };
+    (map(start, false), map(end, true))
 }
 
 /// The detail a namespace refusal carries, read back by the classifier.
@@ -647,6 +701,15 @@ pub(super) struct Refusal {
 /// a namespace that would hold itself. A template that does not parse is
 /// returned as it is, for the compiler to report.
 pub(super) fn prepare<'s>(source: &'s str, name: &str) -> Result<Cow<'s, str>, Refusal> {
+    prepare_mapped(source, name, &mut Vec::new())
+}
+
+/// [`prepare`], recording in `edits` where the prepared text was rewritten.
+pub(super) fn prepare_mapped<'s>(
+    source: &'s str,
+    name: &str,
+    edits: &mut Vec<Edit>,
+) -> Result<Cow<'s, str>, Refusal> {
     // Text with no Jinja delimiters -- most included files -- holds no
     // expression at all; three substring searches settle it.
     if !super::has_jinja_syntax(source) {
@@ -693,7 +756,7 @@ pub(super) fn prepare<'s>(source: &'s str, name: &str) -> Result<Cow<'s, str>, R
     sites.sort_by(|a, b| a.whole.0.cmp(&b.whole.0).then(b.whole.1.cmp(&a.whole.1)));
     let refs: Vec<&Site> = sites.iter().collect();
     let mut out = String::with_capacity(source.len() + sites.len() * 24);
-    emit(source, &refs, 0, source.len(), &mut out);
+    emit(source, &refs, 0, source.len(), &mut out, Some(edits));
     Ok(Cow::Owned(out))
 }
 

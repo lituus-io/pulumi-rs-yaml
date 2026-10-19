@@ -334,8 +334,14 @@ impl fmt::Debug for PyDict {
 }
 
 pub(super) fn new_dict(pairs: Vec<(Value, Value)>) -> Value {
+    // Inserted, not collected: a map's FromIterator sorts its input with a
+    // sort instantiated per iterator type; later keys win either way.
+    let mut items = BTreeMap::new();
+    for (k, v) in pairs {
+        items.insert(k, v);
+    }
     Value::from_object(PyDict {
-        items: Mutex::new(pairs.into_iter().collect()),
+        items: Mutex::new(items),
         iterating: AtomicUsize::new(0),
     })
 }
