@@ -96,3 +96,45 @@ fn the_weekly_fuzz_budget_is_at_least_two_minutes() {
         );
     }
 }
+
+/// 0.5.39 "README badges are checked": the fuzz badge is the registered
+/// target count and every target is named in the Fuzz section; the
+/// security badge is the `#[test]` count of security_tests.rs -- the
+/// numbers the PR fuzz job holds the README to, held here as well so a
+/// local `cargo test` catches a stale badge before CI does.
+#[test]
+fn readme_badges_match_what_they_count() {
+    let readme = read("README.md");
+    let badge = |label: &str| -> usize {
+        let at = readme
+            .find(&format!("badge/{label}-"))
+            .unwrap_or_else(|| panic!("README has no {label} badge"));
+        readme[at + label.len() + 7..]
+            .split('-')
+            .next()
+            .and_then(|n| n.parse().ok())
+            .unwrap_or_else(|| panic!("{label} badge has no number"))
+    };
+    let cargo = read("fuzz/Cargo.toml");
+    let targets: Vec<&str> = cargo
+        .lines()
+        .filter_map(|l| l.strip_prefix("name = \""))
+        .map(|n| n.trim_end_matches('"'))
+        .filter(|n| n.starts_with("fuzz_"))
+        .collect();
+    assert_eq!(badge("fuzz%20targets"), targets.len(), "fuzz badge");
+    let section = readme.split("## Fuzz").nth(1).expect("a Fuzz section");
+    let section = section.split("\n## ").next().unwrap_or(section);
+    for t in &targets {
+        assert!(
+            section.contains(&format!("`{t}`")),
+            "{t} is not named in the README's Fuzz section"
+        );
+    }
+    let sec = read("crates/pulumi-rs-yaml-core/tests/security_tests.rs");
+    let tests = sec
+        .lines()
+        .filter(|l| l.trim_start().starts_with("#[test]"))
+        .count();
+    assert_eq!(badge("security%20tests"), tests, "security-tests badge");
+}

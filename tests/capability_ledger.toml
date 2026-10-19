@@ -125,6 +125,19 @@ tests = [
 
 [[entry]]
 version = "0.5.39"
+heading = "Statement splitting: faster, and no longer at the mercy of code layout"
+tests = [
+    "crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::split_statements_quotes_comments_begin_end",
+    "crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::spans_agree_with_the_shipped_splitter_on_ascii",
+]
+
+[[entry]]
+version = "0.5.39"
+heading = "README badges are checked"
+tests = ["crates/pulumi-rs-yaml-core/tests/ci_contract_tests.rs::readme_badges_match_what_they_count"]
+
+[[entry]]
+version = "0.5.39"
 heading = "Already-rendered projects: `PULUMI_YAML_JINJA=off`"
 tests = [
   "crates/pulumi-rs-yaml-language/tests/prerendered_tests.rs::graph_parses_rendered_text_as_written_when_the_pass_is_off",
