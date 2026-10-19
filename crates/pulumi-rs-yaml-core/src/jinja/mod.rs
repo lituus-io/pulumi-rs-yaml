@@ -967,6 +967,28 @@ impl TemplatePreprocessor for JinjaPreprocessor<'_> {
     }
 }
 
+/// What every render's environment starts from, built once per process:
+/// strict undefined names, no escaping, and every filter, test, global and
+/// method that does not depend on the render. Built from empty -- the
+/// engine's defaults include builtins this engine replaces, which would
+/// stay in the binary, unreachable, if they were registered first -- and
+/// built once: registering some 120 functions allocates each, which per
+/// render cost more than a small render itself.
+fn base_environment() -> &'static minijinja::Environment<'static> {
+    static BASE: std::sync::OnceLock<minijinja::Environment<'static>> = std::sync::OnceLock::new();
+    BASE.get_or_init(|| {
+        let mut env = minijinja::Environment::empty();
+        env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
+        // Output is YAML, never HTML. Said explicitly: minijinja picks an
+        // escape from the template name, and with its `json` feature on a
+        // `.yaml` name would be JSON-escaped.
+        env.set_auto_escape_callback(|_| minijinja::AutoEscape::None);
+        register_custom_filters(&mut env);
+        env.add_function(prepass::SLICE_FN, prepass::slice);
+        env
+    })
+}
+
 /// Whether a template can recurse past its own nesting: it names a macro
 /// (`macro`, `call`, `caller`), another template (`include`, `import`,
 /// `extends`) or a recursive loop. A byte scan, so a word that merely
@@ -1204,18 +1226,12 @@ impl JinjaPreprocessor<'_> {
             Cow::Borrowed(scoped_source)
         };
 
-        // Slow path: render through minijinja. Built from empty: the engine's
-        // defaults include builtins this engine replaces, which would stay in
-        // the binary, unreachable, if they were registered first.
-        let mut env = minijinja::Environment::empty();
-        env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
-        // Output is YAML, never HTML. Said explicitly: minijinja picks an
-        // escape from the template name, and with its `json` feature on a
-        // `.yaml` name would be JSON-escaped.
-        env.set_auto_escape_callback(|_| minijinja::AutoEscape::None);
+        // Slow path: render through minijinja, in a copy of the process's
+        // base environment -- a copy shares its filters, tests and globals,
+        // so a render pays for what is particular to it and nothing else.
+        let mut env = base_environment().clone();
         env.set_fuel(Some(limits.fuel));
         env.set_recursion_limit(limits.recursion);
-        register_custom_filters(&mut env);
         // Every `{{ ... }}` is charged to the output budget before it is
         // written, so a runaway expression stops at its own line.
         let budget = Arc::new(limits::OutputBudget::new(limits.output_bytes));
@@ -1231,7 +1247,6 @@ impl JinjaPreprocessor<'_> {
             }
             minijinja::escape_formatter(out, state, value)
         });
-        env.add_function(prepass::SLICE_FN, prepass::slice);
         env.add_global(methods::OUTPUT_LIMIT_GLOBAL, limits.output_bytes);
         env.add_global(limits::RANGE_LIMIT_GLOBAL, limits.range);
         let range_limit = limits.range;

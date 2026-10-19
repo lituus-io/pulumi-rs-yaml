@@ -178,6 +178,11 @@ and 35-140us on Linux VMs; a thread starts one worker for its life (a
 counted test holds it to that), and work arriving on the worker runs
 where it is.
 
+The render environment's filters, tests and globals are built once per
+process and shared by every render, which adds only what is its own (fuel,
+limits, `readFile`, the loader): a small render costs what it did in
+0.5.39 (5.5us against 5.9us, measured on Linux).
+
 ### One error, one kind
 
 A refused include whose name contained the text `readFile:` was reported as
