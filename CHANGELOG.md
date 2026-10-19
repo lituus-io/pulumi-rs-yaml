@@ -48,6 +48,19 @@ M-series; 1 MiB of long literals and comments now takes 0.17 to 0.23 ms
 (new bench `split_statement_spans_1mib_long_literals`). Output is unchanged:
 checked against the previous splitter on 200,000 random scripts.
 
+### README badges are checked
+
+- The fuzz-targets badge said 26; 25 targets are registered.
+  `fuzz/fuzz_targets/scope_grammar.rs` is a shared generator, not a target,
+  and 0.5.38 counted files. The README's target list also missed five
+  targets and said "nineteen".
+- The fuzz workflow's registration check now also fails when the fuzz badge
+  differs from the `[[bin]]` count in `fuzz/Cargo.toml`, when a registered
+  target is missing from the README's Fuzz section, or when the
+  security-tests badge differs from the `#[test]` count in
+  `security_tests.rs`. It runs on pull requests that touch any of them;
+  before, it ran only on the weekly schedule and never read the README.
+
 ## 0.5.38
 
 ### Where a referenced stack really is

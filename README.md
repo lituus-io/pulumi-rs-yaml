@@ -7,7 +7,7 @@
 [![Release](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/release.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/releases/latest)
 [![PyPI](https://img.shields.io/pypi/v/pulumi-rs-yaml?label=PyPI)](https://pypi.org/project/pulumi-rs-yaml/)
 [![Python](https://img.shields.io/badge/python-%E2%89%A53.9-blue)](https://pypi.org/project/pulumi-rs-yaml/)
-[![fuzz targets](https://img.shields.io/badge/fuzz%20targets-26-blue)](fuzz/fuzz_targets)
+[![fuzz targets](https://img.shields.io/badge/fuzz%20targets-25-blue)](fuzz/fuzz_targets)
 [![security tests](https://img.shields.io/badge/security%20tests-178-blue)](crates/pulumi-rs-yaml-core/tests/security_tests.rs)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE)
 
@@ -159,7 +159,7 @@ cd fuzz
 cargo +nightly fuzz run fuzz_yaml_parser -- -max_total_time=60
 ```
 
-Core targets: `fuzz_yaml_parser`, `fuzz_interpolation`, `fuzz_jinja`, `fuzz_builtins`, `fuzz_converter`, `fuzz_yaml_bomb`, `fuzz_extra_context`, `fuzz_starlark`, `fuzz_parallel_eval`, `fuzz_resource_graph`, `fuzz_sql_lineage`, `fuzz_sql_statements`, `fuzz_native_str`, `fuzz_checkpoint`.
+Core targets: `fuzz_yaml_parser`, `fuzz_interpolation`, `fuzz_jinja`, `fuzz_builtins`, `fuzz_converter`, `fuzz_yaml_bomb`, `fuzz_extra_context`, `fuzz_starlark`, `fuzz_parallel_eval`, `fuzz_resource_graph`, `fuzz_sql_lineage`, `fuzz_sql_statements`, `fuzz_native_str`, `fuzz_checkpoint`, `fuzz_string_filters`, `fuzz_derive_string`, `fuzz_cross_stack`, `fuzz_stack_uri`, `fuzz_iam_graph`.
 
 Provider-scope targets, which check the extent detection above:
 `fuzz_scope_roundtrip` (protect and restore are exact inverses),
@@ -169,9 +169,10 @@ Provider-scope targets, which check the extent detection above:
 `fuzz_scope_settings` (the option reader cannot over-read),
 `fuzz_scope_never_panics`.
 
-Nineteen targets in all — the two lists above together are exactly the `[[bin]]`
-entries in `fuzz/Cargo.toml`, which the badge counts and which a CI job holds to
-the workflow matrix. `scope_grammar.rs` sits alongside them as a shared input
+Twenty-five targets in all — the two lists above together are exactly the
+`[[bin]]` entries in `fuzz/Cargo.toml`. A CI job holds the workflow matrix, this
+list and the badge to that count, and the security-tests badge to the `#[test]`
+count in `security_tests.rs`. `scope_grammar.rs` sits alongside them as a shared input
 generator rather than a target, which is why it is not registered.
 
 `SCOPE_FUZZ_TRACE=1` makes `fuzz_scope_oracle` report how many inputs reach
