@@ -35,6 +35,19 @@ tests = [
 
 [[entry]]
 version = "0.5.40"
+heading = "Python's arithmetic, `%` formatting, varargs and isolated includes"
+tests = [
+    "crates/pulumi-rs-yaml-core/src/jinja/arith.rs::python_division_and_modulo",
+    "crates/pulumi-rs-yaml-core/src/jinja/methods.rs::printf_matches_python",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::division_by_zero_is_a_typed_error_never_infinity",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::percent_formatting_cannot_grow_past_the_output_limit",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::an_isolated_include_sees_none_of_the_callers_values",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_macro_without_varargs_still_refuses_extra_arguments",
+    "crates/pulumi-rs-yaml-core/tests/jinja_conformance.rs::every_case_matches_jinja2_or_is_a_listed_divergence",
+]
+
+[[entry]]
+version = "0.5.40"
 heading = "Lists and dicts a template can change"
 tests = [
     "crates/pulumi-rs-yaml-core/tests/jinja_conformance.rs::every_case_matches_jinja2_or_is_a_listed_divergence",

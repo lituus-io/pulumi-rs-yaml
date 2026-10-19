@@ -119,11 +119,16 @@ impl<'a, 's, 'e> Call<'a, 's, 'e> {
 
     /// The render's output limit, which a growing method may not pass.
     pub(super) fn cap(&self) -> usize {
-        self.state
-            .lookup(OUTPUT_LIMIT_GLOBAL)
-            .and_then(|v| usize::try_from(v).ok())
-            .unwrap_or(super::limits::JinjaLimits::DEFAULT_OUTPUT_BYTES)
+        output_cap(self.state)
     }
+}
+
+/// The render's output limit, as published in its globals.
+pub(super) fn output_cap(state: &State<'_, '_>) -> usize {
+    state
+        .lookup(OUTPUT_LIMIT_GLOBAL)
+        .and_then(|v| usize::try_from(v).ok())
+        .unwrap_or(super::limits::JinjaLimits::DEFAULT_OUTPUT_BYTES)
 }
 
 pub(super) fn type_error(msg: impl Into<String>) -> Error {
@@ -959,16 +964,16 @@ fn s_encode(s: &str, c: &Call<'_, '_, '_>) -> Result<Value, Error> {
 
 /// A parsed `[[fill]align][sign][#][0][width][,][.precision][type]`.
 #[derive(Default)]
-struct Spec {
-    fill: Option<char>,
-    align: Option<char>,
-    sign: Option<char>,
-    alt: bool,
-    zero: bool,
-    width: usize,
-    comma: bool,
-    precision: Option<usize>,
-    ty: Option<char>,
+pub(super) struct Spec {
+    pub(super) fill: Option<char>,
+    pub(super) align: Option<char>,
+    pub(super) sign: Option<char>,
+    pub(super) alt: bool,
+    pub(super) zero: bool,
+    pub(super) width: usize,
+    pub(super) comma: bool,
+    pub(super) precision: Option<usize>,
+    pub(super) ty: Option<char>,
 }
 
 fn parse_spec(spec: &str) -> Result<Spec, Error> {
@@ -1058,8 +1063,14 @@ fn format_field(value: &Value, spec: &str, cap: usize) -> Result<String, Error> 
     if spec.is_empty() {
         return Ok(value.to_string());
     }
-    let sp = parse_spec(spec)?;
-    if sp.width > cap {
+    render_spec(value, &parse_spec(spec)?, cap)
+}
+
+/// The one formatting core: a value rendered by a parsed spec. `str.format`
+/// and `%` formatting both parse their own syntax into a [`Spec`] and come
+/// here, so the two agree on every conversion they share.
+pub(super) fn render_spec(value: &Value, sp: &Spec, cap: usize) -> Result<String, Error> {
+    if sp.width > cap || sp.precision.is_some_and(|p| p > cap) {
         return Err(too_large("format", sp.width, cap));
     }
     let is_num = value.kind() == ValueKind::Number;
@@ -1116,6 +1127,24 @@ fn format_field(value: &Value, spec: &str, cap: usize) -> Result<String, Error> 
                 digits
             };
             (if n < 0 { "-" } else { "" }, format!("{prefix}{digits}"))
+        }
+        Some('e' | 'E') if is_num => {
+            let x = f64::try_from(value.clone()).map_err(|_| mismatch())?;
+            let p = sp.precision.unwrap_or(6);
+            // Rust writes `1.2345e3`; Python `1.2345e+03`.
+            let raw = format!("{:.*e}", p, x.abs());
+            let (mant, exp) = raw.split_once('e').unwrap_or((&raw, "0"));
+            let exp: i32 = exp.parse().unwrap_or(0);
+            let e = if ty == Some('E') { 'E' } else { 'e' };
+            let sign = if exp < 0 { '-' } else { '+' };
+            (
+                if x.is_sign_negative() && x != 0.0 {
+                    "-"
+                } else {
+                    ""
+                },
+                format!("{mant}{e}{sign}{:02}", exp.abs()),
+            )
         }
         Some('f' | 'F' | '%') | None if is_num => {
             let x = f64::try_from(value.clone()).map_err(|_| mismatch())?;
@@ -1177,6 +1206,260 @@ fn format_field(value: &Value, spec: &str, cap: usize) -> Result<String, Error> 
         return Ok(body);
     }
     Ok(format!("{sign}{body}"))
+}
+
+/// Python's repr of a value, for `%r`: strings quoted as Python quotes
+/// them, everything else as it renders.
+fn py_repr(v: &Value) -> String {
+    match v.as_str() {
+        Some(s) => {
+            let q = if s.contains('\'') && !s.contains('"') {
+                '"'
+            } else {
+                '\''
+            };
+            let mut out = String::with_capacity(s.len() + 2);
+            out.push(q);
+            for c in s.chars() {
+                match c {
+                    '\\' => out.push_str("\\\\"),
+                    '\n' => out.push_str("\\n"),
+                    '\r' => out.push_str("\\r"),
+                    '\t' => out.push_str("\\t"),
+                    c if c == q => {
+                        out.push('\\');
+                        out.push(c);
+                    }
+                    c if (c as u32) < 0x20 || c == '\u{7f}' => {
+                        let _ = std::fmt::Write::write_fmt(
+                            &mut out,
+                            format_args!("\\x{:02x}", c as u32),
+                        );
+                    }
+                    c => out.push(c),
+                }
+            }
+            out.push(q);
+            out
+        }
+        None => v.to_string(),
+    }
+}
+
+/// Python's `%` formatting -- `'%s-%05.2f' % (a, x)`, `'%(k)s' % d` -- for
+/// the conversions Python offers on str, int and float (`s r d i u f F e E
+/// x X o c %`), with flags, width and precision. Each field is rendered by
+/// [`render_spec`], the core `str.format` uses; the result is bounded by
+/// `cap`.
+pub(super) fn printf(fmt: &str, args: &Value, cap: usize) -> Result<String, Error> {
+    let type_err = |m: &str| Error::new(ErrorKind::InvalidOperation, m.to_string());
+    let mapping = args.kind() == ValueKind::Map;
+    let positional: Vec<Value> = match args.kind() {
+        ValueKind::Seq | ValueKind::Iterable => args.try_iter()?.collect(),
+        ValueKind::Map => Vec::new(),
+        _ => vec![args.clone()],
+    };
+    let mut next = 0usize;
+    let mut out = String::with_capacity(fmt.len() + 16);
+    let mut chars = fmt.char_indices().peekable();
+    while let Some((_, c)) = chars.next() {
+        if c != '%' {
+            out.push(c);
+            continue;
+        }
+        let mut sp = Spec::default();
+        // %(key)
+        let mut keyed: Option<String> = None;
+        if chars.peek().map(|&(_, c)| c) == Some('(') {
+            chars.next();
+            let mut key = String::new();
+            loop {
+                match chars.next() {
+                    Some((_, ')')) => break,
+                    Some((_, c)) => key.push(c),
+                    None => return Err(value_error("incomplete format key")),
+                }
+            }
+            keyed = Some(key);
+        }
+        let mut left = false;
+        while let Some(&(_, f)) = chars.peek() {
+            match f {
+                '-' => left = true,
+                '+' => sp.sign = Some('+'),
+                ' ' => {
+                    if sp.sign.is_none() {
+                        sp.sign = Some(' ')
+                    }
+                }
+                '#' => sp.alt = true,
+                '0' => sp.zero = true,
+                _ => break,
+            }
+            chars.next();
+        }
+        let num = |chars: &mut std::iter::Peekable<std::str::CharIndices<'_>>| -> Option<usize> {
+            let mut n: Option<usize> = None;
+            while let Some(&(_, d)) = chars.peek() {
+                match d.to_digit(10) {
+                    Some(v) => {
+                        n = Some(n.unwrap_or(0).saturating_mul(10).saturating_add(v as usize));
+                        chars.next();
+                    }
+                    None => break,
+                }
+            }
+            n
+        };
+        if chars.peek().map(|&(_, c)| c) == Some('*') {
+            return Err(value_error("'*' width or precision is not supported"));
+        }
+        sp.width = num(&mut chars).unwrap_or(0);
+        if chars.peek().map(|&(_, c)| c) == Some('.') {
+            chars.next();
+            sp.precision = Some(num(&mut chars).unwrap_or(0));
+        }
+        let conv = chars
+            .next()
+            .map(|(_, c)| c)
+            .ok_or_else(|| value_error("incomplete format"))?;
+        if conv == '%' {
+            out.push('%');
+            continue;
+        }
+        let value = match &keyed {
+            Some(k) => {
+                if !mapping {
+                    return Err(type_err("format requires a mapping"));
+                }
+                args.get_item(&Value::from(k.as_str()))
+                    .ok()
+                    .filter(|v| !v.is_undefined())
+                    .ok_or_else(|| value_error(format!("KeyError: '{k}'")))?
+            }
+            None => {
+                let v = positional
+                    .get(next)
+                    .cloned()
+                    .ok_or_else(|| type_err("not enough arguments for format string"))?;
+                next += 1;
+                v
+            }
+        };
+        if value.is_undefined() {
+            return Err(Error::from(ErrorKind::UndefinedError));
+        }
+        if left {
+            sp.align = Some('<');
+            sp.zero = false;
+        } else if !sp.zero {
+            sp.align = Some('>');
+        }
+        let is_num = value.kind() == ValueKind::Number || value.kind() == ValueKind::Bool;
+        let field = match conv {
+            's' | 'r' | 'a' => {
+                let text = if conv == 's' {
+                    value.to_string()
+                } else {
+                    py_repr(&value)
+                };
+                sp.ty = Some('s');
+                sp.sign = None;
+                sp.zero = false;
+                render_spec(&Value::from(text), &sp, cap)?
+            }
+            'd' | 'i' | 'u' => {
+                if !is_num {
+                    return Err(type_err(&format!(
+                        "%{conv} format: a real number is required, not {}",
+                        value.kind()
+                    )));
+                }
+                let n = if minijinja::tests::is_integer(&value) {
+                    i128::try_from(value.clone())?
+                } else {
+                    f64::try_from(value.clone())?.trunc() as i128
+                };
+                sp.ty = Some('d');
+                let digits_min = sp.precision.take();
+                if digits_min.is_some_and(|p| p > cap) {
+                    return Err(too_large("%", digits_min.unwrap_or(0), cap));
+                }
+                let mut f = render_spec(&Value::from(n), &sp, cap)?;
+                if let Some(p) = digits_min {
+                    // `%.3d`: at least p digits.
+                    let neg = n < 0;
+                    let digits = n.unsigned_abs().to_string();
+                    if digits.len() < p {
+                        let body = format!(
+                            "{}{}{digits}",
+                            if neg { "-" } else { "" },
+                            "0".repeat(p - digits.len())
+                        );
+                        f = render_spec(
+                            &Value::from(body),
+                            &Spec {
+                                width: sp.width,
+                                align: sp.align.or(Some('>')),
+                                ty: Some('s'),
+                                ..Spec::default()
+                            },
+                            cap,
+                        )?;
+                    }
+                }
+                f
+            }
+            'x' | 'X' | 'o' => {
+                if !minijinja::tests::is_integer(&value) {
+                    return Err(type_err(&format!(
+                        "%{conv} format: an integer is required, not {}",
+                        value.kind()
+                    )));
+                }
+                sp.ty = Some(conv);
+                render_spec(&value, &sp, cap)?
+            }
+            'f' | 'F' | 'e' | 'E' => {
+                if !is_num {
+                    return Err(type_err("must be real number, not str"));
+                }
+                sp.ty = Some(conv);
+                sp.precision = Some(sp.precision.unwrap_or(6));
+                let x = f64::try_from(value.clone())?;
+                render_spec(&Value::from(x), &sp, cap)?
+            }
+            'c' => {
+                let ch = match value.as_str() {
+                    Some(s) if s.chars().count() == 1 => s.to_string(),
+                    _ => {
+                        let n = u32::try_from(value.clone())
+                            .map_err(|_| type_err("%c requires int or char"))?;
+                        char::from_u32(n)
+                            .ok_or_else(|| value_error("%c arg not in range"))?
+                            .to_string()
+                    }
+                };
+                sp.ty = Some('s');
+                render_spec(&Value::from(ch), &sp, cap)?
+            }
+            other => {
+                return Err(value_error(format!(
+                    "unsupported format character '{other}'"
+                )))
+            }
+        };
+        out.push_str(&field);
+        if out.len() > cap {
+            return Err(too_large("%", out.len(), cap));
+        }
+    }
+    if !mapping && next < positional.len() {
+        return Err(type_err(
+            "not all arguments converted during string formatting",
+        ));
+    }
+    Ok(out)
 }
 
 /// Python's `str.format`: `{}`, `{0}`, `{name}`, an optional `:spec`, and
@@ -1433,6 +1716,34 @@ mod tests {
         assert!(format_field(&Value::from("x"), "d", 1 << 20).is_err());
         assert!(format_field(&Value::from(1), "s", 1 << 20).is_err());
         assert!(format_field(&Value::from(1), "10000000", 100).is_err());
+    }
+
+    #[test]
+    fn printf_matches_python() {
+        let p = |f: &str, v: Value| printf(f, &v, 1 << 20).unwrap();
+        assert_eq!(
+            p("%5d|%-5d|%05d", Value::from(vec![Value::from(42); 3])),
+            "   42|42   |00042"
+        );
+        assert_eq!(p("%.3d", Value::from(7)), "007");
+        assert_eq!(p("%5.2f", Value::from(1.23456)), " 1.23");
+        assert_eq!(p("%e", Value::from(12345.678)), "1.234568e+04");
+        assert_eq!(p("%r", Value::from("it's")), "\"it's\"");
+        assert_eq!(p("%r", Value::from("a\nb")), "'a\\nb'");
+        assert_eq!(p("%%%s", Value::from("x")), "%x");
+        assert_eq!(
+            p("%c%c", Value::from(vec![Value::from(65), Value::from("b")])),
+            "Ab"
+        );
+        assert!(printf("%s %s", &Value::from(vec![Value::from(1)]), 100).is_err());
+        assert!(printf(
+            "%s",
+            &Value::from(vec![Value::from(1), Value::from(2)]),
+            100
+        )
+        .is_err());
+        assert!(printf("%d", &Value::from("x"), 100).is_err());
+        assert!(printf("%9999d", &Value::from(1), 100).is_err());
     }
 
     #[test]

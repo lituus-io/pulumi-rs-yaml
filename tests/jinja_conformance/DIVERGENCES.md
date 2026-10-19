@@ -16,7 +16,6 @@ Classes:
 | case | class | reason |
 |---|---|---|
 | `expr_dict_methods` | intended | a list or map renders JSON-style (`["a"]`, `{"k": 1}`; pairs as lists) where Jinja2 prints Python reprs (`['a']`, `('k', 1)`); the values are identical, both are valid YAML flow, and stacks already deploy the JSON spelling -- use `tojson` for portable text |
-| `expr_div_zero_error` | gap | `1 / 0` renders `inf`; Jinja2 raises ZeroDivisionError |
 | `expr_filter_pipeline` | extension | pulumi-rs-yaml only; Jinja2 does not define the name |
 | `expr_float_render` | intended | floats never use exponent notation (`1e20` renders `100000000000000000000.0`, Jinja2 `1e+20`) |
 | `expr_list_render_strings` | intended | a list or map renders JSON-style (`["a"]`, `{"k": 1}`; pairs as lists) where Jinja2 prints Python reprs (`['a']`, `('k', 1)`); the values are identical, both are valid YAML flow, and stacks already deploy the JSON spelling -- use `tojson` for portable text |
@@ -24,9 +23,7 @@ Classes:
 | `expr_literal_floats` | intended | floats never use exponent notation (`1.0e-5` renders `0.00001`, Jinja2 `1e-05`) |
 | `expr_literal_list` | intended | a list or map renders JSON-style (`["a"]`, `{"k": 1}`; pairs as lists) where Jinja2 prints Python reprs (`['a']`, `('k', 1)`); the values are identical, both are valid YAML flow, and stacks already deploy the JSON spelling -- use `tojson` for portable text |
 | `expr_literal_tuple` | intended | tuples are lists in the engine, so `(1, 2)` renders `[1, 2]` |
-| `expr_mod` | gap | `%` with a negative divisor takes the dividend's sign (`7 % -3` is `1`; Python `-2`) |
 | `expr_nested_data` | intended | a list or map renders JSON-style (`["a"]`, `{"k": 1}`; pairs as lists) where Jinja2 prints Python reprs (`['a']`, `('k', 1)`); the values are identical, both are valid YAML flow, and stacks already deploy the JSON spelling -- use `tojson` for portable text |
-| `expr_percent_format` | unsupported | `'%s' % x` string formatting; use the `format` filter |
 | `expr_str_methods` | intended | a list or map renders JSON-style (`["a"]`, `{"k": 1}`; pairs as lists) where Jinja2 prints Python reprs (`['a']`, `('k', 1)`); the values are identical, both are valid YAML flow, and stacks already deploy the JSON spelling -- use `tojson` for portable text |
 | `expr_str_methods_predicates` | intended | a list or map renders JSON-style (`["a"]`, `{"k": 1}`; pairs as lists) where Jinja2 prints Python reprs (`['a']`, `('k', 1)`); the values are identical, both are valid YAML flow, and stacks already deploy the JSON spelling -- use `tojson` for portable text |
 | `expr_str_methods_split_ws` | intended | a list or map renders JSON-style (`["a"]`, `{"k": 1}`; pairs as lists) where Jinja2 prints Python reprs (`['a']`, `('k', 1)`); the values are identical, both are valid YAML flow, and stacks already deploy the JSON spelling -- use `tojson` for portable text |
@@ -49,29 +46,25 @@ Classes:
 | `filter_dictsort` | intended | a list or map renders JSON-style (`["a"]`, `{"k": 1}`; pairs as lists) where Jinja2 prints Python reprs (`['a']`, `('k', 1)`); the values are identical, both are valid YAML flow, and stacks already deploy the JSON spelling -- use `tojson` for portable text |
 | `filter_dictsort_case_sensitive` | intended | a list or map renders JSON-style (`["a"]`, `{"k": 1}`; pairs as lists) where Jinja2 prints Python reprs (`['a']`, `('k', 1)`); the values are identical, both are valid YAML flow, and stacks already deploy the JSON spelling -- use `tojson` for portable text |
 | `filter_escape` | intended | HTML entities spelled `&quot;`/`&#x27;`/`&#x2f;` where Jinja2 uses `&#34;`/`&#39;`; equivalent HTML, and output is YAML, never auto-escaped |
-| `filter_forceescape` | unsupported | HTML-only; output here is YAML |
+| `filter_forceescape` | unsupported | HTML-only: forces HTML escaping, which output here never has (auto-escape is off: it is YAML) |
 | `filter_items` | intended | a list or map renders JSON-style (`["a"]`, `{"k": 1}`; pairs as lists) where Jinja2 prints Python reprs (`['a']`, `('k', 1)`); the values are identical, both are valid YAML flow, and stacks already deploy the JSON spelling -- use `tojson` for portable text |
 | `filter_list` | intended | a list or map renders JSON-style (`["a"]`, `{"k": 1}`; pairs as lists) where Jinja2 prints Python reprs (`['a']`, `('k', 1)`); the values are identical, both are valid YAML flow, and stacks already deploy the JSON spelling -- use `tojson` for portable text |
 | `filter_map_filter` | intended | a list or map renders JSON-style (`["a"]`, `{"k": 1}`; pairs as lists) where Jinja2 prints Python reprs (`['a']`, `('k', 1)`); the values are identical, both are valid YAML flow, and stacks already deploy the JSON spelling -- use `tojson` for portable text |
 | `filter_max` | intended | a list or map renders JSON-style (`["a"]`, `{"k": 1}`; pairs as lists) where Jinja2 prints Python reprs (`['a']`, `('k', 1)`); the values are identical, both are valid YAML flow, and stacks already deploy the JSON spelling -- use `tojson` for portable text |
 | `filter_pprint` | intended | a debugging aid: multi-line JSON-ish layout, not Python's pprint |
-| `filter_random` | unsupported | refused by design: a deploy must render the same text every time |
+| `filter_random` | unsupported | refused by design: a program must render the same text on every deploy, or every preview shows a change and every deploy replaces what it touches; a fixed choice belongs in config |
 | `filter_select` | intended | a list or map renders JSON-style (`["a"]`, `{"k": 1}`; pairs as lists) where Jinja2 prints Python reprs (`['a']`, `('k', 1)`); the values are identical, both are valid YAML flow, and stacks already deploy the JSON spelling -- use `tojson` for portable text |
 | `filter_selectattr` | intended | a list or map renders JSON-style (`["a"]`, `{"k": 1}`; pairs as lists) where Jinja2 prints Python reprs (`['a']`, `('k', 1)`); the values are identical, both are valid YAML flow, and stacks already deploy the JSON spelling -- use `tojson` for portable text |
 | `filter_sort` | intended | a list or map renders JSON-style (`["a"]`, `{"k": 1}`; pairs as lists) where Jinja2 prints Python reprs (`['a']`, `('k', 1)`); the values are identical, both are valid YAML flow, and stacks already deploy the JSON spelling -- use `tojson` for portable text |
-| `filter_striptags` | unsupported | HTML-only; output here is YAML |
+| `filter_striptags` | unsupported | HTML-only: strips markup and decodes HTML entities; a YAML program carries no markup to strip |
 | `filter_tojson` | intended | compact JSON with no HTML escaping (`{"a":1}`), the same text `to_json` writes and deployed properties carry; Jinja2 writes `{"a": 1}` and escapes `<>&'` |
 | `filter_unique` | intended | a list or map renders JSON-style (`["a"]`, `{"k": 1}`; pairs as lists) where Jinja2 prints Python reprs (`['a']`, `('k', 1)`); the values are identical, both are valid YAML flow, and stacks already deploy the JSON spelling -- use `tojson` for portable text |
-| `filter_urlize` | unsupported | HTML-only; output here is YAML |
-| `filter_xmlattr` | unsupported | HTML-only; output here is YAML |
+| `filter_urlize` | unsupported | HTML-only: turns URLs into <a> tags; a YAML program has no HTML to produce, and output here is never HTML-escaped |
+| `filter_xmlattr` | unsupported | HTML-only: builds HTML attribute strings; a YAML program has no HTML to produce |
 | `global_dict` | intended | a list or map renders JSON-style (`["a"]`, `{"k": 1}`; pairs as lists) where Jinja2 prints Python reprs (`['a']`, `('k', 1)`); the values are identical, both are valid YAML flow, and stacks already deploy the JSON spelling -- use `tojson` for portable text |
-| `global_lipsum` | unsupported | refused by design: random text makes a render non-deterministic |
+| `global_lipsum` | unsupported | refused by design: placeholder text has no place in an infrastructure program, and it is random, so a render would never be repeatable |
 | `stmt_for_dict_items` | intended | a map literal iterates in key order; Jinja2 keeps insertion order -- use a list of pairs when order matters |
 | `stmt_for_dict_iter_keys` | intended | a map literal iterates in key order; Jinja2 keeps insertion order |
-| `stmt_for_loop_index` | gap | iterating a string has no known length, so `loop.length`/`revindex` are undefined (strict error); `'abc'|list` works |
-| `stmt_include_without_context` | gap | `without context` is ignored; the include still sees the caller's variables |
-| `stmt_macro_kwargs` | unsupported | a macro cannot take keyword arguments it does not declare (`kwargs`) |
-| `stmt_macro_varargs` | unsupported | a macro cannot take more positional arguments than it declares (`varargs`) |
 | `stmt_namespace_self_reference` | intended | a namespace attribute may not be assigned a value holding a namespace: printing one that contains itself recursed until the stack overflowed, so it is refused at the assignment |
 | `ws_crlf` | intended | line endings are preserved byte for byte; Jinja2 rewrites CRLF to LF |
 | `ws_trailing_newline_stripped` | intended | text with no Jinja syntax is returned exactly as written (the zero-copy fast path), keeping its final newline |

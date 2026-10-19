@@ -22,7 +22,7 @@ page and the engine ever disagree, CI fails.
 
 The engine is [minijinja](https://github.com/mitsuhiko/minijinja) 2, extended
 and configured to behave as Jinja2 does, and held to it: the conformance
-corpus (`tests/jinja_conformance/`) renders 292 cases and 73 method
+corpus (`tests/jinja_conformance/`) renders 317 cases and 73 method
 cases through this runtime
 and compares each byte for byte with what pinned reference Jinja2 produces.
 The generated [capability matrix](tests/jinja_conformance/MATRIX.md) lists
@@ -118,6 +118,44 @@ Python's methods work on values, as in Jinja2 (see [Methods](#methods)):
 
 ```text
 a+b+c data-lake app-3
+```
+
+Python's arithmetic, including its corner cases: `/` is true division,
+`//` floors and `%` takes the divisor's sign, and dividing by zero is an
+error (`ZeroDivisionError`), never `inf`. `%` on a string is Python's printf
+formatting (`s r d i x X o c f F e E %`, flags, width, precision, `%(name)s`
+with a mapping), rendered by the same core as `str.format` and bounded by
+the output limit.
+
+```jinja
+{{ 7 % -3 }} {{ -7 // 2 }} {{ 7 / 2 }} {{ '%s-%03d|%-6s|%5.2f' % ('a', 7, 'ab', 3.14159) }} {{ '%(env)s/%(n)d' % {'env': 'dev', 'n': 2} }}
+```
+
+```text
+-2 -4 3.5 a-007|ab    | 3.14 dev/2
+```
+
+```jinja
+{{ 1 / 0 }}
+```
+
+```error
+JinjaFilterError
+```
+
+A macro that names `varargs` or `kwargs` takes extra positional and keyword
+arguments into them, as in Jinja2; one that does not refuses extras.
+`{% include ... without context %}` renders the template with none of the
+caller's values.
+
+```jinja
+{% macro tag(name) -%}
+<{{ name }}{% for k in kwargs | sort %} {{ k }}="{{ kwargs[k] }}"{% endfor %}>{{ varargs | join(' ') }}
+{%- endmacro %}{{ tag('p', 'hello', 'world', id='x') }}
+```
+
+```text
+<p id="x">hello world
 ```
 
 ## Context variables
@@ -471,12 +509,8 @@ agree. In short:
   same text every time); `urlize`, `xmlattr`, `striptags`, `forceescape`
   (HTML only; output here is YAML); a namespace holding itself (see
   [Limits](#limits)).
-- **Not supported**: macro `varargs`/`kwargs` (extra arguments a macro does
-  not declare); `'%s' % x` formatting (use `format`); line statements; a
-  timezone database.
-- **Known gaps**: `1 / 0` renders `inf`; `%` with a negative divisor takes the
-  dividend's sign; `loop.length` is undefined when iterating a string (use
-  `| list`); `include ... without context` still passes the context.
+- **Not supported**: line statements (off in Jinja2 too); a timezone
+  database. No known gaps remain against Jinja2's behaviour.
 
 ```jinja
 {{ ['a', 'b'] }} {{ {'k': 1} }} {{ 'x' | tojson }}

@@ -1,0 +1,1 @@
+{% macro w(t) %}<{{ t }}{% for v in varargs %} {{ v }}{% endfor %}>{{ caller() }}</{{ t }}>{% endmacro %}{% call w('b', 'x') %}in{% endcall %}

@@ -13,6 +13,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+mod arith;
 mod compat;
 mod containers;
 mod dates;
@@ -489,8 +490,7 @@ fn classify_jinja_error(err: &minijinja::Error) -> (RenderErrorKind, Option<&'st
         | K::CannotUnpack
         | K::NonKey
         | K::NonPrimitive
-        | K::BadSerialization
-        | K::CannotDeserialize => (
+        | K::BadSerialization => (
             RenderErrorKind::JinjaTypeError,
             Some("Check the arguments, and the type of the value they apply to"),
         ),

@@ -116,6 +116,49 @@ struct Want {
     slices: bool,
     containers: bool,
     arith: bool,
+    /// `/`, `//` and `%` with Python's semantics.
+    math: bool,
+    /// Loops over strings, for `loop.length`.
+    loops: bool,
+    /// `include ... without context`.
+    isolated: bool,
+    /// Macros that take `varargs`/`kwargs`.
+    variadic: bool,
+}
+
+impl Want {
+    fn any(&self) -> bool {
+        self.slices
+            || self.containers
+            || self.arith
+            || self.math
+            || self.loops
+            || self.isolated
+            || self.variadic
+    }
+}
+
+/// `/` or `%` inside an expression or a statement's tag.
+fn may_divide(source: &str) -> bool {
+    let mut rest = source;
+    while let Some(i) = rest.find('{') {
+        let tail = &rest[i..];
+        let close = if tail.starts_with("{{") {
+            "}}"
+        } else if tail.starts_with("{%") {
+            "%}"
+        } else {
+            rest = &tail[1..];
+            continue;
+        };
+        let body_end = tail[2..].find(close).map_or(tail.len(), |e| e + 2);
+        let body = &tail[2..body_end];
+        if body.contains('/') || body.trim_end_matches('-').contains('%') {
+            return true;
+        }
+        rest = &tail[body_end.min(tail.len())..];
+    }
+    false
 }
 
 /// One rewrite: the text `whole` becomes `func(part, part, ...)`, a missing
@@ -125,6 +168,8 @@ struct Site {
     func: &'static str,
     parts: [Option<(usize, usize)>; 4],
     n: usize,
+    /// Text written in place of `whole` as it is, for statement rewrites.
+    literal: Option<String>,
 }
 
 impl Site {
@@ -139,6 +184,17 @@ impl Site {
             func,
             parts: p,
             n: parts.len(),
+            literal: None,
+        }
+    }
+
+    fn literal(whole: (usize, usize), text: String) -> Self {
+        Site {
+            whole,
+            func: "",
+            parts: [None; 4],
+            n: 0,
+            literal: Some(text),
         }
     }
 }
@@ -173,12 +229,13 @@ fn is_positive_literal(e: &Expr<'_>) -> bool {
     }
 }
 
-struct Walker {
+struct Walker<'s> {
+    source: &'s str,
     want: Want,
     out: Vec<Site>,
 }
 
-impl Walker {
+impl Walker<'_> {
     fn expr(&mut self, e: &Expr<'_>) {
         match e {
             Expr::Var(_) | Expr::Const(_) => {}
@@ -204,6 +261,19 @@ impl Walker {
             }
             Expr::UnaryOp(u) => self.expr(&u.expr),
             Expr::BinOp(b) => {
+                let math = match b.op {
+                    BinOpKind::Div => Some(super::arith::DIV_FN),
+                    BinOpKind::FloorDiv => Some(super::arith::FLOORDIV_FN),
+                    BinOpKind::Rem => Some(super::arith::MOD_FN),
+                    _ => None,
+                };
+                if let (true, Some(f)) = (self.want.math, math) {
+                    self.out.push(Site::new(
+                        range(e),
+                        f,
+                        &[Some(range(&b.left)), Some(range(&b.right))],
+                    ));
+                }
                 if self.want.arith && matches!(b.op, BinOpKind::Add | BinOpKind::Sub) {
                     let f = if matches!(b.op, BinOpKind::Add) {
                         ADD_FN
@@ -317,6 +387,11 @@ impl Walker {
             Stmt::EmitExpr(e) => self.expr(&e.expr),
             Stmt::EmitRaw(_) | Stmt::Continue(_) | Stmt::Break(_) => {}
             Stmt::ForLoop(f) => {
+                if self.want.loops {
+                    let r = range(&f.iter);
+                    self.out
+                        .push(Site::new(r, super::arith::ITER_FN, &[Some(r)]));
+                }
                 self.expr(&f.iter);
                 if let Some(x) = &f.filter_expr {
                     self.expr(x);
@@ -359,8 +434,16 @@ impl Walker {
             Stmt::Import(i) => self.expr(&i.expr),
             Stmt::FromImport(f) => self.expr(&f.expr),
             Stmt::Extends(e) => self.expr(&e.name),
-            Stmt::Include(i) => self.expr(&i.name),
+            Stmt::Include(i) => {
+                if self.want.isolated {
+                    self.isolated_include(i.span(), &i.name, i.ignore_missing);
+                }
+                self.expr(&i.name)
+            }
             Stmt::Macro(m) => {
+                if self.want.variadic {
+                    self.variadic_macro(m.span(), m.name, &m.args);
+                }
                 m.defaults.iter().for_each(|x| self.expr(x));
                 self.body(&m.body);
             }
@@ -378,6 +461,131 @@ impl Walker {
     }
 }
 
+impl Walker<'_> {
+    /// The tag around a statement: where its `{%` starts and its `%}` ends,
+    /// and whether each side trims whitespace (`-`).
+    fn tag(&self, span: minijinja::machinery::Span) -> Option<((usize, bool), (usize, bool))> {
+        let (start, end) = (span.start_offset as usize, span.end_offset as usize);
+        let open = self.source[..start].rfind("{%")?;
+        let ltrim = self.source[open + 2..].starts_with('-');
+        let after = &self.source[end..];
+        let ws = after.len() - after.trim_start().len();
+        let rest = &after[ws..];
+        let rtrim = rest.starts_with('-');
+        let rest = rest.strip_prefix(['-', '+']).unwrap_or(rest);
+        rest.starts_with("%}").then_some(())?;
+        let close = self.source.len() - rest.len() + 2;
+        Some(((open, ltrim), (close, rtrim)))
+    }
+
+    /// `{% include x without context %}` becomes an expression calling the
+    /// isolated include, keeping the tag's whitespace control.
+    fn isolated_include(
+        &mut self,
+        span: minijinja::machinery::Span,
+        name: &Expr<'_>,
+        ignore: bool,
+    ) {
+        let text = &self.source[span.start_offset as usize..span.end_offset as usize];
+        if !text.contains("without context") {
+            return;
+        }
+        let Some(((open, l), (close, r))) = self.tag(span) else {
+            return;
+        };
+        let (a, b) = range(name);
+        let call = format!(
+            "{{{{{} {}({}, {}) {}}}}}",
+            if l { "-" } else { "" },
+            super::arith::INCLUDE_FN,
+            &self.source[a..b],
+            if ignore { "true" } else { "false" },
+            if r { "-" } else { "" },
+        );
+        self.out.push(Site::literal((open, close), call));
+    }
+
+    /// A macro whose body names `varargs` or `kwargs` is renamed, given those
+    /// two parameters, and bound under its own name to a wrapper that
+    /// collects extra arguments into them.
+    fn variadic_macro(&mut self, span: minijinja::machinery::Span, name: &str, args: &[Expr<'_>]) {
+        let (start, end) = (span.start_offset as usize, span.end_offset as usize);
+        let text = &self.source[start..end];
+        let word = |w: &str| {
+            text.match_indices(w).any(|(i, _)| {
+                let before = text[..i].chars().next_back();
+                let after = text[i + w.len()..].chars().next();
+                !before.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '.')
+                    && !after.is_some_and(|c| c.is_alphanumeric() || c == '_')
+            })
+        };
+        let (v, k) = (word("varargs"), word("kwargs"));
+        if !v && !k {
+            return;
+        }
+        let Some(((_, _), (close, rtrim))) = self.tag(span) else {
+            return;
+        };
+        // `macro <name>(`: the name after the keyword, then its parameters.
+        let Some(after_kw) = text.strip_prefix("macro") else {
+            return;
+        };
+        let name_at = start + 5 + (after_kw.len() - after_kw.trim_start().len());
+        if !self.source[name_at..].starts_with(name) {
+            return;
+        }
+        let Some(open_paren) = self.source[name_at..].find('(').map(|i| name_at + i) else {
+            return;
+        };
+        let mut depth = 0usize;
+        let mut close_paren = None;
+        for (i, c) in self.source[open_paren..].char_indices() {
+            match c {
+                '(' | '[' | '{' => depth += 1,
+                ')' | ']' | '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        close_paren = Some(open_paren + i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(close_paren) = close_paren else {
+            return;
+        };
+        let inner = format!("__rsyaml_variadic_{name}");
+        self.out.push(Site::literal(
+            (name_at, name_at + name.len()),
+            inner.clone(),
+        ));
+        let empty = self.source[open_paren + 1..close_paren].trim().is_empty();
+        self.out.push(Site::literal(
+            (close_paren, close_paren),
+            format!("{}varargs=none, kwargs=none", if empty { "" } else { ", " }),
+        ));
+        let params: Vec<String> = args
+            .iter()
+            .filter_map(|a| match a {
+                Expr::Var(v) => Some(format!(", '{}'", v.id)),
+                _ => None,
+            })
+            .collect();
+        self.out.push(Site::literal(
+            (close, close),
+            format!(
+                "{{% set {name} = {}({inner}, '{}{}'{}) {}%}}",
+                super::arith::VARIADIC_FN,
+                if v { "v" } else { "" },
+                if k { "k" } else { "" },
+                params.concat(),
+                if rtrim { "-" } else { "" },
+            ),
+        ));
+    }
+}
+
 /// Writes `source[from..to]` with every site inside it replaced, outermost
 /// first; `sites` is sorted by start, wider first on a tie, so the sites a
 /// site contains follow it.
@@ -388,6 +596,11 @@ fn emit(source: &str, sites: &[&Site], from: usize, to: usize, out: &mut String)
             continue;
         }
         out.push_str(&source[at..site.whole.0]);
+        if let Some(text) = &site.literal {
+            out.push_str(text);
+            at = site.whole.1;
+            continue;
+        }
         let inner: Vec<&Site> = sites[i + 1..]
             .iter()
             .copied()
@@ -443,9 +656,13 @@ pub(super) fn prepare<'s>(source: &'s str, name: &str) -> Result<Cow<'s, str>, R
         slices: may_have_stepped_slice(source),
         containers: may_mutate(source),
         arith: may_use_dates(source),
+        math: may_divide(source),
+        loops: source.contains("loop."),
+        isolated: source.contains("without context"),
+        variadic: source.contains("varargs") || source.contains("kwargs"),
     };
     let attributes = may_set_attribute(source);
-    if !want.slices && !want.containers && !want.arith && !attributes {
+    if !want.any() && !attributes {
         return Ok(Cow::Borrowed(source));
     }
     let Ok(ast) = parse(
@@ -462,10 +679,11 @@ pub(super) fn prepare<'s>(source: &'s str, name: &str) -> Result<Cow<'s, str>, R
         }
     }
     let mut walker = Walker {
+        source,
         want,
         out: Vec::new(),
     };
-    if want.slices || want.containers || want.arith {
+    if want.any() {
         walker.stmt(&ast);
     }
     let mut sites = walker.out;

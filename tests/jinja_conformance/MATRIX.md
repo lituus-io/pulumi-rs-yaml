@@ -11,12 +11,12 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 
 ## Totals
 
-- cases: 292 (231 byte-identical to Jinja2, 61 listed divergences)
+- cases: 317 (263 byte-identical to Jinja2, 54 listed divergences)
 - rows extension: 24
-- rows partial: 39
-- rows supported: 276
+- rows partial: 35
+- rows supported: 306
 - rows unit-tested: 1
-- rows unsupported: 9
+- rows unsupported: 6
 
 ## Filters
 
@@ -41,7 +41,7 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `first` | supported | filter_first | - |
 | `float` | supported | filter_float | - |
 | `forceescape` | unsupported | filter_forceescape | unsupported (filter_forceescape) |
-| `format` | supported | filter_format | - |
+| `format` | supported | filter_format, filter_format_kwargs, filter_format_multibyte_key_error | - |
 | `groupby` | supported | filter_groupby, filter_groupby_tuple | - |
 | `indent` | supported | filter_indent, filter_indent_kwargs | - |
 | `int` | supported | filter_int | - |
@@ -189,10 +189,15 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `expr_cond` | supported | - |
 | `expr_cond_no_else` | supported | - |
 | `expr_dict_methods` | partial | intended (expr_dict_methods) |
-| `expr_div_zero_error` | partial | gap (expr_div_zero_error) |
+| `expr_div_in_set_and_if` | supported | - |
+| `expr_div_mixed_operands` | supported | - |
+| `expr_div_zero_error` | supported | - |
 | `expr_filter_pipeline` | partial | extension (expr_filter_pipeline) |
+| `expr_float_div_zero_error` | supported | - |
 | `expr_float_render` | partial | intended (expr_float_render) |
 | `expr_floor_div` | supported | - |
+| `expr_floordiv_signs` | supported | - |
+| `expr_floordiv_zero_error` | supported | - |
 | `expr_in` | supported | - |
 | `expr_is_not` | supported | - |
 | `expr_list_concat` | supported | - |
@@ -205,9 +210,18 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `expr_literal_strings` | supported | - |
 | `expr_literal_tuple` | partial | intended (expr_literal_tuple) |
 | `expr_logic` | supported | - |
-| `expr_mod` | partial | gap (expr_mod) |
+| `expr_mod` | supported | - |
+| `expr_mod_floats` | supported | - |
+| `expr_mod_zero_error` | supported | - |
 | `expr_nested_data` | partial | intended (expr_nested_data) |
-| `expr_percent_format` | unsupported | unsupported (expr_percent_format) |
+| `expr_percent_format` | supported | - |
+| `expr_percent_format_flags` | supported | - |
+| `expr_percent_format_kinds` | supported | - |
+| `expr_percent_format_mapping` | supported | - |
+| `expr_percent_format_single` | supported | - |
+| `expr_percent_format_too_few_error` | supported | - |
+| `expr_percent_format_too_many_error` | supported | - |
+| `expr_percent_format_type_error` | supported | - |
 | `expr_precedence` | supported | - |
 | `expr_slice` | supported | - |
 | `expr_slice_dynamic_step` | supported | - |
@@ -265,7 +279,7 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `stmt_for_loop_changed` | supported | - |
 | `stmt_for_loop_cycle` | supported | - |
 | `stmt_for_loop_first_last_length` | supported | - |
-| `stmt_for_loop_index` | partial | gap (stmt_for_loop_index) |
+| `stmt_for_loop_index` | supported | - |
 | `stmt_for_loop_index_list` | supported | - |
 | `stmt_for_loop_prev_next` | supported | - |
 | `stmt_for_nested_cycle` | supported | - |
@@ -273,6 +287,8 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `stmt_for_recursive` | supported | - |
 | `stmt_for_scope_no_leak` | supported | - |
 | `stmt_for_string` | supported | - |
+| `stmt_for_string_loop_vars` | supported | - |
+| `stmt_for_string_recursive_unaffected` | supported | - |
 | `stmt_for_unpack` | supported | - |
 | `stmt_from_import` | supported | - |
 | `stmt_if_basic` | supported | - |
@@ -288,14 +304,21 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `stmt_include_missing_error` | supported | - |
 | `stmt_include_nested` | supported | - |
 | `stmt_include_with_context` | supported | - |
-| `stmt_include_without_context` | partial | gap (stmt_include_without_context) |
+| `stmt_include_with_context_explicit` | supported | - |
+| `stmt_include_without_context` | supported | - |
+| `stmt_include_without_context_ignore_missing` | supported | - |
+| `stmt_include_without_context_trim` | supported | - |
 | `stmt_macro_basic` | supported | - |
 | `stmt_macro_caller` | supported | - |
 | `stmt_macro_defaults` | supported | - |
-| `stmt_macro_kwargs` | unsupported | unsupported (stmt_macro_kwargs) |
+| `stmt_macro_extra_args_without_varargs_error` | supported | - |
+| `stmt_macro_kwargs` | supported | - |
 | `stmt_macro_recursive` | supported | - |
 | `stmt_macro_scope` | supported | - |
-| `stmt_macro_varargs` | unsupported | unsupported (stmt_macro_varargs) |
+| `stmt_macro_varargs` | supported | - |
+| `stmt_macro_varargs_and_kwargs` | supported | - |
+| `stmt_macro_varargs_imported` | supported | - |
+| `stmt_macro_varargs_with_caller` | supported | - |
 | `stmt_namespace` | supported | - |
 | `stmt_namespace_self_reference` | partial | intended (stmt_namespace_self_reference) |
 | `stmt_raw` | supported | - |

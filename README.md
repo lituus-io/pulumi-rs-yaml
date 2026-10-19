@@ -8,8 +8,8 @@
 [![PyPI](https://img.shields.io/pypi/v/pulumi-rs-yaml?label=PyPI)](https://pypi.org/project/pulumi-rs-yaml/)
 [![Python](https://img.shields.io/badge/python-%E2%89%A53.9-blue)](https://pypi.org/project/pulumi-rs-yaml/)
 [![fuzz targets](https://img.shields.io/badge/fuzz%20targets-29-blue)](fuzz/fuzz_targets)
-[![security tests](https://img.shields.io/badge/security%20tests-209-blue)](crates/pulumi-rs-yaml-core/tests/security_tests.rs)
-[![Jinja conformance](https://img.shields.io/badge/jinja2%20conformance-365%20cases-blue)](tests/jinja_conformance/MATRIX.md)
+[![security tests](https://img.shields.io/badge/security%20tests-216-blue)](crates/pulumi-rs-yaml-core/tests/security_tests.rs)
+[![Jinja conformance](https://img.shields.io/badge/jinja2%20conformance-390%20cases-blue)](tests/jinja_conformance/MATRIX.md)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE)
 
 Rust implementation of the [Pulumi](https://www.pulumi.com/) YAML language runtime. Drop-in replacement for the Go-based `pulumi-yaml` with 1:1 compatibility.
@@ -79,7 +79,7 @@ limits (`PULUMI_YAML_JINJA_LIMITS`), where includes may reach, the error
 format, and every difference from Python Jinja2. Its examples are executed
 by the test suite.
 
-The engine is held to pinned reference Jinja2 by a conformance corpus of 292
+The engine is held to pinned reference Jinja2 by a conformance corpus of 317
 cases and 73 method cases (the methods also against the embedded Starlark) ([MATRIX.md](tests/jinja_conformance/MATRIX.md),
 [DIVERGENCES.md](tests/jinja_conformance/DIVERGENCES.md)); CI regenerates the
 goldens from the reference and fails on any drift.

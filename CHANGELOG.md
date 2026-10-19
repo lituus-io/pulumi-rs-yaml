@@ -10,10 +10,10 @@ is the reference; every example in it is executed by the test suite.
 
 ### Conformance with reference Jinja2
 
-A corpus of 292 cases -- every statement, expression form, whitespace rule
+A corpus of 317 cases -- every statement, expression form, whitespace rule
 and error class, and one case per filter, test and global Jinja2 3.1.6 ships
 -- renders through the runtime and must equal pinned Jinja2's output byte for
-byte. 231 do; the 61 that differ are listed with reasons in
+byte. 263 do; the 54 that differ are listed with reasons in
 `tests/jinja_conformance/DIVERGENCES.md` (value formatting deployed stacks
 already depend on, extensions, refusals by design), with the runtime's own
 output pinned. `MATRIX.md` is generated from the corpus and both registries.
@@ -41,6 +41,28 @@ allocation to dispatch, no trait objects). 0.5.39 had `items`, `keys`,
 before allocating. 73 method cases are held three ways: to pinned Jinja2, to
 this runtime's own Starlark, and to each other (`methods/DIVERGENCES.md`
 lists the Starlark gaps and two sorted-map differences).
+
+### Python's arithmetic, `%` formatting, varargs and isolated includes
+
+No known behavioural gap against Jinja2 remains:
+- `/`, `//` and `%` by zero are a `ZeroDivisionError`-class render error
+  (minijinja rendered `1 / 0` as `inf`); `%` takes the divisor's sign
+  (`7 % -3` is `-2`) and `//` floors;
+- `'%s-%05.2f' % (a, x)` and `'%(k)s' % d` are Python's printf formatting
+  (`s r d i u x X o c f F e E %`, flags, width, precision), through the same
+  core as `str.format` and bounded by the output limit -- which also now
+  bounds a `str.format` precision. The `format` filter is that core too:
+  minijinja's own sliced its input by bytes and panicked on a multi-byte
+  character in a `%(...)` key (found by fuzz_jinja_conformance);
+- a loop over a string knows its length (`loop.length`, `revindex`, `last`);
+- `{% include x without context %}` renders `x` with none of the caller's
+  values (it used to pass them), with its own bounded nesting depth;
+- a macro naming `varargs` or `kwargs` takes extra arguments into them
+  (including through `call` and imports); one that does not still refuses.
+
+What stays different is by design: random/lipsum (a deploy must render
+repeatably), the HTML filters (output is YAML), and the value formatting
+deployed stacks already depend on.
 
 ### Lists and dicts a template can change
 

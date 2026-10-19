@@ -138,7 +138,7 @@ const METHODS: &[&str] = &[
     "isoformat",
 ];
 const OPS: &[&str] = &[
-    "+", "-", "*", "/", "//", "%", "**", "~", "==", "!=", "<", ">=", "and", "or", "in", "not in",
+    "+", "-", "*", "/", "//", "%", "%", "/", "**", "~", "==", "!=", "<", ">=", "and", "or", "in", "not in",
 ];
 
 #[derive(Arbitrary, Debug)]
@@ -181,6 +181,8 @@ enum Node {
     SetBlock(u8, Vec<Node>),
     NsSet(Expr),
     Macro(Vec<Node>, Expr),
+    Variadic(Vec<Expr>, Vec<(u8, Expr)>),
+    Printf(String, Vec<Lit>),
     Call(Vec<Node>),
     FilterBlock(u8, Vec<Node>),
     With(u8, Expr, Vec<Node>),
@@ -438,6 +440,29 @@ fn node(n: &Node, depth: usize, out: &mut String) {
             nodes(body, d, out);
             out.push_str("{% endmacro %}{{ m(");
             expr(arg, d, out);
+            out.push_str(") }}");
+        }
+        Node::Variadic(args, kw) => {
+            out.push_str("{% macro v(a) %}{{ a }}{{ varargs|length }}{{ kwargs|length }}{% endmacro %}{{ v(");
+            out.push('1');
+            for a in args.iter().take(4) {
+                out.push_str(", ");
+                expr(a, d, out);
+            }
+            for (k, a) in kw.iter().take(3) {
+                let _ = write!(out, ", {}=", pick(&["x", "y", "z", "a"], *k));
+                expr(a, d, out);
+            }
+            out.push_str(") }}");
+        }
+        Node::Printf(f, args) => {
+            out.push_str("{{ ");
+            quote(f, out);
+            out.push_str(" % (");
+            for l in args.iter().take(4) {
+                lit(l, out);
+                out.push_str(", ");
+            }
             out.push_str(") }}");
         }
         Node::Call(body) => {

@@ -22,6 +22,7 @@ use std::sync::Arc;
 use minijinja::value::{DynObject, Kwargs, Object, ObjectRepr, Value};
 use minijinja::{Error, ErrorKind, State};
 
+use super::arith::engine_op;
 use super::methods::{value_error, Call};
 
 const MICROS_PER_DAY: i64 = 86_400_000_000;
@@ -696,14 +697,6 @@ fn arith(a: &Value, b: &Value, sub: bool) -> Option<Result<Value, Error>> {
         }))),
         _ => Err(unsupported()),
     })
-}
-
-/// The engine's own `a <op> b`, evaluated by it.
-fn engine_op(state: &State<'_, '_>, a: Value, b: Value, op: &str) -> Result<Value, Error> {
-    let expr = state
-        .env()
-        .compile_expression(if op == "+" { "a + b" } else { "a - b" })?;
-    expr.eval(minijinja::context! { a => a, b => b })
 }
 
 /// `__rsyaml_add(a, b)`: `a + b`, dates included.

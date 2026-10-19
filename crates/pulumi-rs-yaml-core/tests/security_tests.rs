@@ -4210,3 +4210,170 @@ mod jinja_method_security {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Python operators, `%` formatting, isolated includes and variadic macros:
+// each is bounded and typed.
+// ---------------------------------------------------------------------------
+mod jinja_python_semantics_security {
+    use pulumi_rs_yaml_core::jinja::{
+        JinjaContext, JinjaLimits, JinjaPreprocessor, RenderErrorKind, UndefinedMode,
+    };
+    use std::collections::HashMap;
+    use std::time::{Duration, Instant};
+
+    fn render_in(dir: &str, source: &str) -> Result<String, (RenderErrorKind, String)> {
+        let (config, extra) = (HashMap::new(), HashMap::new());
+        let ctx = JinjaContext {
+            project_name: "app",
+            stack_name: "dev",
+            cwd: dir,
+            organization: "org",
+            root_directory: dir,
+            config: &config,
+            project_dir: dir,
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits: JinjaLimits::default(),
+        };
+        let start = Instant::now();
+        let out = JinjaPreprocessor::new(&ctx)
+            .render(source, "Pulumi.yaml")
+            .map(|c| c.into_owned())
+            .map_err(|d| (d.kind, d.message));
+        assert!(start.elapsed() < Duration::from_secs(20), "{source}");
+        out
+    }
+
+    #[test]
+    fn division_by_zero_is_a_typed_error_never_infinity() {
+        for src in [
+            "x: {{ 1 / 0 }}",
+            "x: {{ 1 // 0 }}",
+            "x: {{ 1 % 0 }}",
+            "x: {{ 1.0 / 0 }}",
+            "x: {{ 2.5 % 0.0 }}",
+        ] {
+            let (kind, msg) = render_in(".", src).unwrap_err();
+            assert_eq!(kind, RenderErrorKind::JinjaFilterError, "{src}");
+            assert!(msg.contains("ZeroDivisionError"), "{src}: {msg}");
+        }
+    }
+
+    #[test]
+    fn percent_formatting_cannot_grow_past_the_output_limit() {
+        for src in [
+            "{{ '%1000000000d' % 1 }}",
+            "{{ '%.1000000000f' % 1.5 }}",
+            "{{ '%-999999999s' % 'x' }}",
+        ] {
+            let (kind, msg) = render_in(".", src).unwrap_err();
+            assert_eq!(kind, RenderErrorKind::OutputTooLarge, "{src}: {msg}");
+        }
+    }
+
+    #[test]
+    fn a_hostile_percent_format_never_panics() {
+        for src in [
+            "{{ '%' % 1 }}",
+            "{{ '%(' % {} }}",
+            "{{ '%(k)s' % 1 }}",
+            "{{ '%*d' % (1, 2) }}",
+            "{{ '%c' % 99999999 }}",
+            "{{ '%q' % 1 }}",
+            "{{ '%.99999999999999999999d' % 1 }}",
+            "{{ '%s' % none }}",
+            "{{ '%d' % 1e308 }}",
+        ] {
+            let _ = render_in(".", src);
+        }
+    }
+
+    #[test]
+    fn an_isolated_include_cannot_recurse_without_end() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("self.j2"),
+            "x{% include 'self.j2' without context %}",
+        )
+        .unwrap();
+        let d = dir.path().to_string_lossy();
+        let (kind, msg) = render_in(&d, "{% include 'self.j2' without context %}").unwrap_err();
+        assert!(
+            msg.contains("recursion limit") || msg.contains("nest too deep"),
+            "{kind:?}: {msg}"
+        );
+    }
+
+    #[test]
+    fn an_isolated_include_sees_none_of_the_callers_values() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("p.j2"),
+            "{{ secret is defined }}/{{ pulumi_project is defined }}",
+        )
+        .unwrap();
+        let d = dir.path().to_string_lossy();
+        let out = render_in(
+            &d,
+            "{% set secret = 's' %}{% include 'p.j2' without context %}",
+        )
+        .unwrap();
+        assert_eq!(out, "False/False");
+    }
+
+    #[test]
+    fn a_macro_without_varargs_still_refuses_extra_arguments() {
+        let (kind, _) =
+            render_in(".", "{% macro m(a) %}{{ a }}{% endmacro %}{{ m(1, 2) }}").unwrap_err();
+        assert_eq!(kind, RenderErrorKind::JinjaTypeError);
+        let (kind, _) = render_in(
+            ".",
+            "{% macro m(a) %}{{ varargs }}{% endmacro %}{{ m(1, z=2) }}",
+        )
+        .unwrap_err();
+        assert_eq!(
+            kind,
+            RenderErrorKind::JinjaTypeError,
+            "kwargs not named: refused"
+        );
+    }
+}
+
+mod jinja_format_filter_security {
+    use pulumi_rs_yaml_core::jinja::{JinjaContext, JinjaLimits, JinjaPreprocessor, UndefinedMode};
+    use std::collections::HashMap;
+
+    /// minijinja's own `format` filter sliced its input by bytes and
+    /// panicked on a multi-byte character inside a `%(...)` key -- found by
+    /// fuzz_jinja_conformance. The filter is now the printf core.
+    #[test]
+    fn the_format_filter_never_panics_on_multibyte_input() {
+        let (config, extra) = (HashMap::new(), HashMap::new());
+        let ctx = JinjaContext {
+            project_name: "app",
+            stack_name: "dev",
+            cwd: ".",
+            organization: "org",
+            root_directory: ".",
+            config: &config,
+            project_dir: ".",
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits: JinjaLimits::default(),
+        };
+        let crash =
+            include_bytes!("../../../fuzz/corpus/fuzz_jinja/seed-minijinja-format-multibyte.txt");
+        let crash = String::from_utf8_lossy(crash);
+        for src in [
+            "{{ '%(日本)s'|format(4) }}",
+            "{{ '%(é'|format(1) }}",
+            "{{ '日%本'|format(1) }}",
+            crash.as_ref(),
+        ] {
+            let _ = JinjaPreprocessor::new(&ctx).render(src, "Pulumi.yaml");
+        }
+    }
+}

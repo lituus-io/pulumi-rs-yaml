@@ -35,6 +35,10 @@ pub(super) fn register(env: &mut Environment<'_>) {
     env.add_filter("wordcount", wordcount);
     env.add_filter("filesizeformat", filesizeformat);
     env.add_filter("urlencode", urlencode);
+    // Jinja2's `format` is `value % args`: the printf core `%` uses.
+    // minijinja's own sliced its input by bytes and panicked on a
+    // multi-byte character inside a `%(...)` key.
+    env.add_filter("format", format_filter);
 
     env.add_test("callable", is_callable);
     env.add_test("sequence", is_sequence);
@@ -65,6 +69,14 @@ pub(super) fn register(env: &mut Environment<'_>) {
     env.add_function("strptime", super::dates::strptime);
     env.add_function(super::prepass::ADD_FN, super::dates::add);
     env.add_function(super::prepass::SUB_FN, super::dates::sub);
+    // Python's division and modulo, `%` formatting, string loops, isolated
+    // includes and variadic macros, reached through the prepass.
+    env.add_function(super::arith::DIV_FN, super::arith::div);
+    env.add_function(super::arith::FLOORDIV_FN, super::arith::floordiv);
+    env.add_function(super::arith::MOD_FN, super::arith::modulo);
+    env.add_function(super::arith::ITER_FN, super::arith::iter);
+    env.add_function(super::arith::INCLUDE_FN, super::arith::include);
+    env.add_function(super::arith::VARIADIC_FN, super::arith::variadic);
 }
 
 // ---------------------------------------------------------------------------
@@ -525,6 +537,31 @@ fn dictsort_compat(value: Value, args: &[Value], kwargs: Kwargs) -> Result<Value
 /// The characters Jinja2's `title` treats as starting a word.
 fn starts_word(c: char) -> bool {
     c == '-' || c.is_whitespace() || matches!(c, '(' | '{' | '[' | '<')
+}
+
+/// Jinja2's `format(value, *args, **kwargs)`: `value % kwargs` when keywords
+/// are given, else `value % args`.
+fn format_filter(
+    state: &State<'_, '_>,
+    value: Value,
+    args: &[Value],
+    kwargs: Kwargs,
+) -> Result<Value, Error> {
+    let fmt = text(&value)?;
+    let names: Vec<String> = kwargs.args().map(str::to_string).collect();
+    let rhs = if names.is_empty() {
+        Value::from(args.to_vec())
+    } else {
+        let mut map = std::collections::BTreeMap::new();
+        for n in names {
+            let v: Value = kwargs.get(&n)?;
+            map.insert(Value::from(n), v);
+        }
+        Value::from_iter(map)
+    };
+    kwargs.assert_all_used()?;
+    let cap = super::methods::output_cap(state);
+    Ok(Value::from(super::methods::printf(&fmt, &rhs, cap)?))
 }
 
 /// Jinja2's `title`: a word starts after whitespace, `-` or an opening
