@@ -1,0 +1,4 @@
+Pulumi.yaml:2:4: error: include refused [escape]: "../outside.j2"
+  2 | {% include '../outside.j2' %}
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+  suggestion: the file resolves outside both the stack directory and the render root, so it is not served; move it inside the tree the render root contains

@@ -1,0 +1,3 @@
+{% macro down(n) %}{{ down(n + 1) }}{% endmacro %}
+outputs:
+  n: {{ down(0) }}

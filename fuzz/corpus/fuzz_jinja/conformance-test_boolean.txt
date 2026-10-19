@@ -1,0 +1,1 @@
+{{ true is boolean }} {{ 1 is boolean }}

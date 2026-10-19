@@ -1,0 +1,1 @@
+{{ 'upper' is filter }} {{ 'nope' is filter }}

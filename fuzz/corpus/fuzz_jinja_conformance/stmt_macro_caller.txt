@@ -1,0 +1,1 @@
+{% macro wrap(tag) %}<{{ tag }}>{{ caller() }}</{{ tag }}>{% endmacro %}{% call wrap('b') %}inner{% endcall %}

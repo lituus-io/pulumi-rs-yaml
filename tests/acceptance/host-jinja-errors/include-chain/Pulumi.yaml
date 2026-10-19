@@ -1,0 +1,6 @@
+# An undefined name two includes deep: the error names the inner file and
+# line, and the chain that led there.
+# The Pulumi CLI reads this file itself, so it stays plain YAML; the
+# templated part is Pulumi.main.yaml, which only the language host reads.
+name: jinja-include-chain
+runtime: yaml

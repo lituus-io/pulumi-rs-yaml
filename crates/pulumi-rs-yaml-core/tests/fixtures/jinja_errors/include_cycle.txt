@@ -1,0 +1,8 @@
+Pulumi.yaml:2:4: error: include cycle: Pulumi.yaml -> inc/a.j2 -> inc/b.j2 -> inc/a.j2
+  2 | {% include 'inc/a.j2' %}
+    |    ^^^^^^^^^^^^^^^^^^
+  --> in inc/b.j2:1:4
+  1 | {% include 'inc/a.j2' %}
+    |    ^^^^^^^^^^^^^^^^^^
+  include chain: Pulumi.yaml:2 -> inc/a.j2:1 -> inc/b.j2:1 -> inc/a.j2:1
+  suggestion: the templates include each other in a cycle; break the cycle so that every include chain ends

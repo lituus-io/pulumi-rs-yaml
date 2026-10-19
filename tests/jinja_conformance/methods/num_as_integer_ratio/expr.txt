@@ -1,0 +1,1 @@
+(0.75).as_integer_ratio()[1]

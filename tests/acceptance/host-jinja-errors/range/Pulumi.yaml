@@ -1,0 +1,5 @@
+# One range() past the limit: refused before anything is allocated.
+# The Pulumi CLI reads this file itself, so it stays plain YAML; the
+# templated part is Pulumi.main.yaml, which only the language host reads.
+name: jinja-range
+runtime: yaml

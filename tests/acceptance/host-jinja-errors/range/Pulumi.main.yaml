@@ -1,0 +1,2 @@
+outputs:
+  n: {{ range(5000000) | length }}

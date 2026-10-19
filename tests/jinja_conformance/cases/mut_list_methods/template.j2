@@ -1,0 +1,1 @@
+{% set a = [5, 1, 4] %}{% do a.extend([2, 3]) %}{% do a.insert(0, 9) %}{% do a.remove(4) %}{{ a.pop() }} {{ a.pop(0) }} {% do a.sort() %}{{ a }} {% do a.reverse() %}{{ a }} {{ a.index(5) }} {{ a.count(1) }}

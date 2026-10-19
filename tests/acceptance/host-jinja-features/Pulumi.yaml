@@ -1,0 +1,8 @@
+# Jinja features end to end through the language host: includes and an
+# imported macro library from parts/, loop controls, a namespace, filters,
+# backwards slices and tojson. Outputs only, so no provider plugin is
+# needed. See crates/pulumi-rs-yaml-language/tests/jinja_host_tests.rs.
+# The Pulumi CLI reads this file itself, so it stays plain YAML; the
+# templated part is Pulumi.main.yaml, which only the language host reads.
+name: jinja-features
+runtime: yaml

@@ -1,0 +1,656 @@
+# Capability ledger: every `### ` entry in CHANGELOG.md (except "Tests")
+# names the live tests that still prove it.
+#
+# Read by crates/pulumi-rs-yaml-core/tests/capability_ledger.rs, which fails
+# when an entry is unmapped, a heading here is not in the changelog, or a named
+# test no longer exists. A test path is `<file relative to the repo root>::<fn>`
+# (`def <fn>` for Python). Keys: version, heading (exact text after "### "),
+# tests, and optionally superseded_by + note, or missing = true while a
+# capability has no test yet (which keeps the gate red until one is written).
+#
+# Restricted format: `[[entry]]` tables, string / boolean values, string arrays.
+
+# ---------------------------------------------------------------------------
+# 0.5.40
+# ---------------------------------------------------------------------------
+
+[[entry]]
+version = "0.5.40"
+heading = "Loop controls and `cycle` in the places Jinja2 refuses them"
+tests = [
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_cycle_with_nothing_to_cycle_is_a_type_error",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_loop_control_outside_its_loop_is_refused_at_compile",
+]
+
+[[entry]]
+version = "0.5.40"
+heading = "Every builtin, held to hostile counts and widths"
+tests = [
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::divisibleby_by_zero_is_a_zero_division_error",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::huge_counts_and_widths_are_refused_before_allocating",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_repeat_is_bounded_and_an_empty_one_is_instant",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::extreme_precisions_answer_as_python_does",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::i128_extremes_divide_exactly",
+]
+
+[[entry]]
+version = "0.5.40"
+heading = "Recursion reaches its limit on any stack"
+tests = ["crates/pulumi-rs-yaml-core/tests/security_tests.rs::the_recursion_limit_is_reached_on_a_one_mebibyte_stack"]
+
+[[entry]]
+version = "0.5.40"
+heading = "One error, one kind"
+tests = [
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_refused_name_holding_the_readfile_tag_is_still_a_refusal",
+    "crates/pulumi-rs-yaml-core/tests/jinja_error_goldens.rs::every_error_kind_reads_exactly_as_its_golden",
+]
+
+[[entry]]
+version = "0.5.40"
+heading = "Conformance with reference Jinja2"
+tests = [
+  "crates/pulumi-rs-yaml-core/tests/jinja_conformance.rs::every_case_matches_jinja2_or_is_a_listed_divergence",
+  "crates/pulumi-rs-yaml-core/tests/jinja_conformance.rs::the_capability_matrix_is_current_and_complete",
+  "crates/pulumi-rs-yaml-python/tests/test_jinja_conformance.py::test_case_renders_as_the_engine_pins",
+]
+
+[[entry]]
+version = "0.5.40"
+heading = "Python methods on values"
+tests = [
+    "crates/pulumi-rs-yaml-core/tests/jinja_method_oracle.rs::every_method_agrees_with_jinja2_and_starlark_or_is_listed",
+    "crates/pulumi-rs-yaml-core/tests/jinja_method_oracle.rs::every_str_method_in_the_table_has_a_case",
+    "crates/pulumi-rs-yaml-core/src/jinja/methods.rs::every_table_is_sorted_and_unique",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_growing_method_is_refused_before_it_allocates",
+]
+
+[[entry]]
+version = "0.5.40"
+heading = "Python's arithmetic, `%` formatting, varargs and isolated includes"
+tests = [
+    "crates/pulumi-rs-yaml-core/src/jinja/arith.rs::python_division_and_modulo",
+    "crates/pulumi-rs-yaml-core/src/jinja/methods.rs::printf_matches_python",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::division_by_zero_is_a_typed_error_never_infinity",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::percent_formatting_cannot_grow_past_the_output_limit",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::an_isolated_include_sees_none_of_the_callers_values",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_macro_without_varargs_still_refuses_extra_arguments",
+    "crates/pulumi-rs-yaml-core/tests/jinja_conformance.rs::every_case_matches_jinja2_or_is_a_listed_divergence",
+]
+
+[[entry]]
+version = "0.5.40"
+heading = "Lists and dicts a template can change"
+tests = [
+    "crates/pulumi-rs-yaml-core/tests/jinja_conformance.rs::every_case_matches_jinja2_or_is_a_listed_divergence",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::the_programs_inputs_cannot_be_changed",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_container_cannot_change_while_a_loop_walks_it",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_container_grown_in_a_loop_runs_out_of_fuel",
+    "crates/pulumi-rs-yaml-python/tests/test_jinja_conformance.py::test_a_list_built_in_the_template_is_shared_and_mutable",
+]
+
+[[entry]]
+version = "0.5.40"
+heading = "Dates"
+tests = [
+    "crates/pulumi-rs-yaml-core/src/jinja/dates.rs::ordinals_round_trip_and_match_python",
+    "crates/pulumi-rs-yaml-core/src/jinja/dates.rs::iso_parsing",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::dates_are_bounded_to_python_s_calendar",
+    "crates/pulumi-rs-yaml-language/tests/jinja_host_tests.rs::the_language_host_deploys_the_features_stack",
+]
+
+[[entry]]
+version = "0.5.40"
+heading = "A capability ledger"
+tests = [
+    "crates/pulumi-rs-yaml-core/tests/capability_ledger.rs::every_changelog_entry_maps_to_a_live_test",
+    "crates/pulumi-rs-yaml-core/tests/ci_contract_tests.rs::the_fuzz_lockfile_matches_the_product_lockfile",
+]
+
+[[entry]]
+version = "0.5.40"
+heading = "Resource limits"
+tests = [
+  "crates/pulumi-rs-yaml-core/tests/jinja_limits_tests.rs::fuel_at_the_boundary",
+  "crates/pulumi-rs-yaml-core/tests/jinja_limits_tests.rs::recursion_at_the_boundary",
+  "crates/pulumi-rs-yaml-core/tests/jinja_limits_tests.rs::output_at_the_boundary",
+  "crates/pulumi-rs-yaml-core/tests/jinja_limits_tests.rs::range_at_the_boundary",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::an_include_cycle_is_named_as_one",
+  "crates/pulumi-rs-yaml-core/src/jinja/limits.rs::malformed_specs_are_refused_by_name",
+  "crates/pulumi-rs-yaml-language/tests/jinja_host_tests.rs::a_limit_raised_in_the_environment_lets_the_work_through",
+  "crates/pulumi-rs-yaml-python/tests/test_jinja_conformance.py::test_limits_kwarg_is_applied",
+]
+
+[[entry]]
+version = "0.5.40"
+heading = "Two engine crashes, found by fuzzing"
+tests = [
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_negative_step_slice_of_an_empty_value_does_not_panic",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_namespace_that_would_hold_itself_is_refused_at_its_line",
+  "crates/pulumi-rs-yaml-core/src/jinja/prepass.rs::python_slice_positions",
+]
+
+[[entry]]
+version = "0.5.40"
+heading = "Errors"
+tests = [
+  "crates/pulumi-rs-yaml-core/tests/jinja_error_goldens.rs::every_error_kind_reads_exactly_as_its_golden",
+  "crates/pulumi-rs-yaml-core/tests/jinja_error_goldens.rs::an_error_inside_an_include_carries_file_line_column_and_chain",
+  "crates/pulumi-rs-yaml-core/tests/jinja_error_goldens.rs::secrets_never_reach_an_error_excerpt_or_message",
+  "crates/pulumi-rs-yaml-language/tests/jinja_host_tests.rs::an_error_two_includes_deep_names_the_file_and_the_chain",
+]
+
+[[entry]]
+version = "0.5.40"
+heading = "Policy and hardening"
+tests = [
+  "crates/pulumi-rs-yaml-core/tests/jinja_undefined_policy_tests.rs::the_mode_variable_is_strict_unless_told_otherwise_and_refuses_typos",
+  "crates/pulumi-rs-yaml-language/tests/jinja_host_tests.rs::malformed_jinja_variables_are_refused_by_name",
+  "crates/pulumi-rs-yaml-core/tests/jinja_yaml_safety_tests.rs::any_value_quoted_with_tojson_round_trips_through_the_yaml_gate",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::control_characters_in_a_name_are_refused_by_name",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::traversal_out_of_the_render_root_is_refused_in_every_spelling",
+]
+
+# ---------------------------------------------------------------------------
+# 0.5.39
+# ---------------------------------------------------------------------------
+
+[[entry]]
+version = "0.5.39"
+heading = "Statement splitting: faster, and no longer at the mercy of code layout"
+tests = [
+    "crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::split_statements_quotes_comments_begin_end",
+    "crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::spans_agree_with_the_shipped_splitter_on_ascii",
+]
+
+[[entry]]
+version = "0.5.39"
+heading = "README badges are checked"
+tests = ["crates/pulumi-rs-yaml-core/tests/ci_contract_tests.rs::readme_badges_match_what_they_count"]
+
+[[entry]]
+version = "0.5.39"
+heading = "Already-rendered projects: `PULUMI_YAML_JINJA=off`"
+tests = [
+  "crates/pulumi-rs-yaml-language/tests/prerendered_tests.rs::graph_parses_rendered_text_as_written_when_the_pass_is_off",
+  "crates/pulumi-rs-yaml-language/tests/prerendered_tests.rs::the_language_host_deploys_rendered_text_when_the_pass_is_off",
+  "crates/pulumi-rs-yaml-core/src/jinja/mod.rs::the_jinja_pass_is_on_unless_turned_off_exactly",
+  "crates/pulumi-rs-yaml-language/src/runner.rs::the_pass_off_skips_rendering_and_refuses_exec_sources",
+]
+
+[[entry]]
+version = "0.5.39"
+heading = "Resource keys for three more shapes"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/resource_key.rs::a_cloud_run_v1_service_keys_as_the_v2_service_it_is",
+  "crates/pulumi-rs-yaml-core/src/resource_key.rs::a_bigquery_job_takes_its_location_from_a_property",
+  "crates/pulumi-rs-yaml-core/src/resource_key.rs::a_service_account_is_keyed_from_its_account_id",
+  "crates/pulumi-rs-yaml-python/tests/test_graph_identity.py::test_keys_for_the_added_types",
+]
+
+# ---------------------------------------------------------------------------
+# 0.5.38
+# ---------------------------------------------------------------------------
+
+[[entry]]
+version = "0.5.38"
+heading = "Where a referenced stack really is"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/resource_graph.rs::overrides_set_the_identity_ids_and_uris_are_built_on",
+  "crates/pulumi-rs-yaml-core/src/resource_graph.rs::reference_backends_give_the_exact_location",
+  "crates/pulumi-rs-yaml-core/src/resource_graph.rs::a_self_managed_backend_uses_one_organization_and_does_not_warn",
+  "crates/pulumi-rs-yaml-core/tests/graph_identity_tests.rs::cross_stack_links_reach_the_exporting_resources",
+  "crates/pulumi-rs-yaml-core/src/cross_stack.rs::joins_a_consumer_to_the_exporting_resource",
+]
+
+[[entry]]
+version = "0.5.38"
+heading = "One backend resolver"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/stack_uri.rs::resolution_order_names_its_source",
+  "crates/pulumi-rs-yaml-core/src/stack_uri.rs::the_workspace_current_backend_is_read_and_nothing_else",
+  "crates/pulumi-rs-yaml-core/src/stack_uri.rs::an_explicit_empty_backend_turns_every_fallback_off",
+  "crates/pulumi-rs-yaml-python/tests/test_graph_identity.py::test_env_then_project_then_workspace",
+]
+
+[[entry]]
+version = "0.5.38"
+heading = "Host-supplied plaintext config"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/literal_resolve.rs::config_resolves_the_way_the_deploy_reads_it",
+  "crates/pulumi-rs-yaml-core/src/resource_graph.rs::host_config_makes_config_values_literal_and_marks_them",
+  "crates/pulumi-rs-yaml-python/tests/test_graph_identity.py::test_secure_config_is_refused",
+  "crates/pulumi-rs-yaml-core/tests/multi_file_tests.rs::a_stack_config_file_is_skipped_not_merged",
+]
+
+[[entry]]
+version = "0.5.38"
+heading = "IAM graph"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/iam_graph.rs::shapes",
+  "crates/pulumi-rs-yaml-core/src/iam_graph.rs::a_resource_output_member_is_an_edge_from_that_resource",
+  "crates/pulumi-rs-yaml-core/tests/graph_identity_tests.rs::every_binding_is_accounted_for_and_coverage_meets_the_bar",
+]
+
+[[entry]]
+version = "0.5.38"
+heading = "Resource keys"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/resource_key.rs::every_template_round_trips_a_provider_id",
+  "crates/pulumi-rs-yaml-core/src/resource_key.rs::lineage_ids_reach_the_same_keys",
+  "crates/pulumi-rs-yaml-core/src/resource_key.rs::keys_equal_the_runtime_capture",
+  "crates/pulumi-rs-yaml-core/src/sql_lineage/ids.rs::domain_scoped_and_mixed_case_projects",
+]
+
+[[entry]]
+version = "0.5.38"
+heading = "CI"
+tests = ["crates/pulumi-rs-yaml-core/tests/ci_contract_tests.rs::the_binary_size_gate_is_wired_and_self_tested"]
+note = "The binary-size growth gate is a CI job; no test in the workspace asserts it."
+
+# ---------------------------------------------------------------------------
+# 0.5.37
+# ---------------------------------------------------------------------------
+
+[[entry]]
+version = "0.5.37"
+heading = "Column lineage through scripts"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::ctas_columns_are_its_projections",
+  "crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::insert_with_a_column_list_maps_by_position",
+  "crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::unknowable_targets_answer_nothing_rather_than_a_guess",
+  "crates/pulumi-rs-yaml-core/tests/sql_lineage_tests.rs::script_column_lineage_follows_ctas_and_insert_via_the_routine",
+  "crates/pulumi-rs-yaml-core/tests/sql_lineage_tests.rs::script_column_lineage_is_off_by_default",
+  "crates/pulumi-rs-yaml-python/tests/test_sql_lineage.py::test_ctas_columns",
+]
+
+# ---------------------------------------------------------------------------
+# 0.5.36
+# ---------------------------------------------------------------------------
+
+[[entry]]
+version = "0.5.36"
+heading = "Where a stack's state lives, and where every resource is"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/stack_uri.rs::backends_and_their_stack_uris",
+  "crates/pulumi-rs-yaml-core/tests/resource_graph_tests.rs::a_self_managed_backend_locates_the_stack_its_references_and_its_resources",
+  "crates/pulumi-rs-yaml-core/tests/resource_graph_tests.rs::no_backend_adds_no_uri_and_no_bytes",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::query_credentials_never_reach_the_export",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_multibyte_resource_name_does_not_abort_the_export",
+]
+
+# ---------------------------------------------------------------------------
+# 0.5.35
+# ---------------------------------------------------------------------------
+
+[[entry]]
+version = "0.5.35"
+heading = "Every SQL statement, with what it reads and what it writes"
+tests = [
+  "crates/pulumi-rs-yaml-core/tests/sql_lineage_tests.rs::a_view_is_one_statement_that_reads_its_sources_and_writes_the_view",
+  "crates/pulumi-rs-yaml-core/tests/sql_lineage_tests.rs::identical_text_is_one_statement_with_two_occurrences",
+  "crates/pulumi-rs-yaml-core/tests/sql_lineage_tests.rs::file_statement_text_is_borrowed_from_the_store",
+  "crates/pulumi-rs-yaml-core/tests/sql_lineage_tests.rs::statements_are_absent_unless_asked_for",
+  "crates/pulumi-rs-yaml-language/src/graph_cmd.rs::sql_statements_writes_the_statement_files",
+]
+
+[[entry]]
+version = "0.5.35"
+heading = "What a statement changes is a write"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::drop_truncate_alter_change_their_table_and_read_nothing",
+  "crates/pulumi-rs-yaml-core/tests/sql_lineage_tests.rs::drop_truncate_alter_are_writes_not_reads",
+  "crates/pulumi-rs-yaml-core/tests/sql_lineage_tests.rs::bigquery_load_data_target_is_a_heuristic_write",
+]
+
+[[entry]]
+version = "0.5.35"
+heading = "An unquoted qualified table name lost its qualifiers"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::unquoted_qualified_names_keep_their_qualifiers",
+  "crates/pulumi-rs-yaml-core/tests/sql_lineage_tests.rs::an_unquoted_qualified_read_in_a_script_keeps_its_project_and_dataset",
+]
+
+[[entry]]
+version = "0.5.35"
+heading = "Scheduled queries run in their own project"
+tests = [
+  "crates/pulumi-rs-yaml-core/tests/sql_lineage_tests.rs::scheduled_query_writes_in_its_own_project",
+  "crates/pulumi-rs-yaml-core/tests/sql_lineage_tests.rs::scheduled_query_heuristic_read_stays_heuristic_on_the_destination",
+]
+
+[[entry]]
+version = "0.5.35"
+heading = "The graph exports release the GIL"
+tests = [
+  "crates/pulumi-rs-yaml-python/tests/test_dependency_graph.py::test_a_graph_export_releases_the_gil",
+  "crates/pulumi-rs-yaml-python/tests/test_jinja.py::test_a_render_releases_the_gil",
+  "crates/pulumi-rs-yaml-python/tests/test_dependency_graph.py::test_dict_keys_are_sorted_as_they_always_were",
+]
+
+[[entry]]
+version = "0.5.35"
+heading = "Compressed NDJSON"
+tests = [
+  "crates/pulumi-rs-yaml-language/src/graph_cmd.rs::compress_applies_to_ndjson_only",
+  "crates/pulumi-rs-yaml-language/src/graph_cmd.rs::gzip_tables_decompress_to_the_plain_bytes",
+]
+
+# ---------------------------------------------------------------------------
+# 0.5.34
+# ---------------------------------------------------------------------------
+
+[[entry]]
+version = "0.5.34"
+heading = "A statement split that sliced author text inside a character"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::spans_agree_with_the_shipped_splitter_on_ascii",
+  "crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::begin_end_with_dotted_capital_i_does_not_panic",
+  "crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::call_detection_with_a_multibyte_fourth_byte_does_not_panic",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::call_detection_on_multibyte_text_never_kills_the_parser_worker",
+]
+
+[[entry]]
+version = "0.5.34"
+heading = "Faster without moving a byte"
+tests = [
+  "crates/pulumi-rs-yaml-core/tests/golden_output_tests.rs::every_acceptance_stack_exports_byte_identically",
+  "crates/pulumi-rs-yaml-core/src/literal_resolve.rs::a_string_literal_is_borrowed_from_the_template",
+  "crates/pulumi-rs-yaml-core/src/eval/graph.rs::an_equally_close_suggestion_is_deterministic",
+  "crates/pulumi-rs-yaml-language/src/graph_cmd.rs::streamed_rows_are_byte_identical_to_per_row_serialization",
+]
+
+[[entry]]
+version = "0.5.34"
+heading = "The fuzz workspace's lockfile had not moved"
+tests = ["crates/pulumi-rs-yaml-core/tests/ci_contract_tests.rs::the_fuzz_lockfile_matches_the_product_lockfile"]
+note = "A lockfile pin in the fuzz workspace; no test asserts the resolved polyglot-sql version there."
+
+# ---------------------------------------------------------------------------
+# 0.5.33
+# ---------------------------------------------------------------------------
+
+[[entry]]
+version = "0.5.33"
+heading = "A derived string the engine can resolve before the deploy"
+tests = [
+  "crates/pulumi-rs-yaml-core/tests/derive_string_tests.rs::the_same_program_derives_the_same_value_twice",
+  "crates/pulumi-rs-yaml-core/tests/integration.rs::test_derive_string_reaches_a_registered_input",
+  "crates/pulumi-rs-yaml-core/src/eval/builtins.rs::the_shared_implementation_is_a_pure_function",
+]
+
+[[entry]]
+version = "0.5.33"
+heading = "The reason it is a builtin and not a Starlark snippet"
+tests = [
+  "crates/pulumi-rs-yaml-core/tests/resource_graph_tests.rs::a_derived_name_reaches_literal_properties",
+  "crates/pulumi-rs-yaml-core/tests/resource_graph_tests.rs::a_random_name_still_reaches_no_literal",
+  "crates/pulumi-rs-yaml-core/tests/resource_graph_tests.rs::a_derive_over_an_unresolvable_seed_reaches_no_literal",
+  "crates/pulumi-rs-yaml-converter/tests/convert_tests.rs::test_derive_string",
+]
+
+[[entry]]
+version = "0.5.33"
+heading = "The draw is unbiased, and that had to be measured"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/eval/builtins.rs::the_draw_is_unbiased_not_merely_covering",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::the_draw_terminates_for_every_alphabet_size",
+]
+
+[[entry]]
+version = "0.5.33"
+heading = "A ten-character query that never came back"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::the_fuzz_found_input_terminates",
+  "crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::a_pathological_nesting_depth_is_refused",
+  "crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::ordinary_sql_still_parses_under_the_guard",
+]
+
+[[entry]]
+version = "0.5.33"
+heading = "One parser worker, reused, instead of a thread per call"
+tests = ["crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::the_parser_worker_is_reused_across_calls", "crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::a_dead_parser_worker_is_cleared_and_replaced"]
+note = "Every lineage test runs through the worker, but none asserts that it is reused across calls or that a dead worker is cleared from its slot."
+
+[[entry]]
+version = "0.5.33"
+heading = "One parser thread for a script, not one per statement"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::a_whole_script_is_parsed_on_one_worker",
+  "crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::one_oversized_statement_does_not_poison_the_batch",
+  "crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::an_empty_batch_spawns_no_worker",
+]
+
+[[entry]]
+version = "0.5.33"
+heading = "Author text shaped like a readFile marker is not the engine's"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/jinja/mod.rs::a_marker_shaped_line_that_is_not_ours_survives",
+  "crates/pulumi-rs-yaml-core/src/jinja/mod.rs::a_marker_with_an_uncached_id_survives",
+  "crates/pulumi-rs-yaml-core/src/jinja/mod.rs::the_whole_line_and_inline_paths_agree_on_a_foreign_marker",
+  "crates/pulumi-rs-yaml-core/src/jinja/mod.rs::a_real_marker_still_resolves",
+]
+
+[[entry]]
+version = "0.5.33"
+heading = "The converter's entry point is narrow, and that is worth a megabyte"
+tests = [
+  "crates/pulumi-rs-yaml-converter/tests/convert_tests.rs::test_derive_string",
+]
+
+[[entry]]
+version = "0.5.33"
+heading = "SHA-256, in-crate, because the value is a compatibility contract"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/sha256.rs::the_published_vectors_are_reproduced",
+  "crates/pulumi-rs-yaml-core/src/sha256.rs::the_long_vector_is_reproduced",
+  "crates/pulumi-rs-yaml-core/tests/derive_string_tests.rs::the_frozen_values_have_not_moved",
+]
+
+[[entry]]
+version = "0.5.33"
+heading = "Arguments"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/eval/builtins.rs::an_unknown_argument_is_named_not_defaulted",
+  "crates/pulumi-rs-yaml-core/src/eval/builtins.rs::an_unknown_seed_propagates_unknown",
+  "crates/pulumi-rs-yaml-core/src/eval/builtins.rs::a_secret_seed_is_refused_rather_than_unwrapped",
+  "crates/pulumi-rs-yaml-core/tests/derive_string_tests.rs::the_shorthand_equals_the_explicit_default",
+]
+
+[[entry]]
+version = "0.5.33"
+heading = "Bounds, each one audited rather than assumed"
+tests = [
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::an_enormous_seed_produces_a_short_value",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::an_enormous_length_is_refused_not_allocated",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::an_alphabet_over_the_addressable_size_is_refused",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::an_empty_alphabet_is_refused",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_multibyte_alphabet_is_never_split",
+]
+
+[[entry]]
+version = "0.5.33"
+heading = "`fuzz_starlark` was asserting a property that is not true"
+tests = ["crates/pulumi-rs-yaml-core/src/eval/starlark_runtime.rs::compile_executes_the_module_top_level", "crates/pulumi-rs-yaml-core/src/eval/starlark_runtime.rs::has_function_keys_on_the_declared_name"]
+note = "A fuzz-harness change; fuzz targets do not count, and no unit test pins that compile executes the module or that has_function keys on the declared name."
+
+[[entry]]
+version = "0.5.33"
+heading = "The weekly fuzz budget was too short to reach its own findings"
+tests = ["crates/pulumi-rs-yaml-core/tests/ci_contract_tests.rs::the_weekly_fuzz_budget_is_at_least_two_minutes"]
+note = "A workflow setting (FUZZ_DURATION); no test asserts it."
+
+# ---------------------------------------------------------------------------
+# 0.5.32
+# ---------------------------------------------------------------------------
+
+[[entry]]
+version = "0.5.32"
+heading = "Three string filters a template may already be written against"
+tests = [
+  "crates/pulumi-rs-yaml-core/tests/jinja_string_filter_tests.rs::every_case_agrees_with_the_reference",
+  "crates/pulumi-rs-yaml-core/tests/jinja_string_filter_regression.rs::the_field_expression_renders",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::an_enormous_width_does_not_allocate_from_the_width",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::wordwrap_cannot_amplify_a_small_template_without_bound",
+  "crates/pulumi-rs-yaml-core/tests/integration.rs::the_string_filters_reach_a_registered_resource_input",
+]
+
+# ---------------------------------------------------------------------------
+# 0.5.31
+# ---------------------------------------------------------------------------
+
+[[entry]]
+version = "0.5.31"
+heading = "An escaped dollar is not a literal pair of dollars"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/ast/interpolation.rs::an_escape_needs_the_pass_with_no_interpolation_in_sight",
+  "crates/pulumi-rs-yaml-core/src/ast/parse.rs::an_escape_collapses_with_nothing_to_interpolate",
+  "crates/pulumi-rs-yaml-core/tests/integration.rs::an_escaped_dollar_reaches_the_provider_as_one_dollar",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::an_escape_is_collapsed_once_and_never_rescanned",
+  "crates/pulumi-rs-yaml-python/tests/test_expr_serialization.py::test_an_escape_collapses_in_a_property",
+]
+
+# ---------------------------------------------------------------------------
+# 0.5.30
+# ---------------------------------------------------------------------------
+
+[[entry]]
+version = "0.5.30"
+heading = "An include is any text the tree contains"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/jinja/mod.rs::any_text_file_inside_the_tree_is_served",
+  "crates/pulumi-rs-yaml-core/src/jinja/mod.rs::a_file_at_the_cap_is_served_and_one_byte_over_is_not",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_binary_include_is_refused_and_its_bytes_never_appear_in_the_error",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_refused_include_is_never_ignored_as_missing",
+  "crates/pulumi-rs-yaml-core/tests/jinja_tests.rs::test_a_nested_stack_includes_a_version_file_from_the_repo_root",
+]
+
+# ---------------------------------------------------------------------------
+# 0.5.29
+# ---------------------------------------------------------------------------
+
+[[entry]]
+version = "0.5.29"
+heading = "A template that will not render says where, and why"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/jinja/mod.rs::an_undefined_name_is_located_to_the_character",
+  "crates/pulumi-rs-yaml-core/src/jinja/mod.rs::test_format_rich_caret_under_the_expression",
+  "crates/pulumi-rs-yaml-core/src/jinja/mod.rs::a_range_the_source_does_not_agree_with_degrades_to_no_column",
+]
+
+[[entry]]
+version = "0.5.29"
+heading = "An include that is refused says it was refused"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/jinja/mod.rs::each_refusal_is_reported_distinctly",
+  "crates/pulumi-rs-yaml-core/src/jinja/mod.rs::ignore_missing_still_ignores_an_absent_file_but_never_a_refusal",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_genuinely_absent_include_is_not_found_and_says_which",
+  "crates/pulumi-rs-yaml-python/tests/test_jinja.py::test_a_refused_include_says_why",
+]
+
+[[entry]]
+version = "0.5.29"
+heading = "One body, two surfaces, no GIL"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/jinja/mod.rs::the_trait_and_the_inherent_render_are_one_body",
+  "crates/pulumi-rs-yaml-python/tests/test_jinja.py::test_the_string_surface_carries_the_same_facts",
+  "crates/pulumi-rs-yaml-python/tests/test_jinja.py::test_a_render_releases_the_gil",
+]
+
+# ---------------------------------------------------------------------------
+# 0.5.28
+# ---------------------------------------------------------------------------
+
+[[entry]]
+version = "0.5.28"
+heading = "An id that belongs to the parent"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/checkpoint.rs::element_is_returned_for_a_requested_type",
+  "crates/pulumi-rs-yaml-core/src/checkpoint.rs::two_entries_on_one_id_are_told_apart_by_their_elements",
+  "crates/pulumi-rs-yaml-core/src/checkpoint.rs::a_scan_that_asks_for_nothing_projects_nothing",
+  "crates/pulumi-rs-yaml-python/tests/test_checkpoint.py::test_two_entries_on_one_id_are_told_apart",
+]
+
+[[entry]]
+version = "0.5.28"
+heading = "Captured, not parsed"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/checkpoint.rs::an_element_borrows_and_does_not_copy",
+  "crates/pulumi-rs-yaml-core/src/checkpoint.rs::unrequested_types_keep_inputs_unread",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::non_utf8_inside_type_or_inputs_is_an_error",
+  "crates/pulumi-rs-yaml-python/tests/test_checkpoint.py::test_asking_for_nothing_is_the_scan_it_always_was",
+]
+
+# ---------------------------------------------------------------------------
+# 0.5.27
+# ---------------------------------------------------------------------------
+
+[[entry]]
+version = "0.5.27"
+heading = "A byte order mark is not a second document"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/encoding.rs::a_mark_at_offset_zero_is_the_only_one_removed",
+  "crates/pulumi-rs-yaml-core/src/ast/parse.rs::test_parse_leading_byte_order_mark_is_one_document",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::the_reported_repro_parses_as_a_single_document",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_genuine_multi_document_file_still_fails_the_same_way",
+]
+
+[[entry]]
+version = "0.5.27"
+heading = "Six boundaries, not every read"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/jinja/mod.rs::test_validate_rendered_yaml_leading_byte_order_mark",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_marked_package_lock_is_read_rather_than_ignored",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_marked_schema_store_loads",
+  "crates/pulumi-rs-yaml-core/tests/provider_scope_tests.rs::the_option_is_read_through_a_leading_byte_order_mark",
+  "crates/pulumi-rs-yaml-language/src/exec.rs::test_run_exec_accepts_a_leading_byte_order_mark",
+]
+
+# ---------------------------------------------------------------------------
+# 0.5.26
+# ---------------------------------------------------------------------------
+
+[[entry]]
+version = "0.5.26"
+heading = "A checkpoint index read from borrowed bytes"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/checkpoint.rs::disk_shape_yields_id_urn_pairs",
+  "crates/pulumi-rs-yaml-core/src/checkpoint.rs::export_shape_yields_id_urn_pairs",
+  "crates/pulumi-rs-yaml-core/src/checkpoint.rs::plain_strings_are_borrowed",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_latest_that_is_a_list_is_an_error",
+  "crates/pulumi-rs-yaml-core/tests/security_tests.rs::an_unknown_version_is_an_error",
+]
+
+[[entry]]
+version = "0.5.26"
+heading = "Reads release the GIL"
+tests = [
+  "crates/pulumi-rs-yaml-python/tests/test_checkpoint.py::test_another_thread_makes_progress_during_a_batch",
+  "crates/pulumi-rs-yaml-core/src/checkpoint.rs::batch_with_parallel_above_len_is_capped",
+  "crates/pulumi-rs-yaml-python/tests/test_checkpoint.py::test_a_bad_document_occupies_its_own_slot",
+  "crates/pulumi-rs-yaml-python/tests/test_exports.py::test_stub_declares_every_native_function",
+]
+
+# ---------------------------------------------------------------------------
+# 0.5.25
+# ---------------------------------------------------------------------------
+
+[[entry]]
+version = "0.5.25"
+heading = "The `str` evaluator is reachable from Python"
+tests = [
+  "crates/pulumi-rs-yaml-python/tests/test_str_invoke.py::test_replace_spellings",
+  "crates/pulumi-rs-yaml-python/tests/test_str_invoke.py::test_unknown_token_is_none",
+  "crates/pulumi-rs-yaml-python/tests/test_str_invoke.py::test_non_dict_args_raise_value_error",
+]
+
+[[entry]]
+version = "0.5.25"
+heading = "The static literal resolver answers pure `str` invokes"
+tests = [
+  "crates/pulumi-rs-yaml-core/src/literal_resolve.rs::replace_through_a_variable",
+  "crates/pulumi-rs-yaml-core/src/literal_resolve.rs::chained_invokes_resolve",
+  "crates/pulumi-rs-yaml-core/src/literal_resolve.rs::split_is_not_a_literal",
+  "crates/pulumi-rs-yaml-core/tests/resource_graph_tests.rs::names_derived_from_str_invokes_reach_literal_properties",
+  "crates/pulumi-rs-yaml-core/tests/sql_lineage_tests.rs::dataset_and_table_ids_derived_from_str_invokes",
+]

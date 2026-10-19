@@ -20,15 +20,13 @@ pub(crate) const MAX_SQL_BYTES: usize = 1024 * 1024;
 /// SECURITY: polyglot's `stacker` feature grows the parser's stack on
 /// demand, so deeply nested SQL no longer overflows (verified to nesting
 /// depth 500 in unoptimized builds, where the default stack failed
-/// around depth 14). Parsing still runs on a dedicated thread so that
-/// any residual deep recursion is isolated from the caller's stack —
-/// under `panic = "abort"` an overflow would abort the whole process.
-const PARSER_STACK_BYTES: usize = 64 * 1024 * 1024;
-
-/// A parser job. An enum rather than a boxed closure: the worker is reused, so
-/// the work has to cross a channel, and the set of jobs is closed and small.
-/// It also keeps the isolation contract legible -- what crosses is listed here.
-enum Job {
+/// around depth 14). Parsing still runs on the deep-stack worker
+/// ([`crate::deep_stack`]) so that any residual deep recursion is isolated
+/// from the caller's stack -- under `panic = "abort"` an overflow would abort
+/// the whole process.
+///
+/// A parser job. Only owned data crosses to the worker.
+pub(crate) enum Job {
     /// Each entry is an owned statement, or the reason it was refused;
     /// `columns` asks for column lineage of the statements that have it.
     Statements {
@@ -40,109 +38,48 @@ enum Job {
 
 /// A parser answer. Only owned, `Send` fact structs -- parser AST nodes never
 /// leave the worker, which is the whole point of the boundary.
-enum Reply {
+pub(crate) enum Reply {
     Statements(Vec<Result<Vec<StatementFacts>, String>>),
     Select(Result<SelectFacts, String>),
 }
 
-/// One parser worker per calling thread, parked between jobs.
-///
-/// A thread with a `PARSER_STACK_BYTES` stack used to be spawned PER CALL.
-/// Measured: 31.5us to spawn and join one, and a twenty-view program makes
-/// about forty such calls -- 1.26ms of pure thread churn, which was the
-/// largest single item in `sql_lineage_20_views`. Reusing one worker removes
-/// all of it, and removes the repeated 64 MiB stack reservation with it.
-///
-/// Thread-local rather than threaded through the context: the saving is the
-/// same and the call sites keep their signatures. The worker parks on a
-/// channel receive between jobs, so an idle one costs no CPU, and dropping the
-/// sender when the calling thread ends closes the loop.
-struct Parser {
-    jobs: std::sync::mpsc::Sender<Job>,
-    replies: std::sync::mpsc::Receiver<Reply>,
-}
-
-impl Parser {
-    fn spawn() -> Result<Self, String> {
-        let (job_tx, job_rx) = std::sync::mpsc::channel::<Job>();
-        let (reply_tx, reply_rx) = std::sync::mpsc::channel::<Reply>();
-        std::thread::Builder::new()
-            .stack_size(PARSER_STACK_BYTES)
-            .name("sql-lineage-parser".to_string())
-            .spawn(move || {
-                // Ends when the sender is dropped, i.e. when the calling
-                // thread goes away.
-                while let Ok(job) = job_rx.recv() {
-                    let reply = match job {
-                        Job::Statements { entries, columns } => Reply::Statements(
-                            entries
-                                .into_iter()
-                                .map(|entry| {
-                                    let sql = entry?;
-                                    polyglot_sql::parse(&sql, DialectType::BigQuery)
-                                        .map_err(|e| e.to_string())
-                                        .map(|stmts| {
-                                            stmts
-                                                .iter()
-                                                .map(|stmt| {
-                                                    let mut facts = statement_facts(stmt, &sql);
-                                                    if columns {
-                                                        facts.columns =
-                                                            column_facts(stmt).unwrap_or_default();
-                                                    }
-                                                    facts
-                                                })
-                                                .collect()
-                                        })
-                                })
-                                .collect(),
-                        ),
-                        Job::Select(sql) => Reply::Select(analyze_select_inner(&sql)),
-                    };
-                    if reply_tx.send(reply).is_err() {
-                        break; // the caller is gone
-                    }
-                }
-            })
-            .map_err(|e| format!("failed to spawn SQL parser thread: {}", e))?;
-        Ok(Parser {
-            jobs: job_tx,
-            replies: reply_rx,
-        })
-    }
-
-    fn run(&self, job: Job) -> Result<Reply, String> {
-        self.jobs
-            .send(job)
-            .map_err(|_| "SQL parser thread terminated unexpectedly".to_string())?;
-        self.replies
-            .recv()
-            .map_err(|_| "SQL parser thread terminated unexpectedly".to_string())
+impl Job {
+    /// Runs on the deep-stack worker.
+    pub(crate) fn execute(self) -> Reply {
+        match self {
+            Job::Statements { entries, columns } => Reply::Statements(
+                entries
+                    .into_iter()
+                    .map(|entry| {
+                        let sql = entry?;
+                        polyglot_sql::parse(&sql, DialectType::BigQuery)
+                            .map_err(|e| e.to_string())
+                            .map(|stmts| {
+                                stmts
+                                    .iter()
+                                    .map(|stmt| {
+                                        let mut facts = statement_facts(stmt, &sql);
+                                        if columns {
+                                            facts.columns = column_facts(stmt).unwrap_or_default();
+                                        }
+                                        facts
+                                    })
+                                    .collect()
+                            })
+                    })
+                    .collect(),
+            ),
+            Job::Select(sql) => Reply::Select(analyze_select_inner(&sql)),
+        }
     }
 }
 
-thread_local! {
-    /// `None` until first use, and `None` again if the worker could not be
-    /// spawned -- a parse that cannot reach a worker is reported, never
-    /// silently skipped.
-    static PARSER: std::cell::RefCell<Option<Parser>> = const { std::cell::RefCell::new(None) };
-}
-
-/// Runs one job on this thread's parser worker, spawning it on first use.
+/// Runs one parser job on this thread's deep-stack worker.
 fn on_parser_thread(job: Job) -> Result<Reply, String> {
-    PARSER.with(|cell| {
-        let mut slot = cell.borrow_mut();
-        if slot.is_none() {
-            *slot = Some(Parser::spawn()?);
-        }
-        let parser = slot.as_ref().expect("just filled");
-        let out = parser.run(job);
-        if out.is_err() {
-            // A dead worker must not poison every later call on this thread.
-            *slot = None;
-        }
-        out
-    })
+    match crate::deep_stack::run(crate::deep_stack::Job::Sql(job))? {
+        crate::deep_stack::Reply::Sql(reply) => Ok(reply),
+        crate::deep_stack::Reply::Render(_) => unreachable!("a SQL job answers SQL"),
+    }
 }
 
 /// Pre-flight guard shared by every parser entry point.
@@ -228,7 +165,7 @@ pub(crate) struct SelectFacts {
 /// Table-level facts for EVERY statement of a script, on ONE parser thread.
 ///
 /// The per-statement entry point spawned a thread -- with a
-/// `PARSER_STACK_BYTES` stack -- for each statement, and nothing bounds how
+/// `DEEP_STACK_BYTES` stack -- for each statement, and nothing bounds how
 /// many statements a script has: `MAX_SQL_BYTES` bounds the TEXT, and
 /// `split_statements` only drops the EMPTY ones, so 1 MiB of
 /// `select 1 from t;` is ~65,000 non-empty statements and so ~65,000 thread
@@ -1180,6 +1117,41 @@ mod tests {
         assert!(out[0].is_ok(), "{:?}", out[0]);
         assert!(out[1].is_err(), "the oversized one is refused");
         assert!(out[2].is_ok(), "{:?}", out[2]);
+    }
+
+    use crate::deep_stack::current_worker;
+
+    /// One worker serves every call on a thread: the second parse reaches
+    /// the thread the first one spawned.
+    #[test]
+    fn the_parser_worker_is_reused_across_calls() {
+        assert!(statement_facts_for_all(&["SELECT 1"])[0].is_ok());
+        let first = current_worker().expect("a worker after the first parse");
+        for _ in 0..5 {
+            assert!(statement_facts_for_all(&["SELECT 2 FROM `p.d.t`"])[0].is_ok());
+        }
+        assert_eq!(
+            current_worker(),
+            Some(first),
+            "the same worker, not a new one per call"
+        );
+    }
+
+    /// A dead worker is cleared from its slot, so the next call spawns a
+    /// fresh one instead of failing forever.
+    #[test]
+    fn a_dead_parser_worker_is_cleared_and_replaced() {
+        let dead = crate::deep_stack::install_dead_worker();
+        assert!(
+            statement_facts_for_all(&["SELECT 1"])[0].is_err(),
+            "the dead worker is reported"
+        );
+        assert!(current_worker().is_none(), "and cleared from the slot");
+        assert!(
+            statement_facts_for_all(&["SELECT 1"])[0].is_ok(),
+            "the next call spawns anew"
+        );
+        assert_ne!(current_worker(), Some(dead));
     }
 
     /// An empty batch spawns nothing at all.

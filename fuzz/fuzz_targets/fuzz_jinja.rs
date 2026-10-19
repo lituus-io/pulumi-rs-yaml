@@ -84,6 +84,7 @@ fuzz_target!(|data: &[u8]| {
             undefined: UndefinedMode::Strict,
             provider_templated_packages: &[],
             extra: &extra,
+            limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
         };
         // Any text read back as a refusal detail answers without panicking.
         let _ = IncludeRefusal::suggestion_for(input);
@@ -108,13 +109,14 @@ fuzz_target!(|data: &[u8]| {
                 assert!(
                     [
                         IncludeRefusal::TAG_ABSOLUTE,
+                        IncludeRefusal::TAG_BAD_NAME,
                         IncludeRefusal::TAG_ESCAPE,
                         IncludeRefusal::TAG_BINARY,
                         IncludeRefusal::TAG_TOO_LARGE,
                     ]
                     .iter()
                     .any(|tag| diag.message.contains(tag)),
-                    "a refusal carries one of the four tags"
+                    "a refusal carries one of the five tags"
                 );
             }
             let _ = diag.format_rich("fuzz.yaml");

@@ -1,0 +1,1 @@
+{{ [1] is iterable }} {{ 'a' is iterable }} {{ 1 is iterable }} {{ {} is iterable }}

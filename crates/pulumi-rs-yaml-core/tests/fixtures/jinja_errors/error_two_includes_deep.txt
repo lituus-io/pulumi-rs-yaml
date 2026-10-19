@@ -1,0 +1,8 @@
+Pulumi.yaml:2:4: error: upper() takes no arguments (1 given)
+  2 | {% include 'inc/outer.j2' %}
+    |    ^^^^^^^^^^^^^^^^^^^^^^
+  --> in inc/inner.j2:2:10
+  2 | b: {{ 'x'.upper(1) }}
+    |          ^^^^^^^^^
+  include chain: Pulumi.yaml:2 -> inc/outer.j2:2 -> inc/inner.j2:2
+  suggestion: Check the arguments, and the type of the value they apply to

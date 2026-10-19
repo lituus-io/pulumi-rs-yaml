@@ -27,6 +27,7 @@ fn make_context(config: &HashMap<String, String>) -> JinjaContext<'_> {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &EMPTY_EXTRA,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     }
 }
 
@@ -765,6 +766,7 @@ outputs:
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
     let rendered = preprocessor.preprocess(original, "Pulumi.yaml").unwrap();
@@ -928,6 +930,7 @@ fn make_readfile_context<'a>(
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &EMPTY_EXTRA,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     }
 }
 
@@ -1489,6 +1492,7 @@ resources:
         undefined: UndefinedMode::Passthrough,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
     let result = preprocessor.preprocess(source, "Pulumi.yaml").unwrap();
@@ -1516,6 +1520,7 @@ fn test_passthrough_config_typo_still_errors() {
         undefined: UndefinedMode::Passthrough,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
     let result = preprocessor.preprocess(source, "Pulumi.yaml");
@@ -1542,6 +1547,7 @@ fn test_passthrough_unknown_passes_through() {
         undefined: UndefinedMode::Passthrough,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
     let result = preprocessor.preprocess(source, "Pulumi.yaml").unwrap();
@@ -1567,6 +1573,7 @@ fn test_passthrough_readfile_still_works() {
         undefined: UndefinedMode::Passthrough,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
     let source = "sql: {{ readFile('f.sql') }}\n";
@@ -1597,6 +1604,7 @@ fn test_passthrough_for_loop_with_unknown_vars() {
         undefined: UndefinedMode::Passthrough,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
     let result = preprocessor.preprocess(source, "Pulumi.yaml").unwrap();
@@ -1625,6 +1633,7 @@ fn test_strict_mode_unchanged() {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
     let result = preprocessor.preprocess(source, "Pulumi.yaml");
@@ -1657,6 +1666,7 @@ fn test_import_local_template() {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &EMPTY_EXTRA,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
     let result = preprocessor.preprocess(main_source, "Pulumi.yaml").unwrap();
@@ -1699,6 +1709,7 @@ fn test_import_parent_relative_template() {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &EMPTY_EXTRA,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
     let result = preprocessor.preprocess(main_source, "Pulumi.yaml").unwrap();
@@ -1752,6 +1763,7 @@ bucket: {{ b.name }}
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &EMPTY_EXTRA,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
     let result = preprocessor.preprocess(main_source, "Pulumi.yaml").unwrap();
@@ -1792,6 +1804,7 @@ fn test_import_rejects_absolute_path() {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &EMPTY_EXTRA,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
     let result = preprocessor.preprocess(&main_source, "Pulumi.yaml");
@@ -1821,6 +1834,7 @@ fn test_include_serves_any_text_file_inside_the_root() {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &EMPTY_EXTRA,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
     let result = preprocessor.preprocess(main_source, "Pulumi.yaml");
@@ -1854,6 +1868,7 @@ fn test_a_nested_stack_includes_a_version_file_from_the_repo_root() {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &EMPTY_EXTRA,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let out = JinjaPreprocessor::new(&ctx)
         .preprocess(main_source, "Pulumi.yaml")
@@ -1938,6 +1953,7 @@ resources:
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &EMPTY_EXTRA,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
     let result = preprocessor.preprocess(main_source, "Pulumi.yaml").unwrap();
@@ -1985,6 +2001,7 @@ mod loader_security {
             undefined: UndefinedMode::Strict,
             provider_templated_packages: &[],
             extra: &EMPTY_EXTRA,
+            limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
         };
         let pre = JinjaPreprocessor::new(&ctx);
         pre.preprocess(src, "Pulumi.yaml")
@@ -2120,6 +2137,7 @@ mod jinja2_compat {
             undefined: UndefinedMode::Strict,
             provider_templated_packages: &[],
             extra: &EMPTY_EXTRA,
+            limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
         };
         let pre = JinjaPreprocessor::new(&ctx);
         pre.preprocess(src, "Pulumi.yaml")

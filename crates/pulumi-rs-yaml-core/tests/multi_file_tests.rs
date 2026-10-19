@@ -385,6 +385,7 @@ fn test_jinja_expressions_in_multi_file() {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
 
     let (merged, diags) = load_project(dir.path(), Some(&ctx));
@@ -415,6 +416,7 @@ fn test_jinja_per_file_isolation() {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
 
     let (merged, diags) = load_project(dir.path(), Some(&ctx));
@@ -445,6 +447,7 @@ fn test_jinja_error_in_one_file_reports_correct_filename() {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
 
     let (_, diags) = load_project(dir.path(), Some(&ctx));
@@ -471,6 +474,7 @@ fn test_jinja_for_loop_generates_resources_cross_file_deps() {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
 
@@ -540,6 +544,7 @@ fn test_jinja_filters_in_multi_file_properties() {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
 
     let (merged, diags) = load_project(dir.path(), Some(&ctx));
@@ -561,6 +566,7 @@ fn test_multi_file_jinja_full_pipeline() {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let preprocessor = JinjaPreprocessor::new(&ctx);
 
@@ -1020,6 +1026,7 @@ fn test_readfile_in_main_yaml() {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
 
     let (merged, diags) = load_project(dir.path(), Some(&ctx));
@@ -1047,6 +1054,7 @@ fn test_readfile_in_satellite_yaml() {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
 
     let (merged, diags) = load_project(dir.path(), Some(&ctx));
@@ -1075,6 +1083,7 @@ fn test_readfile_in_multiple_files() {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
 
     let (merged, diags) = load_project(dir.path(), Some(&ctx));
@@ -1102,6 +1111,7 @@ fn test_readfile_cross_file_with_evaluation() {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
 
     let (merged, diags) = load_project(dir.path(), Some(&ctx));

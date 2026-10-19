@@ -1,0 +1,4 @@
+Pulumi.yaml:2:7: error: readFile: absolute paths are not allowed: '/etc/hostname'
+  2 | v: {{ readFile('/etc/hostname') }}
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^
+  suggestion: Check the file path. Relative paths are resolved from the project directory.

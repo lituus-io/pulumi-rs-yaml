@@ -1,0 +1,1 @@
+{% for a in 'ab' %}{% macro m() %}{% for b in [] %}{% else %}{% continue %}{% endfor %}{% endmacro %}{{ m() }}{% endfor %}

@@ -223,6 +223,28 @@ jobs:
       - name: Check musl aarch64
         run: cargo zigbuild --workspace --exclude pulumi-rs-yaml-python --target aarch64-unknown-linux-musl --release
 
+  # The engine is held to pinned reference Jinja2. The goldens are committed,
+  # so every test job already compares against them; this job regenerates
+  # them from the pinned reference and fails on any drift, so a golden can
+  # never be edited by hand into agreement with the engine.
+  jinja-conformance:
+    name: Jinja conformance (reference Jinja2)
+    runs-on: ubuntu-latest
+    needs: fmt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the pinned reference
+        run: pip install --require-hashes --no-binary markupsafe -r scripts/jinja_conformance/requirements.txt
+      - name: Regenerate the goldens and fail on drift
+        run: python scripts/jinja_conformance/generate.py --check
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Render the corpus and check the matrix
+        run: cargo test -p pulumi-rs-yaml-core --test jinja_conformance
+
   benchmark-regression:
     name: Benchmark Regression Check
     if: github.event_name == 'pull_request'
@@ -265,52 +287,43 @@ jobs:
 
       # Fail if any benchmark regressed beyond the noise threshold (25%).
       # Same-runner back-to-back runs keep hardware variance low, but shared
-      # runners are still noisy — the threshold is deliberately generous.
+      # runners are still noisy -- the threshold is deliberately generous.
+      # The threshold is the same for every benchmark; the reviewed
+      # .github/bench-rebaseline.toml can move one benchmark's expectation
+      # for one named release, never the threshold (see bench_gate.py).
       - name: Compare against baseline
         run: |
           critcmp base head | tee critcmp.txt
-          python3 - <<'EOF'
-          import json, subprocess, sys
+          for side in base head; do
+            critcmp --export "$side" | python3 -c 'import json,sys; print(json.dumps({n: b["criterion_estimates_v1"]["mean"]["point_estimate"] for n, b in json.load(sys.stdin)["benchmarks"].items()}))' > "$side.json"
+          done
+          merge_base="$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
+          base_version="$(git show "$merge_base:crates/pulumi-rs-yaml-core/Cargo.toml" | sed -n 's/^version = "\(.*\)"/\1/p' | head -1)"
+          python3 .github/scripts/bench_gate.py base.json head.json \
+            --base-version "$base_version" --rebaseline .github/bench-rebaseline.toml
 
-          export = subprocess.run(
-              ["critcmp", "--export", "base"], capture_output=True, text=True, check=True
-          )
-          base = {
-              name: bench["criterion_estimates_v1"]["mean"]["point_estimate"]
-              for name, bench in json.loads(export.stdout)["benchmarks"].items()
-          }
-          export = subprocess.run(
-              ["critcmp", "--export", "head"], capture_output=True, text=True, check=True
-          )
-          head = {
-              name: bench["criterion_estimates_v1"]["mean"]["point_estimate"]
-              for name, bench in json.loads(export.stdout)["benchmarks"].items()
-          }
-
-          THRESHOLD = 1.25
-          # Relative threshold alone flags nanosecond-scale benchmarks whose
-          # timings shift by fractions of a ns from code alignment alone —
-          # require the absolute delta to clear a noise floor too.
-          MIN_DELTA_NS = 100.0
-          regressions = []
-          for name, base_mean in base.items():
-              head_mean = head.get(name)
-              if (
-                  head_mean is not None
-                  and head_mean > base_mean * THRESHOLD
-                  and head_mean - base_mean > MIN_DELTA_NS
-              ):
-                  regressions.append(
-                      f"{name}: {base_mean:.0f}ns -> {head_mean:.0f}ns "
-                      f"({head_mean / base_mean:.2f}x)"
-                  )
-
-          if regressions:
-              print("benchmark regressions beyond 25% threshold:")
-              print("\n".join(regressions))
-              sys.exit(1)
-          print(f"no regressions beyond 25% across {len(base)} benchmarks")
-          EOF
+      # The gate itself, held to what it promises: a re-baselined bench still
+      # fails past 25% of its new expectation, any other bench past 25% of
+      # the merge-base, and an entry is refused once its release is reached.
+      - name: The benchmark gate still fails on regression (self-test)
+        run: |
+          g=.github/scripts/bench_gate.py
+          r=.github/bench-rebaseline.toml
+          echo '{"jinja_preprocessor_include_at_cap": 1000000, "other": 1000000}' > tb.json
+          echo '{"jinja_preprocessor_include_at_cap": 1500000, "other": 1000000}' > th.json
+          python3 $g tb.json th.json --base-version 0.0.1 --rebaseline $r
+          echo '{"jinja_preprocessor_include_at_cap": 2000000, "other": 1000000}' > th.json
+          if python3 $g tb.json th.json --base-version 0.0.1 --rebaseline $r; then
+            echo "::error::a re-baselined bench past 25% of its expectation passed"; exit 1
+          fi
+          echo '{"jinja_preprocessor_include_at_cap": 1000000, "other": 1300000}' > th.json
+          if python3 $g tb.json th.json --base-version 0.0.1 --rebaseline $r; then
+            echo "::error::a 30% regression of an ordinary bench passed"; exit 1
+          fi
+          echo '{"jinja_preprocessor_include_at_cap": 1000000, "other": 1000000}' > th.json
+          if python3 $g tb.json th.json --base-version 999.0.0 --rebaseline $r; then
+            echo "::error::a stale re-baseline entry was accepted"; exit 1
+          fi
 
   # The one check a branch rule needs to require. A job skipped because a
   # job it needs failed counts as passing to GitHub, so this job always runs
@@ -332,6 +345,7 @@ jobs:
       - no-default-features
       - binary-size
       - python-test
+      - jinja-conformance
       - cross-check
       - benchmark-regression
     steps:

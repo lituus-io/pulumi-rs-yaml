@@ -148,6 +148,7 @@ fn render_jinja<'src>(
     source: &'src str,
     filename: &str,
     ctx_map: &HashMap<String, String>,
+    limits: pulumi_rs_yaml_core::jinja::JinjaLimits,
 ) -> Result<String, pulumi_rs_yaml_core::jinja::RenderDiagnostic<'src>> {
     // Build owned strings, then borrow for JinjaContext
     let project_name = ctx_map.get("project_name").cloned().unwrap_or_default();
@@ -191,6 +192,7 @@ fn render_jinja<'src>(
         undefined: pulumi_rs_yaml_core::jinja::UndefinedMode::Strict,
         provider_templated_packages: &scoped,
         extra: &extra,
+        limits,
     };
 
     pulumi_rs_yaml_core::jinja::JinjaPreprocessor::new(&jinja_ctx)
@@ -198,19 +200,40 @@ fn render_jinja<'src>(
         .map(Cow::into_owned)
 }
 
+/// The render limits for this process: `PULUMI_YAML_JINJA_LIMITS` over the
+/// defaults. A malformed value is a `ValueError`, never a silent default.
+fn jinja_limits() -> PyResult<pulumi_rs_yaml_core::jinja::JinjaLimits> {
+    pulumi_rs_yaml_core::jinja::JinjaLimits::from_env().map_err(PyValueError::new_err)
+}
+
+/// The limits for one render: `limits` when given (the same
+/// `fuel=..,recursion=..,output=..,range=..` spelling as the variable), the
+/// process's otherwise. Malformed either way is a `ValueError`.
+fn jinja_limits_for(limits: Option<&str>) -> PyResult<pulumi_rs_yaml_core::jinja::JinjaLimits> {
+    match limits {
+        Some(spec) => {
+            pulumi_rs_yaml_core::jinja::JinjaLimits::parse(spec).map_err(PyValueError::new_err)
+        }
+        None => jinja_limits(),
+    }
+}
+
 /// Preprocess a YAML source with Jinja rendering.
 ///
 /// The string surface: rendered text, or a `ValueError` whose message is
 /// the diagnostic formatted for a log. The GIL is released for the render.
 #[pyfunction]
+#[pyo3(signature = (source, filename, context, limits=None))]
 fn preprocess_jinja(
     py: Python<'_>,
     source: &str,
     filename: &str,
     context: &Bound<'_, PyDict>,
+    limits: Option<&str>,
 ) -> PyResult<String> {
     let ctx_map = py_dict_to_string_map(context)?;
-    match py.detach(|| render_jinja(source, filename, &ctx_map)) {
+    let limits = jinja_limits_for(limits)?;
+    match py.detach(|| render_jinja(source, filename, &ctx_map, limits)) {
         Ok(result) => Ok(result),
         Err(e) => Err(PyValueError::new_err(format!(
             "Jinja preprocessing error: {}",
@@ -223,20 +246,25 @@ fn preprocess_jinja(
 ///
 /// `{"rendered": str}` on success. On failure `{"diagnostic": {...}}` with
 /// `kind`, `line`, `column`, `end_column`, `message`, `source_line`,
-/// `expression` and `suggestion` — the same facts `preprocess_jinja` folds
+/// `expression`, `suggestion` and `origin` (the included file, line,
+/// column, excerpt and include `chain` when the fault lies in another
+/// template, else `None`) — the same facts `preprocess_jinja` folds
 /// into its error text, handed over as fields so a caller can place a caret
 /// rather than parse a sentence. Never raises for a template fault; only a
 /// context that is not a mapping of strings is an error of this call.
 #[pyfunction]
+#[pyo3(signature = (source, filename, context, limits=None))]
 fn preprocess_jinja_diag(
     py: Python<'_>,
     source: &str,
     filename: &str,
     context: &Bound<'_, PyDict>,
+    limits: Option<&str>,
 ) -> PyResult<Py<PyAny>> {
     let ctx_map = py_dict_to_string_map(context)?;
+    let limits = jinja_limits_for(limits)?;
     let out = PyDict::new(py);
-    match py.detach(|| render_jinja(source, filename, &ctx_map)) {
+    match py.detach(|| render_jinja(source, filename, &ctx_map, limits)) {
         Ok(rendered) => out.set_item("rendered", rendered)?,
         Err(diag) => {
             let d = PyDict::new(py);
@@ -248,6 +276,24 @@ fn preprocess_jinja_diag(
             d.set_item("source_line", diag.source_line)?;
             d.set_item("expression", diag.expression)?;
             d.set_item("suggestion", diag.suggestion)?;
+            // A fault inside an included or imported template: where it
+            // really lies, and the include chain that led there.
+            match &diag.origin {
+                Some(o) => {
+                    let od = PyDict::new(py);
+                    od.set_item("file", o.file.as_str())?;
+                    od.set_item("line", o.line)?;
+                    od.set_item("column", o.column)?;
+                    od.set_item("end_column", o.end_column)?;
+                    od.set_item("source_line", o.source_line.as_str())?;
+                    od.set_item("expression", o.expression.as_str())?;
+                    let chain: Vec<(String, u32)> =
+                        o.chain.iter().map(|s| (s.file.clone(), s.line)).collect();
+                    od.set_item("chain", chain)?;
+                    d.set_item("origin", od)?;
+                }
+                None => d.set_item("origin", py.None())?,
+            }
             out.set_item("diagnostic", d)?;
         }
     }
@@ -267,6 +313,11 @@ fn render_error_kind_name(kind: pulumi_rs_yaml_core::jinja::RenderErrorKind) -> 
         K::YamlIndentation => "yaml_indentation",
         K::YamlDuplicateKey => "yaml_duplicate_key",
         K::ProviderScope => "provider_scope",
+        K::FuelExhausted => "fuel_exhausted",
+        K::RecursionLimit => "recursion_limit",
+        K::OutputTooLarge => "output_too_large",
+        K::IncludeCycle => "include_cycle",
+        K::RangeTooLarge => "range_too_large",
     }
 }
 
@@ -663,6 +714,7 @@ fn create_execution_plan(
         undefined: pulumi_rs_yaml_core::jinja::UndefinedMode::Strict,
         provider_templated_packages: &scoped,
         extra: &extra_map,
+        limits: jinja_limits()?,
     };
 
     // Reload with Jinja preprocessing (handles both {{ }} and {% %} via full rendering)
@@ -1587,6 +1639,7 @@ fn load_graph_project(
         undefined: pulumi_rs_yaml_core::jinja::UndefinedMode::Strict,
         provider_templated_packages: &scoped,
         extra: &extra_map,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::from_env()?,
     };
     let jinja_opt = if has_jinja { Some(&jinja_ctx) } else { None };
     let (merged, load_diags) = pulumi_rs_yaml_core::multi_file::load_project(path, jinja_opt);

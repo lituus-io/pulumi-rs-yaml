@@ -1,0 +1,4 @@
+Pulumi.yaml:2:7: error: range() would produce 11 elements, more than the limit of 10
+  2 | n: {{ range(11) | length }}
+    |       ^^^^^^^^^
+  suggestion: iterate a shorter range, or raise the limit with PULUMI_YAML_JINJA_LIMITS=range=<n>

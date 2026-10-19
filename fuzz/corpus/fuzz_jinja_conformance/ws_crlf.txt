@@ -1,0 +1,5 @@
+a: 1
+{% if true %}
+b: 2
+{% endif %}
+c: 3

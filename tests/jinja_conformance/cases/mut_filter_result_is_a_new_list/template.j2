@@ -1,0 +1,1 @@
+{% set src = [3, 1, 2] %}{% set s = src|sort %}{% do s.append(0) %}{{ s|join(',') }} {{ src|join(',') }}

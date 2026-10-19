@@ -1,0 +1,6 @@
+Pulumi.yaml:0:0: error: tried to use + operator on unsupported types number and string
+  --> in inc/lib.j2:2:4
+  2 | {{ 1 + 'a' }}
+    |    ^^^^^^^
+  include chain: inc/lib.j2:2
+  suggestion: Check filter arguments and types

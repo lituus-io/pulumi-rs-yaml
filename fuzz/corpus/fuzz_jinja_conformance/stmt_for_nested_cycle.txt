@@ -1,0 +1,1 @@
+{% for a in [1, 2] %}{% for b in [1, 2, 3] %}{{ loop.cycle('x', 'y') }}{% endfor %}|{% endfor %}

@@ -1,0 +1,1 @@
+{{ false is false }} {{ 0 is false }}

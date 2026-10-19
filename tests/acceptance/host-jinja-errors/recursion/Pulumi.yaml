@@ -1,0 +1,5 @@
+# A macro with no base case: stopped by the recursion limit.
+# The Pulumi CLI reads this file itself, so it stays plain YAML; the
+# templated part is Pulumi.main.yaml, which only the language host reads.
+name: jinja-recursion
+runtime: yaml

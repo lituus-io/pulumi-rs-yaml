@@ -258,6 +258,7 @@ outputs:
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
 
     c.bench_function("jinja_preprocessor_fast_path", |b| {
@@ -295,6 +296,7 @@ resources:
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
 
     c.bench_function("jinja_preprocessor_render_10_resources", |b| {
@@ -330,6 +332,7 @@ fn bench_jinja_render_fails(c: &mut Criterion) {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     c.bench_function("jinja_preprocessor_render_fails_undefined", |b| {
         let preprocessor = JinjaPreprocessor::new(&ctx);
@@ -371,6 +374,7 @@ fn bench_jinja_include_at_cap(c: &mut Criterion) {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let source = "a: '{% include \"cap.txt\" %}'\n";
     c.bench_function("jinja_preprocessor_include_at_cap", |b| {
@@ -542,6 +546,7 @@ fn bench_jinja_preprocess_multi_file(c: &mut Criterion) {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
 
     let path = dir.path().to_path_buf();
@@ -1314,6 +1319,7 @@ fn bench_string_filters(c: &mut Criterion) {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &extra,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
 
     let mut bench = |name: &str, source: &'static str| {
@@ -1456,6 +1462,137 @@ fn bench_resource_keys(c: &mut Criterion) {
     });
 }
 
+/// A context shared by the render benches below; `limits` is the one knob.
+fn bench_ctx<'a>(
+    config: &'a HashMap<String, String>,
+    extra: &'a HashMap<String, String>,
+    dir: &'a str,
+    limits: pulumi_rs_yaml_core::jinja::JinjaLimits,
+) -> JinjaContext<'a> {
+    JinjaContext {
+        project_name: "bench",
+        stack_name: "dev",
+        cwd: dir,
+        organization: "org",
+        root_directory: dir,
+        config,
+        project_dir: dir,
+        undefined: UndefinedMode::Strict,
+        provider_templated_packages: &[],
+        extra,
+        limits,
+    }
+}
+
+/// The shape of a real BI stack: a macro for labels, a config-driven region,
+/// a conditional per resource, JSON-quoted values, and `n` resources.
+fn typical_stack(n: usize) -> String {
+    format!(
+        r#"{{% macro labels(team, idx) %}}{{{{ {{'team': team, 'idx': idx|string, 'env': pulumi_stack}} | tojson }}}}{{% endmacro %}}
+name: {{{{ pulumi_project }}}}
+runtime: yaml
+resources:
+{{% for i in range({n}) %}}
+  table{{{{ i }}}}:
+    type: gcp:bigquery:Table
+    properties:
+      datasetId: {{{{ config.dataset | default('analytics') }}}}
+      tableId: {{{{ ('t_' ~ i) | upper | replace('-', '_') | tojson }}}}
+      deletionProtection: {{{{ 'true' if pulumi_stack == 'prd' else 'false' }}}}
+      labels: {{{{ labels('data', i) }}}}
+{{% if i is even %}}
+      description: {{{{ ('table number ' ~ i) | title | tojson }}}}
+{{% endif %}}
+{{% endfor %}}
+"#
+    )
+}
+
+fn bench_jinja_typical_stack(c: &mut Criterion) {
+    let config: HashMap<String, String> = [("bench:dataset".to_string(), "ds".to_string())]
+        .into_iter()
+        .collect();
+    let extra = HashMap::new();
+    let ctx = bench_ctx(
+        &config,
+        &extra,
+        ".",
+        pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
+    );
+    for n in [10usize, 100] {
+        let source = typical_stack(n);
+        c.bench_function(&format!("jinja_render_typical_stack_{n}"), |b| {
+            let pre = JinjaPreprocessor::new(&ctx);
+            b.iter(|| black_box(pre.render(black_box(&source), "Pulumi.yaml").unwrap()))
+        });
+    }
+}
+
+fn bench_jinja_large_loop(c: &mut Criterion) {
+    let source = "items:\n{% for i in range(2000) %}  - {{ ('item-' ~ i) | upper | replace('ITEM', 'x') | truncate(12) | tojson }}\n{% endfor %}";
+    let (config, extra) = (HashMap::new(), HashMap::new());
+    let ctx = bench_ctx(
+        &config,
+        &extra,
+        ".",
+        pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
+    );
+    c.bench_function("jinja_render_large_loop_2000_filters", |b| {
+        let pre = JinjaPreprocessor::new(&ctx);
+        b.iter(|| black_box(pre.render(black_box(source), "Pulumi.yaml").unwrap()))
+    });
+}
+
+fn bench_jinja_include_heavy(c: &mut Criterion) {
+    // Twenty shared templates, each included five times, plus an imported
+    // macro library: the multi-file layout of a repo with shared parts.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("parts")).unwrap();
+    for i in 0..20 {
+        std::fs::write(
+            dir.path().join(format!("parts/p{i}.j2")),
+            format!("  part{i}_{{{{ k }}}}:\n    type: gcp:storage:Bucket\n    properties:\n      name: {{{{ lib.name({i}, k) }}}}\n"),
+        )
+        .unwrap();
+    }
+    std::fs::write(
+        dir.path().join("parts/lib.j2"),
+        "{% macro name(i, k) %}{{ ('b-' ~ i ~ '-' ~ k) | lower | tojson }}{% endmacro %}",
+    )
+    .unwrap();
+    let source = "{% import 'parts/lib.j2' as lib %}\nresources:\n{% for k in range(5) %}{% for i in range(20) %}{% include 'parts/p' ~ i ~ '.j2' %}{% endfor %}{% endfor %}";
+    let d = dir.path().to_string_lossy().into_owned();
+    let (config, extra) = (HashMap::new(), HashMap::new());
+    let ctx = bench_ctx(
+        &config,
+        &extra,
+        &d,
+        pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
+    );
+    c.bench_function("jinja_render_include_heavy_100", |b| {
+        let pre = JinjaPreprocessor::new(&ctx);
+        b.iter(|| black_box(pre.render(black_box(source), "Pulumi.yaml").unwrap()))
+    });
+}
+
+fn bench_jinja_methods(c: &mut Criterion) {
+    // 200 resources named through string methods, collected into a list
+    // that is sorted, with a date per resource: methods, mutation and dates
+    // on the render path at once.
+    let source = "{% set names = [] %}{% set day = '2026-10-18'|to_date %}resources:\n{% for i in range(200) %}{% set n = 'Table {}'.format(i).lower().replace(' ', '_').zfill(12) %}{% do names.append(n) %}  {{ n }}:\n    expires: {{ (day + timedelta(days=i)).isoformat() }}\n{% endfor %}{% do names.sort(reverse=true) %}first: {{ names[0] }}\n";
+    let (config, extra) = (HashMap::new(), HashMap::new());
+    let ctx = bench_ctx(
+        &config,
+        &extra,
+        ".",
+        pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
+    );
+    c.bench_function("jinja_render_methods_mutation_dates_200", |b| {
+        let pre = JinjaPreprocessor::new(&ctx);
+        b.iter(|| black_box(pre.render(black_box(source), "Pulumi.yaml").unwrap()))
+    });
+}
+
 criterion_group!(
     benches,
     bench_parse_simple,
@@ -1476,6 +1613,10 @@ criterion_group!(
     bench_merge_10_files_50_resources,
     bench_discover_project_files,
     bench_jinja_preprocess_multi_file,
+    bench_jinja_typical_stack,
+    bench_jinja_large_loop,
+    bench_jinja_include_heavy,
+    bench_jinja_methods,
     bench_sql_lineage_export,
     bench_sql_lineage_routine_script,
     bench_sql_statement_layer,

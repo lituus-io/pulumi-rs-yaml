@@ -1,0 +1,4 @@
+Pulumi.yaml:1:1: error: YAML parse error after Jinja rendering at Pulumi.yaml:1:1: duplicate entry with key "name"
+  1 | name: app
+    | ^
+  suggestion: A Jinja loop may have generated duplicate resource names — use {{ loop.index }}

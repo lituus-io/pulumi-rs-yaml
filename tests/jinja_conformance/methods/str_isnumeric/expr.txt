@@ -1,0 +1,1 @@
+'123'.isnumeric() and not 'abc'.isnumeric()

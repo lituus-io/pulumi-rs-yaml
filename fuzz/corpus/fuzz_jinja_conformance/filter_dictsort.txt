@@ -1,0 +1,1 @@
+{{ {'b': 1, 'A': 2, 'c': 0}|dictsort }} {{ {'b': 1, 'a': 2}|dictsort(by='value') }} {{ {'b': 1, 'a': 2}|dictsort(reverse=true) }}

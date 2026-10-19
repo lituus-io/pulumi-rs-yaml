@@ -1,0 +1,1 @@
+{% for i in [1,2,3] %}{{ loop.previtem is defined and loop.previtem or '-' }}{{ i }}{{ loop.nextitem is defined and loop.nextitem or '-' }} {% endfor %}

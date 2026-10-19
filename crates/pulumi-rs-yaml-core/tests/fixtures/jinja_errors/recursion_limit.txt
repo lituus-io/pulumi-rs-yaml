@@ -1,0 +1,4 @@
+Pulumi.yaml:2:20: error: recursion limit exceeded: nesting deeper than 40 (a macro call costs about 4, an include 10)
+  2 | {% macro r(n) %}{{ r(n + 1) }}{% endmacro %}
+    |                    ^^^^^^^^
+  suggestion: a macro or include calls itself without end; give the recursion a base case. If the nesting is real, PULUMI_YAML_JINJA_LIMITS=recursion=<n> raises it (at most 500)

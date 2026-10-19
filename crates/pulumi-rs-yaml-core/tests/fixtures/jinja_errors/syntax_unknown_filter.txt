@@ -1,0 +1,4 @@
+Pulumi.yaml:2:18: error: filter nosuchfilter is unknown
+  2 | region: {{ 'a' | nosuchfilter }}
+    |                  ^^^^^^^^^^^^
+  suggestion: Check the name: JINJA.md lists every filter and test

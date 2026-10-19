@@ -1,0 +1,1 @@
+'ab'.center(7, '*') + '|' + 'abc'.center(6) + '|'

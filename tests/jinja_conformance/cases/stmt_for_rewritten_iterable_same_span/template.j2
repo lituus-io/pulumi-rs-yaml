@@ -1,0 +1,1 @@
+{% for c in 'ab' * 2 %}{{ c }}{{ loop.length }}{% endfor %}|{% for i in [1, 2, 3] | batch(2) %}{{ i | length }}{{ loop.length }}{% endfor %}|{% for n in [10 // 3, 7 % 4] %}{{ n }}{{ loop.revindex }}{% endfor %}

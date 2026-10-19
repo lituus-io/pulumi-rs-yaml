@@ -1,0 +1,8 @@
+Pulumi.yaml:3:4: error: undefined value: `owner`
+  3 | {% include 'inc/labels.j2' %}
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+  --> in inc/labels.j2:2:13
+  2 |   owner: {{ owner }}
+    |             ^^^^^
+  include chain: Pulumi.yaml:3 -> inc/labels.j2:2
+  suggestion: Check variable name. Available context: config.*, pulumi_*, env.*

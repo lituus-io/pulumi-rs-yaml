@@ -1,0 +1,1 @@
+'name.yaml'.removesuffix('.yaml') + '|' + 'x'.removesuffix('y')

@@ -1,0 +1,8 @@
+# Reference Jinja2 for the conformance goldens. Dev-time only: nothing that
+# ships imports it. Install with:
+#   pip install --require-hashes --no-binary markupsafe -r scripts/jinja_conformance/requirements.txt
+jinja2==3.1.6 \
+    --hash=sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67 \
+    --hash=sha256:0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d
+markupsafe==3.0.3 \
+    --hash=sha256:722695808f4b6457b320fdc131280796bdceb04ab50fe1795cd540799ebe1698

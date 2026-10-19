@@ -1,0 +1,1 @@
+{{ 'Ab'.upper() }} {{ 'Ab'.lower() }} {{ ' x '.strip() }} {{ 'a,b'.split(',') }} {{ 'ab'.replace('a', 'z') }} {{ 'ab'.startswith('a') }} {{ 'ab'.endswith('a') }}

@@ -1067,6 +1067,7 @@ mod tests {
             undefined: UndefinedMode::Strict,
             provider_templated_packages: &[],
             extra: &HashMap::new(),
+            limits: crate::jinja::JinjaLimits::default(),
         };
         let (merged, diags) = load_project(dir.path(), Some(&ctx));
         assert!(!diags.has_errors(), "errors: {}", diags);

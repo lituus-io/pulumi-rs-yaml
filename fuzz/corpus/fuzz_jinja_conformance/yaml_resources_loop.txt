@@ -1,0 +1,9 @@
+resources:
+{% for name in ['alpha', 'beta'] %}
+  bucket-{{ name }}:
+    type: gcp:storage:Bucket
+    properties:
+      location: {{ region | default('US') }}
+      labels:
+        idx: "{{ loop.index }}"
+{% endfor %}

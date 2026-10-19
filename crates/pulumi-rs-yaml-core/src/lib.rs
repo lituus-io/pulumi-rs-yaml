@@ -6,6 +6,7 @@ pub mod classify;
 pub mod completion;
 pub mod config_types;
 pub mod cross_stack;
+mod deep_stack;
 pub mod diag;
 pub mod encoding;
 pub mod eval;

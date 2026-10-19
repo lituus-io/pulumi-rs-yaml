@@ -53,6 +53,7 @@ fuzz_target!(|data: &[u8]| {
             undefined: mode,
             provider_templated_packages: grammar::SCOPED,
             extra: &extra,
+            limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
         };
         let out = match JinjaPreprocessor::new(&ctx).preprocess(source, "Pulumi.yaml") {
             Ok(o) => o,

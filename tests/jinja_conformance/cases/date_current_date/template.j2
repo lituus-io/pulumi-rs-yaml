@@ -1,0 +1,1 @@
+{% set d = current_date|to_date %}{{ d.year }} {{ (d + timedelta(days=1)).isoformat() }}

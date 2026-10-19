@@ -1,0 +1,1 @@
+{% macro k(x) %}{{ x[0] }}{% endmacro %}{% set a = [['b', 1], ['a', 2], ['b', 3], ['a', 4], ['c', 5]] %}{% do a.sort(key=k) %}{% for x in a %}{{ x[0] }}{{ x[1] }} {% endfor %}|{% do a.sort(key=k, reverse=true) %}{% for x in a %}{{ x[0] }}{{ x[1] }} {% endfor %}|{% set b = [3, 1, 2, 1] %}{% do b.sort(reverse=true) %}{{ b|join(',') }}

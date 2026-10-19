@@ -75,6 +75,7 @@ fuzz_target!(|data: &[u8]| {
         undefined: pulumi_rs_yaml_core::jinja::UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &extra,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let preprocessor = pulumi_rs_yaml_core::jinja::JinjaPreprocessor::new(&ctx);
     use pulumi_rs_yaml_core::jinja::TemplatePreprocessor;
@@ -92,6 +93,7 @@ fuzz_target!(|data: &[u8]| {
         undefined: pulumi_rs_yaml_core::jinja::UndefinedMode::Passthrough,
         provider_templated_packages: &[],
         extra: &extra,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     let preprocessor_pt = pulumi_rs_yaml_core::jinja::JinjaPreprocessor::new(&ctx_pt);
     let _ = preprocessor_pt.preprocess(template_part, "fuzz.yaml");
@@ -109,6 +111,7 @@ fuzz_target!(|data: &[u8]| {
             undefined: pulumi_rs_yaml_core::jinja::UndefinedMode::Strict,
             provider_templated_packages: &[],
             extra: &extra,
+            limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
         };
         let safe_pp = pulumi_rs_yaml_core::jinja::JinjaPreprocessor::new(&safe_ctx);
         if let Ok(rendered) = safe_pp.preprocess("{{ pulumi_project }}", "test.yaml") {

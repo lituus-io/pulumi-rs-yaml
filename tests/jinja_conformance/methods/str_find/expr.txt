@@ -1,0 +1,1 @@
+'abcabc'.find('c') + 'abcabc'.find('c', 3) * 10 + 'abc'.find('z') * 100

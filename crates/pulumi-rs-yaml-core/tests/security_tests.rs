@@ -2119,6 +2119,7 @@ mod bom_security {
             undefined: UndefinedMode::Strict,
             provider_templated_packages: &[],
             extra,
+            limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
         }
     }
 
@@ -2312,6 +2313,7 @@ mod render_diagnostic_security {
             undefined: UndefinedMode::Strict,
             provider_templated_packages: &[],
             extra,
+            limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
         }
     }
 
@@ -2676,6 +2678,7 @@ mod string_filter_security {
             undefined: UndefinedMode::Strict,
             provider_templated_packages: &[],
             extra: &extra,
+            limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
         };
         JinjaPreprocessor::new(&ctx)
             .preprocess(body, "Pulumi.yaml")
@@ -2706,13 +2709,20 @@ mod string_filter_security {
     #[test]
     fn a_zero_or_negative_width_still_terminates() {
         // `wordwrap(0)` would divide a line into zero-width pieces forever if
-        // the width were taken literally.
+        // the width were taken literally. It returns at once, refused as
+        // Python's textwrap refuses it (Jinja2 lets the ValueError through).
         for w in ["0", "-1", "-999"] {
             let out = render(&format!("{{{{ 'aaa bbb' | wordwrap({w}) }}}}"));
-            assert!(out.is_ok(), "wordwrap({w}) did not return: {out:?}");
+            let err = out.expect_err("a width below 1 is Jinja2's ValueError");
+            assert!(
+                err.contains(&format!("invalid width {w} (must be > 0)")),
+                "{err}"
+            );
         }
         assert!(render("{{ 'x' | center(-5) }}").is_ok());
-        assert!(render("{{ 'abc' | truncate(-5, False, '', 0) }}").is_ok());
+        // Jinja2's assertion, as a render error naming the length given.
+        let err = render("{{ 'abc' | truncate(-5, False, '', 0) }}").unwrap_err();
+        assert!(err.contains("expected length >= 0, got -5"), "{err}");
     }
 
     #[test]
@@ -2816,14 +2826,14 @@ mod string_filter_security {
         //             leeway   saturating_add, compared only
         //             end      appended ONCE -> output <= input + end
         //   center    width    pad bounded by MAX_CENTER_PAD
-        //   wordwrap  width    compared, and a divisor; floored at 1
+        //   wordwrap  width    compared, and a divisor; below 1 refused
         //             wrapstring  once per line -> bounded by MAX_WRAPPED_OUTPUT
         //
         // Each line below is the bound firing or the input being the bound.
         assert!(render("{{ 'abc' | truncate(999999999999999999) }}").is_ok());
         assert!(render("{{ 'abc' | truncate(60, False, '', 999999999999999999) }}").is_ok());
         assert!(render("{{ 'x' | center(999999999999999999) }}").is_err());
-        assert!(render("{{ 'aaa bbb' | wordwrap(0) }}").is_ok());
+        assert!(render("{{ 'aaa bbb' | wordwrap(0) }}").is_err());
         // The only amplifying pair, refused.
         let big = "z".repeat(4096);
         let subject = "a ".repeat(4_000);
@@ -3490,5 +3500,1293 @@ mod host_option_security {
             .to_json()
             .expect("c");
         assert!(!c.contains("_uri"), "{c}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Jinja resource limits: every denial-of-service shape a template can take
+// ends in a typed error that names its line, quickly, and never in a hang or
+// an out-of-memory. Each case below hung or grew without bound before 0.5.40
+// (three nested `range(100000)` loops extrapolated to days; a repeated 50 MB
+// string reached 150 MB of output in 40 ms with no ceiling).
+// ---------------------------------------------------------------------------
+mod jinja_limits_security {
+    use pulumi_rs_yaml_core::jinja::{
+        JinjaContext, JinjaLimits, JinjaPreprocessor, RenderErrorKind, UndefinedMode,
+    };
+    use std::collections::HashMap;
+    use std::time::{Duration, Instant};
+
+    /// Every DoS case must be refused well inside this, on a debug build.
+    const PROMPT: Duration = Duration::from_secs(20);
+
+    fn render_in(
+        dir: &std::path::Path,
+        source: &str,
+        limits: JinjaLimits,
+    ) -> Result<String, (RenderErrorKind, u32, String)> {
+        let config = HashMap::new();
+        let extra = HashMap::new();
+        let d = dir.to_string_lossy();
+        let ctx = JinjaContext {
+            project_name: "app",
+            stack_name: "dev",
+            cwd: &d,
+            organization: "org",
+            root_directory: &d,
+            config: &config,
+            project_dir: &d,
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits,
+        };
+        JinjaPreprocessor::new(&ctx)
+            .render(source, "Pulumi.yaml")
+            .map(|c| c.into_owned())
+            .map_err(|d| (d.kind, d.line, d.message))
+    }
+
+    fn refused(source: &str, files: &[(&str, &str)], want: RenderErrorKind, line: u32) -> String {
+        let dir = tempfile::tempdir().unwrap();
+        for (name, body) in files {
+            let path = dir.path().join(name);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, body).unwrap();
+        }
+        let start = Instant::now();
+        let got = render_in(dir.path(), source, JinjaLimits::default());
+        let took = start.elapsed();
+        assert!(
+            took < PROMPT,
+            "took {took:?}: the limit must stop it promptly"
+        );
+        match got {
+            Err((kind, at, message)) => {
+                assert_eq!(kind, want, "{message}");
+                assert_eq!(at, line, "{message}");
+                message
+            }
+            Ok(out) => panic!("rendered {} bytes; expected {want:?}", out.len()),
+        }
+    }
+
+    #[test]
+    fn nested_range_loops_run_out_of_fuel() {
+        let msg = refused(
+            "a: 1\n{% for a in range(100000) %}{% for b in range(100000) %}{% for c in range(100000) %}{% endfor %}{% endfor %}{% endfor %}\n",
+            &[],
+            RenderErrorKind::FuelExhausted,
+            2,
+        );
+        assert!(msg.contains("100000 instructions"), "{msg}");
+    }
+
+    #[test]
+    fn a_namespace_loop_doubling_a_string_is_stopped() {
+        // Geometric growth through a namespace, one statement per step: the
+        // string would pass 1 GB after 30 doublings. Output and fuel cannot
+        // see a value that is never emitted, so the doubling is emitted
+        // once per step to make the cap reachable -- and it is.
+        refused(
+            "{% set ns = namespace(s='xxxxxxxx') %}{% for i in range(40) %}{% set ns.s = ns.s ~ ns.s %}{{ ns.s }}{% endfor %}",
+            &[],
+            RenderErrorKind::OutputTooLarge,
+            1,
+        );
+    }
+
+    #[test]
+    fn a_repeated_large_string_hits_the_output_cap() {
+        let msg = refused(
+            "{% set s = 'x' * 50000000 %}\n{% for i in range(3) %}{{ s }}{% endfor %}\n",
+            &[],
+            RenderErrorKind::OutputTooLarge,
+            2,
+        );
+        assert!(msg.contains("16777216 bytes"), "{msg}");
+    }
+
+    #[test]
+    fn a_range_bomb_is_refused_by_size_before_allocating() {
+        let msg = refused(
+            "{{ range(100000000)|length }}",
+            &[],
+            RenderErrorKind::RangeTooLarge,
+            1,
+        );
+        assert!(msg.contains("100000000 elements"), "{msg}");
+    }
+
+    #[test]
+    fn infinite_macro_recursion_hits_the_recursion_limit() {
+        refused(
+            "x: 1\ny: {% macro r(n) %}{{ r(n + 1) }}{% endmacro %}{{ r(0) }}\n",
+            &[],
+            RenderErrorKind::RecursionLimit,
+            2,
+        );
+    }
+
+    #[test]
+    fn an_include_cycle_is_named_as_one() {
+        refused(
+            "{% include 'inc/a.j2' %}",
+            &[
+                ("inc/a.j2", "a{% include 'inc/b.j2' %}"),
+                ("inc/b.j2", "b{% include 'inc/a.j2' %}"),
+            ],
+            RenderErrorKind::IncludeCycle,
+            1,
+        );
+    }
+
+    #[test]
+    fn a_self_include_is_a_cycle() {
+        refused(
+            "{% include 'self.j2' %}",
+            &[("self.j2", "{% include 'self.j2' %}")],
+            RenderErrorKind::IncludeCycle,
+            1,
+        );
+    }
+
+    #[test]
+    fn readfile_in_a_loop_cannot_multiply_past_the_cap() {
+        // One 1 MiB file, spliced 40 times: held once, and the expansion
+        // stops as it crosses 16 MiB rather than after.
+        let big = "y".repeat(1024 * 1024);
+        refused(
+            "{% for i in range(40) %}\n{{ readFile('big.txt') }}\n{% endfor %}\n",
+            &[("big.txt", &big)],
+            RenderErrorKind::OutputTooLarge,
+            0,
+        );
+    }
+
+    #[test]
+    fn a_file_larger_than_the_cap_is_refused_before_it_is_read() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("big.txt"), "z".repeat(4096)).unwrap();
+        let limits = JinjaLimits {
+            output_bytes: 1024,
+            ..JinjaLimits::default()
+        };
+        let (kind, line, message) =
+            render_in(dir.path(), "a: 1\nb: {{ readFile('big.txt') }}\n", limits).unwrap_err();
+        assert_eq!(kind, RenderErrorKind::OutputTooLarge);
+        assert_eq!(line, 2);
+        assert!(message.contains("big.txt"), "{message}");
+    }
+
+    #[test]
+    fn the_limits_cost_no_legitimate_stack_anything() {
+        // A 200-resource loop with filters, the shape of the heaviest real
+        // stacks, renders under the defaults with room to spare.
+        let src = "resources:\n{% for i in range(200) %}\n  b{{ i }}:\n    type: gcp:storage:Bucket\n    properties:\n      name: {{ ('bucket-' ~ i) | upper | replace('-', '_') | tojson }}\n      labels: {{ {'idx': i|string, 'env': 'dev'} | tojson }}\n{% endfor %}\n";
+        let config = HashMap::new();
+        let extra = HashMap::new();
+        let ctx = JinjaContext {
+            project_name: "app",
+            stack_name: "dev",
+            cwd: ".",
+            organization: "org",
+            root_directory: ".",
+            config: &config,
+            project_dir: ".",
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits: JinjaLimits::default(),
+        };
+        let (_, stats) = JinjaPreprocessor::new(&ctx)
+            .render_with_stats(src, "Pulumi.yaml")
+            .unwrap();
+        eprintln!("200-resource loop: {stats:?}");
+        assert!(
+            stats.fuel * 2 < JinjaLimits::DEFAULT_FUEL,
+            "a 200-resource stack must use under half the default fuel: {stats:?}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Include/import containment: every spelling of "a file outside the tree"
+// is refused or not found, and the outside file's bytes never reach the
+// output or the error. The sentinel below sits beside the render root; a
+// test that ever sees it has read outside the sandbox.
+// ---------------------------------------------------------------------------
+mod jinja_loader_security {
+    use pulumi_rs_yaml_core::jinja::{
+        IncludeRefusal, JinjaContext, JinjaLimits, JinjaPreprocessor, RenderErrorKind,
+        UndefinedMode,
+    };
+    use std::collections::HashMap;
+    use std::path::Path;
+
+    const SENTINEL: &str = "OUTSIDE-SENTINEL-7f3a";
+
+    /// `<tmp>/outside/secret.j2` (the sentinel) beside `<tmp>/repo`, with a
+    /// stack at `<tmp>/repo/stacks/app`.
+    struct Tree {
+        tmp: tempfile::TempDir,
+    }
+
+    impl Tree {
+        fn new() -> Self {
+            let tmp = tempfile::tempdir().unwrap();
+            for d in ["outside", "repo/stacks/app", "repo/shared"] {
+                std::fs::create_dir_all(tmp.path().join(d)).unwrap();
+            }
+            std::fs::write(tmp.path().join("outside/secret.j2"), SENTINEL).unwrap();
+            std::fs::write(tmp.path().join("repo/shared/env.j2"), "shared-ok").unwrap();
+            Tree { tmp }
+        }
+
+        fn path(&self, rel: &str) -> std::path::PathBuf {
+            self.tmp.path().join(rel)
+        }
+
+        /// Renders `source` as the stack's project file.
+        fn render(&self, source: &str) -> Result<String, (RenderErrorKind, String)> {
+            let stack = self.path("repo/stacks/app");
+            let root = self.path("repo");
+            let (stack, root) = (stack.to_string_lossy(), root.to_string_lossy());
+            let config = HashMap::new();
+            let extra = HashMap::new();
+            let ctx = JinjaContext {
+                project_name: "app",
+                stack_name: "dev",
+                cwd: &stack,
+                organization: "org",
+                root_directory: &root,
+                config: &config,
+                project_dir: &stack,
+                undefined: UndefinedMode::Strict,
+                provider_templated_packages: &[],
+                extra: &extra,
+                limits: JinjaLimits::default(),
+            };
+            JinjaPreprocessor::new(&ctx)
+                .render(source, "Pulumi.yaml")
+                .map(|c| c.into_owned())
+                .map_err(|d| {
+                    (
+                        d.kind,
+                        format!("{}\n{}", d.message, d.format_rich("Pulumi.yaml")),
+                    )
+                })
+        }
+
+        /// The include is refused or absent, and the sentinel is nowhere.
+        fn never_served(&self, name: &str) -> (RenderErrorKind, String) {
+            // A Jinja string literal: backslashes escaped, every other
+            // character -- control characters included -- as it is.
+            let lit = format!("'{}'", name.replace('\\', "\\\\"));
+            for stmt in ["include", "import"] {
+                let src = if stmt == "include" {
+                    format!("v: {{% include {lit} %}}")
+                } else {
+                    format!("{{% import {lit} as m %}}v: 1")
+                };
+                match self.render(&src) {
+                    Ok(out) => panic!("{stmt} {name:?} was served: {out:?}"),
+                    Err((kind, text)) => {
+                        assert!(!text.contains(SENTINEL), "{stmt} {name:?} leaked: {text}");
+                        assert_eq!(
+                            kind,
+                            RenderErrorKind::JinjaTemplateNotFound,
+                            "{name:?}: {text}"
+                        );
+                    }
+                }
+            }
+            self.render(&format!("v: {{% include {lit} %}}"))
+                .unwrap_err()
+        }
+    }
+
+    #[test]
+    fn traversal_out_of_the_render_root_is_refused_in_every_spelling() {
+        let t = Tree::new();
+        for name in [
+            "../../../outside/secret.j2",
+            "./../../../outside/secret.j2",
+            "shared/../../outside/secret.j2",
+            "../../shared/../../outside/secret.j2",
+        ] {
+            let (_, text) = t.never_served(name);
+            assert!(text.contains(IncludeRefusal::TAG_ESCAPE), "{name}: {text}");
+        }
+        // One level too far names nothing at all: absent, not escaped.
+        let (_, text) = t.never_served("../../../../outside/secret.j2");
+        assert!(text.contains("non-existing template"), "{text}");
+    }
+
+    #[test]
+    fn traversal_that_stays_inside_is_served() {
+        // The documented pattern: a nested stack reaching shared templates.
+        let t = Tree::new();
+        assert_eq!(
+            t.render("{% include '../../shared/env.j2' %}").unwrap(),
+            "shared-ok"
+        );
+        assert_eq!(
+            t.render("{% include 'shared/env.j2' %}").unwrap(),
+            "shared-ok"
+        );
+    }
+
+    #[test]
+    fn a_symlinked_directory_pointing_outside_is_refused() {
+        let t = Tree::new();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(t.path("outside"), t.path("repo/stacks/app/link")).unwrap();
+        #[cfg(windows)]
+        if std::os::windows::fs::symlink_dir(t.path("outside"), t.path("repo/stacks/app/link"))
+            .is_err()
+        {
+            return; // creating symlinks needs a privilege CI may lack
+        }
+        let (_, text) = t.never_served("link/secret.j2");
+        assert!(text.contains(IncludeRefusal::TAG_ESCAPE), "{text}");
+    }
+
+    #[test]
+    fn a_symlinked_file_pointing_outside_is_refused() {
+        let t = Tree::new();
+        let link = t.path("repo/shared/innocent.j2");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(t.path("outside/secret.j2"), &link).unwrap();
+        #[cfg(windows)]
+        if std::os::windows::fs::symlink_file(t.path("outside/secret.j2"), &link).is_err() {
+            return;
+        }
+        let (_, text) = t.never_served("shared/innocent.j2");
+        assert!(text.contains(IncludeRefusal::TAG_ESCAPE), "{text}");
+    }
+
+    #[test]
+    fn rooted_names_are_refused_by_name_on_every_platform() {
+        let t = Tree::new();
+        let abs = t.path("outside/secret.j2").to_string_lossy().into_owned();
+        let (_, text) = t.never_served(&abs);
+        assert!(text.contains(IncludeRefusal::TAG_ABSOLUTE), "{text}");
+        let (_, text) = t.never_served("/etc/passwd");
+        assert!(text.contains(IncludeRefusal::TAG_ABSOLUTE), "{text}");
+    }
+
+    #[test]
+    fn windows_name_forms_are_never_served() {
+        // On Windows each of these is rooted and refused by name; elsewhere
+        // each is one odd relative file name that does not exist. Neither
+        // reaches the sentinel.
+        let t = Tree::new();
+        for name in [
+            "C:\\outside\\secret.j2",
+            "C:outside\\secret.j2",
+            "\\\\server\\share\\secret.j2",
+            "\\\\?\\C:\\outside\\secret.j2",
+            "\\outside\\secret.j2",
+            "..\\..\\..\\outside\\secret.j2",
+            "..\\..\\../outside/secret.j2",
+        ] {
+            let (_, text) = t.never_served(name);
+            if cfg!(windows) && !name.starts_with("..") {
+                assert!(
+                    text.contains(IncludeRefusal::TAG_ABSOLUTE),
+                    "{name}: {text}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn control_characters_in_a_name_are_refused_by_name() {
+        let t = Tree::new();
+        for name in [
+            "shared/env.j2\u{0}../../../outside/secret.j2",
+            "shared/env.j2\u{0}",
+            "shared/\nenv.j2",
+            "shared/\u{1b}env.j2",
+            "shared/env.j2\u{7f}",
+        ] {
+            let (_, text) = t.never_served(name);
+            assert!(
+                text.contains(IncludeRefusal::TAG_BAD_NAME),
+                "{name:?}: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_case_variant_spelling_never_escapes() {
+        // On a case-insensitive file system `../OUTSIDE` is the same
+        // directory; canonicalisation sees through it either way.
+        let t = Tree::new();
+        let (_, text) = t.never_served("../../../OUTSIDE/secret.j2");
+        if Path::new(&t.path("OUTSIDE")).exists() {
+            assert!(text.contains(IncludeRefusal::TAG_ESCAPE), "{text}");
+        }
+    }
+
+    #[test]
+    fn readfile_obeys_the_same_containment() {
+        let t = Tree::new();
+        for name in ["../../../outside/secret.j2", "/etc/passwd"] {
+            let (kind, text) = t
+                .render(&format!("v: {{{{ readFile({name:?}) }}}}"))
+                .unwrap_err();
+            assert_eq!(kind, RenderErrorKind::JinjaFilterError, "{text}");
+            assert!(!text.contains(SENTINEL), "{text}");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Engine panics: inputs that panic inside minijinja 2.24 must never reach
+// it. A panic aborts a release build (panic = "abort"): the language host
+// or the Python process rendering the file dies with it.
+// ---------------------------------------------------------------------------
+mod jinja_engine_panic_security {
+    use pulumi_rs_yaml_core::jinja::{
+        JinjaContext, JinjaLimits, JinjaPreprocessor, RenderErrorKind, UndefinedMode,
+    };
+    use std::collections::HashMap;
+
+    fn render(source: &str) -> Result<String, RenderErrorKind> {
+        let (config, extra) = (HashMap::new(), HashMap::new());
+        let ctx = JinjaContext {
+            project_name: "app",
+            stack_name: "dev",
+            cwd: ".",
+            organization: "org",
+            root_directory: ".",
+            config: &config,
+            project_dir: ".",
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits: JinjaLimits::default(),
+        };
+        JinjaPreprocessor::new(&ctx)
+            .render(source, "Pulumi.yaml")
+            .map(|c| c.into_owned())
+            .map_err(|d| d.kind)
+    }
+
+    #[test]
+    fn a_negative_step_slice_of_an_empty_value_does_not_panic() {
+        // Each of these panicked in minijinja's backwards range: an index
+        // past the end of an empty list, string or range.
+        for src in [
+            "{{ [][::-1] }}",
+            "{{ ''[::-1] }}",
+            "{{ range(0)[::-2] | list }}",
+            "{% for a in range(-960051514)[::-77] %}x{% endfor %}",
+            "{% set items = [] %}{{ items[::-1] | join(',') }}",
+        ] {
+            assert!(render(src).is_ok(), "{src}");
+        }
+    }
+
+    #[test]
+    fn a_negative_step_with_the_stop_past_the_start_does_not_panic() {
+        // An unsigned subtraction overflow in debug builds.
+        assert_eq!(render("{{ [1, 2, 3][0:2:-1] }}").unwrap(), "[]");
+        assert_eq!(render("{{ 'abc'[0:2:-1] }}").unwrap(), "");
+    }
+
+    #[test]
+    fn a_slice_inside_an_include_is_routed_too() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("rev.j2"), "{{ [][::-1] }}|{{ 'ab'[::-1] }}").unwrap();
+        let d = dir.path().to_string_lossy();
+        let (config, extra) = (HashMap::new(), HashMap::new());
+        let ctx = JinjaContext {
+            project_name: "app",
+            stack_name: "dev",
+            cwd: &d,
+            organization: "org",
+            root_directory: &d,
+            config: &config,
+            project_dir: &d,
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits: JinjaLimits::default(),
+        };
+        let out = JinjaPreprocessor::new(&ctx)
+            .render("{% include 'rev.j2' %}", "Pulumi.yaml")
+            .unwrap();
+        assert_eq!(out, "[]|ba");
+    }
+
+    #[test]
+    fn a_namespace_that_would_hold_itself_is_refused_at_its_line() {
+        // Printing such a namespace recursed until the stack overflowed: a
+        // crash nothing catches. It is refused where it would be built.
+        for src in [
+            "{% set ns = namespace(v=0) %}\n{% set ns.v = ns %}{{ ns }}",
+            "{% set ns = namespace(v=0) %}\n{% set ns.v = [ns] %}{{ ns | tojson }}",
+            "{% set ns = namespace(v=0) %}{% set a = ns %}\n{% set ns.v = a %}{{ ns }}",
+        ] {
+            assert_eq!(render(src), Err(RenderErrorKind::JinjaTypeError), "{src}");
+        }
+        // The everyday namespace patterns are untouched.
+        assert_eq!(
+            render("{% set ns = namespace(total=0, items=[]) %}{% for i in [1, 2] %}{% set ns.total = ns.total + i %}{% set ns.items = ns.items + [i] %}{% endfor %}{{ ns.total }} {{ ns.items }}")
+                .unwrap(),
+            "3 [1, 2]"
+        );
+    }
+
+    #[test]
+    fn a_namespace_cycle_inside_an_include_is_refused_too() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("cyc.j2"),
+            "{% set ns = namespace() %}\n{% set ns.me = ns %}{{ ns }}",
+        )
+        .unwrap();
+        let d = dir.path().to_string_lossy();
+        let (config, extra) = (HashMap::new(), HashMap::new());
+        let ctx = JinjaContext {
+            project_name: "app",
+            stack_name: "dev",
+            cwd: &d,
+            organization: "org",
+            root_directory: &d,
+            config: &config,
+            project_dir: &d,
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits: JinjaLimits::default(),
+        };
+        let diag = JinjaPreprocessor::new(&ctx)
+            .render("{% include 'cyc.j2' %}", "Pulumi.yaml")
+            .unwrap_err();
+        assert_eq!(diag.kind, RenderErrorKind::JinjaTypeError);
+        assert!(diag.message.contains("cyc.j2, line 2"), "{}", diag.message);
+    }
+
+    #[test]
+    fn a_zero_step_is_an_error_not_a_panic() {
+        assert_eq!(
+            render("{% set s = 0 %}{{ 'abc'[::s] }}"),
+            Err(RenderErrorKind::JinjaFilterError)
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Methods and mutable containers: a program's inputs stay read-only, a
+// container cannot change under a loop, and no method can grow a value or a
+// container past the render's limits.
+// ---------------------------------------------------------------------------
+mod jinja_method_security {
+    use pulumi_rs_yaml_core::jinja::{
+        JinjaContext, JinjaLimits, JinjaPreprocessor, RenderErrorKind, UndefinedMode,
+    };
+    use std::collections::HashMap;
+    use std::time::{Duration, Instant};
+
+    fn render(source: &str) -> Result<String, (RenderErrorKind, String)> {
+        let config: HashMap<String, String> = [("app:region".to_string(), "north".to_string())]
+            .into_iter()
+            .collect();
+        let extra = HashMap::new();
+        let ctx = JinjaContext {
+            project_name: "app",
+            stack_name: "dev",
+            cwd: ".",
+            organization: "org",
+            root_directory: ".",
+            config: &config,
+            project_dir: ".",
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits: JinjaLimits::default(),
+        };
+        let start = Instant::now();
+        let out = JinjaPreprocessor::new(&ctx)
+            .render(source, "Pulumi.yaml")
+            .map(|c| c.into_owned())
+            .map_err(|d| (d.kind, d.message));
+        assert!(start.elapsed() < Duration::from_secs(20), "{source}");
+        out
+    }
+
+    #[test]
+    fn the_programs_inputs_cannot_be_changed() {
+        for src in [
+            "{% do config.update(region='south') %}",
+            "{% do config.clear() %}",
+            "{% set r = range(3) %}{% do r.append(9) %}",
+        ] {
+            let (kind, msg) = render(src).unwrap_err();
+            assert_eq!(kind, RenderErrorKind::JinjaFilterError, "{src}");
+            assert!(msg.contains("read-only"), "{src}: {msg}");
+        }
+        // The value really is unchanged afterwards, and a copy is free to change.
+        assert_eq!(
+            render("{% set c = config.copy() %}{% do c.update(region='south') %}{{ c.region }} {{ config.region }}").unwrap(),
+            "south north"
+        );
+    }
+
+    #[test]
+    fn a_container_cannot_change_while_a_loop_walks_it() {
+        for src in [
+            "{% set xs = [1, 2] %}{% for x in xs %}{% do xs.append(x) %}{% endfor %}",
+            "{% set d = {'a': 1} %}{% for k in d %}{% do d.update(b=2) %}{% endfor %}",
+            "{% set xs = [1, 2] %}{% for x in xs %}{% do xs.pop() %}{% endfor %}",
+        ] {
+            let (kind, msg) = render(src).unwrap_err();
+            assert_eq!(kind, RenderErrorKind::JinjaFilterError, "{src}");
+            assert!(msg.contains("changed during iteration"), "{src}: {msg}");
+        }
+        // After the loop it may change again.
+        assert_eq!(
+            render("{% set xs = [1] %}{% for x in xs %}{% endfor %}{% do xs.append(2) %}{{ xs|length }}").unwrap(),
+            "2"
+        );
+    }
+
+    #[test]
+    fn a_growing_method_is_refused_before_it_allocates() {
+        for src in [
+            "{{ 'x'.ljust(10 ** 12) }}",
+            "{{ 'x'.rjust(10 ** 12) }}",
+            "{{ 'x'.center(10 ** 12) }}",
+            "{{ '1'.zfill(10 ** 12) }}",
+            "{{ ('\\t' * 1000).expandtabs(10 ** 9) }}",
+            "{{ ('a' * 100000).replace('a', 'b' * 1000) }}",
+            "{{ '{:>1000000000}'.format('x') }}",
+        ] {
+            let (kind, msg) = render(src).unwrap_err();
+            assert_eq!(kind, RenderErrorKind::OutputTooLarge, "{src}: {msg}");
+        }
+    }
+
+    #[test]
+    fn a_container_grown_in_a_loop_runs_out_of_fuel() {
+        let (kind, _) = render(
+            "{% set xs = [] %}{% for i in range(100000) %}{% for j in range(100000) %}{% do xs.append(j) %}{% endfor %}{% endfor %}",
+        )
+        .unwrap_err();
+        assert_eq!(kind, RenderErrorKind::FuelExhausted);
+    }
+
+    #[test]
+    fn dates_are_bounded_to_python_s_calendar() {
+        for src in [
+            "{{ date(10000, 1, 1) }}",
+            "{{ date(2026, 13, 1) }}",
+            "{{ date(9999, 12, 31) + timedelta(days=1) }}",
+            "{{ timedelta(days=10 ** 12) }}",
+            "{{ '2026-10-18T09:00:00+02:00'|to_datetime }}",
+            "{{ 'x'|strptime('%Y') }}",
+            "{{ date(2026, 1, 1).strftime('%Q') }}",
+        ] {
+            assert!(render(src).is_err(), "{src}");
+        }
+    }
+
+    #[test]
+    fn a_method_never_panics_on_hostile_arguments() {
+        for src in [
+            "{{ 'abc'.find('b', -10 ** 18, 10 ** 18) }}",
+            "{{ 'abc'.split(none, -5) }}",
+            "{{ 'abc'.rsplit(none, 10 ** 18) }}",
+            "{{ ''.center(0) }}",
+            "{{ 'é日'.index('日', 1) }}",
+            "{{ '{0}{1}'.format('a') }}",
+            "{{ '{'.format() }}",
+            "{{ '{:'.format(1) }}",
+            "{{ '{:,.2%}'.format(0.5) }}",
+            "{{ (2 ** 62).bit_length() }}",
+            "{{ (1e308).as_integer_ratio() }}",
+            "{% set xs = [] %}{{ xs.pop(-1) if xs else 0 }}",
+            "{% set xs = [1] %}{% do xs.insert(-10 ** 18, 0) %}{{ xs }}",
+            "{% set xs = [1] %}{% do xs.sort(key=none) %}{{ xs }}",
+        ] {
+            let _ = render(src);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Python operators, `%` formatting, isolated includes and variadic macros:
+// each is bounded and typed.
+// ---------------------------------------------------------------------------
+mod jinja_python_semantics_security {
+    use pulumi_rs_yaml_core::jinja::{
+        JinjaContext, JinjaLimits, JinjaPreprocessor, RenderErrorKind, UndefinedMode,
+    };
+    use std::collections::HashMap;
+    use std::time::{Duration, Instant};
+
+    fn render_in(dir: &str, source: &str) -> Result<String, (RenderErrorKind, String)> {
+        let (config, extra) = (HashMap::new(), HashMap::new());
+        let ctx = JinjaContext {
+            project_name: "app",
+            stack_name: "dev",
+            cwd: dir,
+            organization: "org",
+            root_directory: dir,
+            config: &config,
+            project_dir: dir,
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits: JinjaLimits::default(),
+        };
+        let start = Instant::now();
+        let out = JinjaPreprocessor::new(&ctx)
+            .render(source, "Pulumi.yaml")
+            .map(|c| c.into_owned())
+            .map_err(|d| (d.kind, d.message));
+        assert!(start.elapsed() < Duration::from_secs(20), "{source}");
+        out
+    }
+
+    #[test]
+    fn division_by_zero_is_a_typed_error_never_infinity() {
+        for src in [
+            "x: {{ 1 / 0 }}",
+            "x: {{ 1 // 0 }}",
+            "x: {{ 1 % 0 }}",
+            "x: {{ 1.0 / 0 }}",
+            "x: {{ 2.5 % 0.0 }}",
+        ] {
+            let (kind, msg) = render_in(".", src).unwrap_err();
+            assert_eq!(kind, RenderErrorKind::JinjaFilterError, "{src}");
+            assert!(msg.contains("ZeroDivisionError"), "{src}: {msg}");
+        }
+    }
+
+    #[test]
+    fn percent_formatting_cannot_grow_past_the_output_limit() {
+        for src in [
+            "{{ '%1000000000d' % 1 }}",
+            "{{ '%.1000000000f' % 1.5 }}",
+            "{{ '%-999999999s' % 'x' }}",
+        ] {
+            let (kind, msg) = render_in(".", src).unwrap_err();
+            assert_eq!(kind, RenderErrorKind::OutputTooLarge, "{src}: {msg}");
+        }
+    }
+
+    #[test]
+    fn a_hostile_percent_format_never_panics() {
+        for src in [
+            "{{ '%' % 1 }}",
+            "{{ '%(' % {} }}",
+            "{{ '%(k)s' % 1 }}",
+            "{{ '%*d' % (1, 2) }}",
+            "{{ '%c' % 99999999 }}",
+            "{{ '%q' % 1 }}",
+            "{{ '%.99999999999999999999d' % 1 }}",
+            "{{ '%s' % none }}",
+            "{{ '%d' % 1e308 }}",
+        ] {
+            let _ = render_in(".", src);
+        }
+    }
+
+    #[test]
+    fn an_isolated_include_cannot_recurse_without_end() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("self.j2"),
+            "x{% include 'self.j2' without context %}",
+        )
+        .unwrap();
+        let d = dir.path().to_string_lossy();
+        let (kind, msg) = render_in(&d, "{% include 'self.j2' without context %}").unwrap_err();
+        assert!(
+            msg.contains("recursion limit") || msg.contains("nest too deep"),
+            "{kind:?}: {msg}"
+        );
+    }
+
+    #[test]
+    fn an_isolated_include_sees_none_of_the_callers_values() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("p.j2"),
+            "{{ secret is defined }}/{{ pulumi_project is defined }}",
+        )
+        .unwrap();
+        let d = dir.path().to_string_lossy();
+        let out = render_in(
+            &d,
+            "{% set secret = 's' %}{% include 'p.j2' without context %}",
+        )
+        .unwrap();
+        assert_eq!(out, "False/False");
+    }
+
+    #[test]
+    fn a_macro_without_varargs_still_refuses_extra_arguments() {
+        let (kind, _) =
+            render_in(".", "{% macro m(a) %}{{ a }}{% endmacro %}{{ m(1, 2) }}").unwrap_err();
+        assert_eq!(kind, RenderErrorKind::JinjaTypeError);
+        let (kind, _) = render_in(
+            ".",
+            "{% macro m(a) %}{{ varargs }}{% endmacro %}{{ m(1, z=2) }}",
+        )
+        .unwrap_err();
+        assert_eq!(
+            kind,
+            RenderErrorKind::JinjaTypeError,
+            "kwargs not named: refused"
+        );
+    }
+}
+
+mod jinja_format_filter_security {
+    use pulumi_rs_yaml_core::jinja::{JinjaContext, JinjaLimits, JinjaPreprocessor, UndefinedMode};
+    use std::collections::HashMap;
+
+    /// minijinja's own `format` filter sliced its input by bytes and
+    /// panicked on a multi-byte character inside a `%(...)` key -- found by
+    /// fuzz_jinja_conformance. The filter is now the printf core.
+    #[test]
+    fn the_format_filter_never_panics_on_multibyte_input() {
+        let (config, extra) = (HashMap::new(), HashMap::new());
+        let ctx = JinjaContext {
+            project_name: "app",
+            stack_name: "dev",
+            cwd: ".",
+            organization: "org",
+            root_directory: ".",
+            config: &config,
+            project_dir: ".",
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits: JinjaLimits::default(),
+        };
+        let crash =
+            include_bytes!("../../../fuzz/corpus/fuzz_jinja/seed-minijinja-format-multibyte.txt");
+        let crash = String::from_utf8_lossy(crash);
+        for src in [
+            "{{ '%(日本)s'|format(4) }}",
+            "{{ '%(é'|format(1) }}",
+            "{{ '日%本'|format(1) }}",
+            crash.as_ref(),
+        ] {
+            let _ = JinjaPreprocessor::new(&ctx).render(src, "Pulumi.yaml");
+        }
+    }
+}
+
+/// A refused include is a TemplateNotFound wherever it is reported. The
+/// refusal quotes the name it was given, and fuzz_jinja found one whose name
+/// held `readFile:`; a substring match on that tag reclassified the refusal
+/// as a readFile failure, so one error had two kinds.
+mod jinja_refusal_classification_security {
+    use pulumi_rs_yaml_core::jinja::{
+        IncludeRefusal, JinjaContext, JinjaLimits, JinjaPreprocessor, RenderErrorKind,
+        TemplatePreprocessor, UndefinedMode,
+    };
+    use std::collections::HashMap;
+
+    #[test]
+    fn a_refused_name_holding_the_readfile_tag_is_still_a_refusal() {
+        let crash = include_bytes!(
+            "../../../fuzz/corpus/fuzz_jinja/seed-refused-name-quotes-readfile-tag.bin"
+        );
+        let fuzz_input = String::from_utf8_lossy(crash).into_owned();
+        let (config, extra) = (HashMap::new(), HashMap::new());
+        let dir = "/nonexistent-refusal-root";
+        let ctx = JinjaContext {
+            project_name: "p",
+            stack_name: "s",
+            cwd: dir,
+            organization: "",
+            root_directory: dir,
+            config: &config,
+            project_dir: dir,
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits: JinjaLimits::default(),
+        };
+        for src in [
+            fuzz_input.as_str(),
+            "{% include 'a\nreadFile: b' %}",
+            "{% extends 'x\nreadFile:/base.j2' %}",
+            "{% import 'readFile:\n' as m %}",
+        ] {
+            let diag = JinjaPreprocessor::new(&ctx)
+                .preprocess(src, "fuzz.yaml")
+                .expect_err(src);
+            assert!(
+                diag.message.starts_with(IncludeRefusal::PREFIX),
+                "{src}: {}",
+                diag.message
+            );
+            assert_eq!(diag.kind, RenderErrorKind::JinjaTemplateNotFound, "{src}");
+            assert_eq!(
+                diag.suggestion,
+                IncludeRefusal::suggestion_for(&diag.message),
+                "{src}"
+            );
+        }
+    }
+}
+
+/// The recursion limit is reached on any caller's stack. Windows gives its
+/// main thread 1 MiB, and the language host overflowed it ("has overflowed
+/// its stack") before a self-recursive macro reached recursion 500 -- a
+/// process abort where a typed error belongs. The render now runs on a
+/// stack of its own, so a caller with 1 MiB gets the limit, not a crash.
+mod jinja_deep_stack_security {
+    use pulumi_rs_yaml_core::jinja::{
+        JinjaContext, JinjaLimits, JinjaPreprocessor, RenderErrorKind, UndefinedMode,
+    };
+    use std::collections::HashMap;
+
+    const WINDOWS_MAIN_STACK: usize = 1024 * 1024;
+
+    fn kind_on_small_stack(source: &'static str) -> RenderErrorKind {
+        std::thread::Builder::new()
+            .stack_size(WINDOWS_MAIN_STACK)
+            .spawn(move || {
+                let (config, extra) = (HashMap::new(), HashMap::new());
+                let ctx = JinjaContext {
+                    project_name: "p",
+                    stack_name: "s",
+                    cwd: ".",
+                    organization: "",
+                    root_directory: ".",
+                    config: &config,
+                    project_dir: ".",
+                    undefined: UndefinedMode::Strict,
+                    provider_templated_packages: &[],
+                    extra: &extra,
+                    limits: JinjaLimits::default(),
+                };
+                JinjaPreprocessor::new(&ctx)
+                    .render(source, "Pulumi.yaml")
+                    .err()
+                    .map(|d| d.kind)
+                    .expect("a render with no base case cannot succeed")
+            })
+            .unwrap()
+            .join()
+            .unwrap()
+    }
+
+    /// Without macros, includes or recursive loops a template renders on the
+    /// caller's own thread; its depth is its nesting, which the parser caps
+    /// at 150. In a release build -- what ships -- the deepest it accepts
+    /// renders on a 1 MiB stack (measured: every shape needs under 256 KiB),
+    /// and one level past is a syntax error, not a crash. Unoptimised frames
+    /// are about ten times larger, so a debug build checks the same templates
+    /// on a stack sized for them.
+    #[test]
+    fn the_deepest_plain_template_renders_on_a_one_mebibyte_stack() {
+        const STACK: usize = if cfg!(debug_assertions) {
+            16 * WINDOWS_MAIN_STACK
+        } else {
+            WINDOWS_MAIN_STACK
+        };
+        fn on_small_stack(source: String) -> Result<String, RenderErrorKind> {
+            std::thread::Builder::new()
+                .stack_size(STACK)
+                .spawn(move || {
+                    let (config, extra) = (HashMap::new(), HashMap::new());
+                    let ctx = JinjaContext {
+                        project_name: "p",
+                        stack_name: "s",
+                        cwd: ".",
+                        organization: "",
+                        root_directory: ".",
+                        config: &config,
+                        project_dir: ".",
+                        undefined: UndefinedMode::Strict,
+                        provider_templated_packages: &[],
+                        extra: &extra,
+                        limits: JinjaLimits::default(),
+                    };
+                    JinjaPreprocessor::new(&ctx)
+                        .render(&source, "Pulumi.yaml")
+                        .map(|c| c.into_owned())
+                        .map_err(|d| d.kind)
+                })
+                .unwrap()
+                .join()
+                .unwrap()
+        }
+        let parens = |n: usize| format!("{{{{ {}1{} }}}}", "(".repeat(n), ")".repeat(n));
+        let ifs = |n: usize| format!("{}x{}", "{% if true %}".repeat(n), "{% endif %}".repeat(n));
+        let fors = |n: usize| {
+            format!(
+                "{}y{}",
+                "{% for i in [1] %}".repeat(n),
+                "{% endfor %}".repeat(n)
+            )
+        };
+        // The deepest of each shape the parser accepts (it counts a bracket
+        // twice over).
+        assert_eq!(on_small_stack(parens(74)).as_deref(), Ok("1"));
+        assert_eq!(on_small_stack(ifs(149)).as_deref(), Ok("x"));
+        assert_eq!(on_small_stack(fors(147)).as_deref(), Ok("y"));
+        assert_eq!(
+            on_small_stack(parens(400)),
+            Err(RenderErrorKind::JinjaSyntax)
+        );
+    }
+
+    #[test]
+    fn the_recursion_limit_is_reached_on_a_one_mebibyte_stack() {
+        for src in [
+            // The host fixture that crashed on Windows.
+            "{% macro down(n) %}{{ down(n + 1) }}{% endmacro %}\noutputs:\n  n: {{ down(0) }}\n",
+            // Recursion through call blocks and filters, deeper per level.
+            "{% macro f(n) %}{{ caller() if caller is defined }}{% call f(n + 1) %}{{ (n ~ 'x') | upper | trim }}{% endcall %}{% endmacro %}{{ f(0) }}",
+            "{% macro g(xs) %}{% for x in xs %}{{ g([x, x]) }}{% endfor %}{% endmacro %}{{ g([1]) }}",
+        ] {
+            assert_eq!(kind_on_small_stack(src), RenderErrorKind::RecursionLimit, "{src}");
+        }
+    }
+}
+
+/// Every builtin filter, test and operator, called with hostile counts and
+/// widths: zero (and `False`), negatives, i64 and i128 extremes. Found by
+/// the fuzzer (`divisibleby` by a zero: a remainder panic, a process abort
+/// under `panic = "abort"`) and by an exhaustive audit run after it, which
+/// found three more of the class: an allocation abort (`tojson`'s and
+/// `indent`'s width), a hang (`[] * 9223372036854775807`, an unbounded
+/// repeat) and a capacity panic (`slice(9223372036854775807)`). Each now
+/// answers as Python does or refuses with a typed error, promptly.
+mod jinja_builtin_audit_security {
+    use pulumi_rs_yaml_core::jinja::{
+        JinjaContext, JinjaLimits, JinjaPreprocessor, RenderErrorKind, UndefinedMode,
+    };
+    use std::collections::HashMap;
+    use std::time::{Duration, Instant};
+
+    fn render(source: &str) -> Result<String, (RenderErrorKind, String)> {
+        let (config, extra) = (HashMap::new(), HashMap::new());
+        let ctx = JinjaContext {
+            project_name: "p",
+            stack_name: "s",
+            cwd: ".",
+            organization: "",
+            root_directory: ".",
+            config: &config,
+            project_dir: ".",
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits: JinjaLimits::default(),
+        };
+        let start = Instant::now();
+        let out = JinjaPreprocessor::new(&ctx)
+            .render(source, "Pulumi.yaml")
+            .map(|c| c.into_owned())
+            .map_err(|d| (d.kind, d.message));
+        assert!(start.elapsed() < Duration::from_secs(5), "slow: {source}");
+        out
+    }
+
+    fn refused(source: &str, kind: RenderErrorKind, needle: &str) {
+        match render(source) {
+            Err((k, m)) => {
+                assert_eq!(k, kind, "{source}: {m}");
+                assert!(m.contains(needle), "{source}: {m}");
+            }
+            Ok(out) => panic!("{source} rendered {} bytes", out.len()),
+        }
+    }
+
+    #[test]
+    fn divisibleby_by_zero_is_a_zero_division_error() {
+        let fuzz =
+            include_str!("../../../fuzz/corpus/fuzz_jinja_conformance/seed-divisibleby-false.txt");
+        for src in [
+            fuzz,
+            "{{ 9 is divisibleby(0) }}",
+            "{{ 9 is divisibleby(false) }}",
+            "{{ 9.0 is divisibleby 0.0 }}",
+        ] {
+            refused(src, RenderErrorKind::JinjaFilterError, "ZeroDivisionError");
+        }
+        assert_eq!(render("{{ 'y' if 9 is divisibleby 3 }}").unwrap(), "y");
+    }
+
+    #[test]
+    fn i128_extremes_divide_exactly() {
+        let m = "{% set m = -170141183460469231731687303715884105727 - 1 %}";
+        assert_eq!(
+            render(&format!("{m}{{{{ m // -1 }}}} {{{{ m % -1 }}}}")).unwrap(),
+            "170141183460469231731687303715884105728 0"
+        );
+    }
+
+    #[test]
+    fn a_repeat_is_bounded_and_an_empty_one_is_instant() {
+        assert_eq!(render("{{ [] * 9223372036854775807 }}").unwrap(), "[]");
+        assert_eq!(render("{{ 'a' * -1 }}|{{ [1] * -5 }}").unwrap(), "|[]");
+        refused(
+            "{{ [1, 2, 3] * 9223372036854775807 }}",
+            RenderErrorKind::RangeTooLarge,
+            "the repeated list",
+        );
+        refused(
+            "{% set s = 'x' * 9223372036854775807 %}",
+            RenderErrorKind::OutputTooLarge,
+            "the repeated string",
+        );
+    }
+
+    #[test]
+    fn huge_counts_and_widths_are_refused_before_allocating() {
+        refused(
+            "{{ (0,) | slice(9223372036854775807) }}",
+            RenderErrorKind::RangeTooLarge,
+            "slice(9223372036854775807)",
+        );
+        refused(
+            "{{ [1] | slice(0) }}",
+            RenderErrorKind::JinjaFilterError,
+            "ZeroDivisionError",
+        );
+        refused(
+            "{{ (0,) | tojson(9223372036854775807) }}",
+            RenderErrorKind::OutputTooLarge,
+            "tojson's indent",
+        );
+        refused(
+            "{{ [[[[1]]]] | tojson(16000000) }}",
+            RenderErrorKind::OutputTooLarge,
+            "tojson's output",
+        );
+        refused(
+            "{{ 'a' | indent(9223372036854775807, true) }}",
+            RenderErrorKind::OutputTooLarge,
+            "indent's width",
+        );
+        refused(
+            "{{ ('a\n' * 4000) | indent(8000, true) }}",
+            RenderErrorKind::OutputTooLarge,
+            "the indented text",
+        );
+        refused(
+            "{{ [1] | batch(9223372036854775807, 0) }}",
+            RenderErrorKind::OutputTooLarge,
+            "the padded batch",
+        );
+    }
+
+    #[test]
+    fn extreme_precisions_answer_as_python_does() {
+        assert_eq!(render("{{ 2.5 | round(2147483647) }}").unwrap(), "2.5");
+        assert_eq!(render("{{ -2.5 | round(-2147483647) }}").unwrap(), "-0.0");
+        assert_eq!(render("{{ 25 | round(-400) }}").unwrap(), "0");
+        refused(
+            "{{ 2.5 | round(400, 'ceil') }}",
+            RenderErrorKind::JinjaFilterError,
+            "OverflowError",
+        );
+        refused(
+            "{{ 1e300 | int }}",
+            RenderErrorKind::JinjaFilterError,
+            "128-bit",
+        );
+        refused(
+            "{{ 'ab' | wordwrap(0) }}",
+            RenderErrorKind::JinjaFilterError,
+            "invalid width 0",
+        );
+    }
+}
+
+/// Two more engine panics the five-minute fuzz runs found, each a process
+/// abort in a release build: `loop.cycle()` with nothing to cycle computed
+/// `index % 0`, and a `continue` in a loop's `else` inside a macro defined
+/// in a loop popped a frame that was not a loop's. Both are now Jinja2's
+/// own errors: a TypeError when the call runs, and the compiler's
+/// "not properly in loop".
+mod jinja_loop_control_security {
+    use pulumi_rs_yaml_core::jinja::{
+        JinjaContext, JinjaLimits, JinjaPreprocessor, RenderErrorKind, UndefinedMode,
+    };
+    use std::collections::HashMap;
+
+    fn render(source: &str) -> Result<String, (RenderErrorKind, String)> {
+        let (config, extra) = (HashMap::new(), HashMap::new());
+        let ctx = JinjaContext {
+            project_name: "p",
+            stack_name: "s",
+            cwd: "/nonexistent-loop-root",
+            organization: "",
+            root_directory: "/nonexistent-loop-root",
+            config: &config,
+            project_dir: "/nonexistent-loop-root",
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits: JinjaLimits::default(),
+        };
+        JinjaPreprocessor::new(&ctx)
+            .render(source, "Pulumi.yaml")
+            .map(|c| c.into_owned())
+            .map_err(|d| (d.kind, d.message))
+    }
+
+    #[test]
+    fn a_cycle_with_nothing_to_cycle_is_a_type_error() {
+        let fuzz = include_str!(
+            "../../../fuzz/corpus/fuzz_jinja_conformance/seed-loop-cycle-no-items.txt"
+        );
+        for src in [
+            fuzz,
+            "{% for i in [1] %}{{ loop.cycle() }}{% endfor %}",
+            "{% for i in [1] %}{% set o = loop %}{{ o.cycle() }}{% endfor %}",
+        ] {
+            let (kind, msg) = render(src).expect_err(src);
+            assert_eq!(kind, RenderErrorKind::JinjaFilterError, "{src}");
+            assert!(msg.contains("no items for cycling given"), "{src}: {msg}");
+        }
+        assert_eq!(
+            render("{% if false %}{{ loop.cycle() }}{% endif %}ok").unwrap(),
+            "ok"
+        );
+        assert_eq!(
+            render("{% for i in range(3) %}{{ loop.cycle('a', 'b') }}{% endfor %}").unwrap(),
+            "aba"
+        );
+    }
+
+    #[test]
+    fn a_loop_control_outside_its_loop_is_refused_at_compile() {
+        for src in [
+            "{% for a in 'ab' %}{% macro m() %}{% for b in [] %}{% else %}{% continue %}{% endfor %}{% endmacro %}{{ m() }}{% endfor %}",
+            "{% for a in [1] %}{% macro m() %}{% for b in [] %}{% else %}{% break %}{% endfor %}{% endmacro %}{{ m() }}{% endfor %}",
+            "{% for b in [] %}{% else %}{% continue %}{% endfor %}",
+            "{% for a in [1] %}{% call(x) m() %}{% if x %}{% break %}{% endif %}{% endcall %}{% endfor %}",
+        ] {
+            let (kind, msg) = render(src).expect_err(src);
+            // Refused when it compiles: by the prepass, or by the engine's
+            // parser where it already sees the statement is outside a loop.
+            assert_eq!(kind, RenderErrorKind::JinjaSyntax, "{src}");
+            assert!(
+                msg.contains("not properly in loop") || msg.contains("must be placed inside a loop"),
+                "{src}: {msg}"
+            );
+        }
+        // Inside the loop's body, or a loop's else within an outer loop, it acts.
+        assert_eq!(
+            render("{% for a in [1, 2, 3] %}{% for b in [] %}{% else %}{% if a == 2 %}{% continue %}{% endif %}{% endfor %}{{ a }}{% endfor %}").unwrap(),
+            "13"
+        );
     }
 }

@@ -41,6 +41,7 @@ fn render_once() -> String {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &extra,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     JinjaPreprocessor::new(&ctx)
         .preprocess(&source, "Pulumi.yaml")

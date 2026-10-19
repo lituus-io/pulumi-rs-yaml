@@ -1,0 +1,4 @@
+Pulumi.yaml:3:7: error: too many arguments
+  3 | v: {{ m(1, 2) }}
+    |       ^^^^^^^
+  suggestion: Check the arguments, and the type of the value they apply to

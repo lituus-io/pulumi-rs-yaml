@@ -1,0 +1,1 @@
+'  x  '.lstrip() + '|' + 'abca'.lstrip('ab')

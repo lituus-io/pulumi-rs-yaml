@@ -113,6 +113,7 @@ impl Stack {
             undefined: UndefinedMode::Strict,
             provider_templated_packages: packages,
             extra,
+            limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
         };
         let (merged, diags) = load_project(&self.dir, Some(&ctx));
         Loaded {
@@ -214,6 +215,7 @@ fn render_str(source: &str, project_dir: &Path) -> Result<String, String> {
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &extra,
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
     JinjaPreprocessor::new(&ctx)
         .render(source, "Pulumi.yaml")
@@ -598,6 +600,7 @@ mod v0_5_29_diagnostics {
             undefined: UndefinedMode::Strict,
             provider_templated_packages: &[],
             extra: &extra,
+            limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
         };
         let pre = JinjaPreprocessor::new(&ctx);
         let d = pre.render(source, "Pulumi.yaml").expect_err("must fail");

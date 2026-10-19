@@ -1,0 +1,3 @@
+Pulumi.yaml:11:0: error: line 11: tab in indentation inside a provider-templated resource; YAML forbids tabs as indentation, so the extent of the block scalar below it cannot be determined — use spaces
+  11 | 	select {{ ref('x') }}
+  suggestion: provider-templated block scalars are left unrendered; move the SQL to a file and load it with fn::readFile if this cannot be fixed

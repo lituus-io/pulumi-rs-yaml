@@ -1,0 +1,1 @@
+'abcabc'.rfind('a') + 'abc'.rfind('z') * 10

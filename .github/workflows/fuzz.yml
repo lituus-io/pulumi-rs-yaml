@@ -127,6 +127,10 @@ jobs:
           - fuzz_string_filters
           - fuzz_derive_string
           - fuzz_jinja
+          - fuzz_jinja_template
+          - fuzz_jinja_loader
+          - fuzz_jinja_conformance
+          - fuzz_jinja_methods
           - fuzz_builtins
           - fuzz_converter
           - fuzz_yaml_bomb

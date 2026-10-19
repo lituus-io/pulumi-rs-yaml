@@ -2069,6 +2069,7 @@ outputs:
         undefined: UndefinedMode::Strict,
         provider_templated_packages: &[],
         extra: &HashMap::new(),
+        limits: pulumi_rs_yaml_core::jinja::JinjaLimits::default(),
     };
 
     let (merged, diags) = load_project(dir.path(), Some(&ctx));

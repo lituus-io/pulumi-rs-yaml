@@ -1,0 +1,2 @@
+{{ '12'.isdigit() }} {{ 'ab'.isalpha() }} {{ 'a1'.isalnum() }} {{ 'ab'.islower() }} {{ 'AB'.isupper() }} {{ '7'.zfill(3) }} {{ 'a
+b'.splitlines() }}

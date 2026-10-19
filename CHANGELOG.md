@@ -3,6 +3,243 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.40
+
+Jinja is now a measured, bounded, documented capability. **[JINJA.md](JINJA.md)**
+is the reference; every example in it is executed by the test suite.
+
+### Conformance with reference Jinja2
+
+A corpus of 345 cases -- every statement, expression form, whitespace rule
+and error class, and one case per filter, test and global Jinja2 3.1.6 ships
+-- renders through the runtime and must equal pinned Jinja2's output byte for
+byte. 286 do; the 59 that differ are listed with reasons in
+`tests/jinja_conformance/DIVERGENCES.md` (value formatting deployed stacks
+already depend on, extensions, refusals by design), with the runtime's own
+output pinned. `MATRIX.md` is generated from the corpus and both registries.
+A CI job regenerates the goldens from the hash-pinned reference
+(`scripts/jinja_conformance/`, the only use of Python Jinja2) and fails on
+drift; the Python binding runs the same corpus.
+
+Gaps closed: `int`/`float` defaults and `base`, `round` methods and
+ties-to-even, `replace` count, `attribute=` on `join`/`sum`/`max`/`min`,
+`sum` start, case-insensitive `max`/`min`, positional `dictsort`, Jinja2's
+`title`; new `wordcount`, `filesizeformat`, `urlencode`, `callable`,
+`cycler`, `joiner`, Python string methods, and `break`/`continue`;
+`sequence` is true for strings and maps. Rendering 4,583 real project files
+before and after gives byte-identical output.
+
+### Python methods on values
+
+Every `str`, list, dict and number method a template reaches for -- case
+mapping, strip/replace, find/index/count with bounds, split/rsplit/
+splitlines/partition, the padding family, the `is*` predicates,
+removeprefix/suffix, join, and `str.format` with the format-spec
+mini-language -- from one static, sorted table per receiver kind (no
+allocation to dispatch, no trait objects). 0.5.39 had `items`, `keys`,
+`values` and `get`. A method that can grow a value checks the output limit
+before allocating. 73 method cases are held three ways: to pinned Jinja2, to
+this runtime's own Starlark, and to each other (`methods/DIVERGENCES.md`
+lists the Starlark gaps and two sorted-map differences).
+
+### Python's arithmetic, `%` formatting, varargs and isolated includes
+
+No known behavioural gap against Jinja2 remains:
+- `/`, `//` and `%` by zero are a `ZeroDivisionError`-class render error
+  (minijinja rendered `1 / 0` as `inf`); `%` takes the divisor's sign
+  (`7 % -3` is `-2`) and `//` floors;
+- `'%s-%05.2f' % (a, x)` and `'%(k)s' % d` are Python's printf formatting
+  (`s r d i u x X o c f F e E %`, flags, width, precision), through the same
+  core as `str.format` and bounded by the output limit -- which also now
+  bounds a `str.format` precision. The `format` filter is that core too:
+  minijinja's own sliced its input by bytes and panicked on a multi-byte
+  character in a `%(...)` key (found by fuzz_jinja_conformance);
+- a loop over a string knows its length (`loop.length`, `revindex`, `last`);
+- `{% include x without context %}` renders `x` with none of the caller's
+  values (it used to pass them), with its own bounded nesting depth;
+- a macro naming `varargs` or `kwargs` takes extra arguments into them
+  (including through `call` and imports); one that does not still refuses.
+
+`*` and `**` are Python's too: a string or list times a count repeats it
+(nothing for a count of zero or less), and an integer to a negative power
+is a float, `0 ** -1` a `ZeroDivisionError`.
+
+What stays different is by design: random/lipsum (a deploy must render
+repeatably), the HTML filters (output is YAML), and the value formatting
+deployed stacks already depend on.
+
+### Lists and dicts a template can change
+
+`{% do xs.append(x) %}`, `d.update(...)`, `setdefault`, `pop`, `sort`, and
+the rest of the list and dict mutators, with Python's sharing. In a template
+that mutates, its literals and filter results are mutable objects; values
+the host passes in stay read-only (an error says to copy them); changing a
+container while a loop walks it is an error; growth is bounded by fuel.
+
+### Dates
+
+`date`, `datetime` and `timedelta`, naive, in pure Rust (proleptic
+Gregorian, no timezone database), with `to_date`/`to_datetime`/`strptime`,
+`strftime`, `isoformat`, attributes, comparison and `+`/`-`, checked against
+Python's `datetime`.
+
+### A capability ledger
+
+`tests/capability_ledger.toml` maps every changelog entry since 0.5.25 to
+the tests that prove it, and a test fails when one is unmapped or names a
+test that no longer exists. Five entries had no test and now do (the
+reused SQL parser worker, Starlark's load-time execution, and three CI
+settings read from the workflow files).
+
+### Resource limits
+
+Every render runs under `JinjaLimits`: fuel 100,000 instructions (the
+heaviest real file measured used 6,575), recursion 500, output 16 MiB
+(`readFile()` included), `range()` 100,000 elements. Each refusal is its own
+`RenderErrorKind` -- `FuelExhausted`, `RecursionLimit`, `OutputTooLarge`,
+`IncludeCycle`, `RangeTooLarge` -- at the offending line, never a hang or an
+out-of-memory. Override with `PULUMI_YAML_JINJA_LIMITS=fuel=..,recursion=..,
+output=..,range=..` or the Python `limits=` argument; a malformed value is
+refused by name. `render_with_stats` reports the fuel used.
+
+### Every builtin, held to hostile counts and widths
+
+The fuzzer found minijinja's `divisibleby` test computing a remainder
+unchecked: `9 is divisibleby(false)` panicked, which in a release build is
+a process abort. An exhaustive audit followed -- every filter, test,
+method, global and operator, called with zero, `False`, negatives and the
+i64 and i128 extremes, 1.13 million calls -- and found three more of the
+class: `tojson(indent)` and `indent(width)` allocated their width unchecked
+(an allocation abort), `[] * 9223372036854775807` spun for ever, and
+`slice(9223372036854775807)` was a capacity panic. Each now answers as
+Python does or refuses with a typed error:
+- `divisibleby` is `value % num == 0`, so a zero divisor is a
+  `ZeroDivisionError`, as in Jinja2;
+- `slice` and `batch` are Jinja2's (a zero `slice` count raises, a
+  negative one yields nothing, `batch(0)` is `[[], [...]]`); the number of
+  slices is bounded by the range limit;
+- a repeated list is bounded by the range limit and a repeated string by
+  four times the output limit (the formatter, which knows the line, refuses
+  one that is written); an empty repeat answers at once;
+- `tojson` and `indent` refuse a width past the output limit and stop
+  their text growing past it;
+- `round` with a huge precision answers as Python does (`round(2.5, 10**9)`
+  is `2.5`, `round(2.5, -10**9)` is `0.0`), where it formatted a
+  billion-digit string; `ceil`/`floor` raise Python's errors there;
+- `i128::MIN // -1` is exact and `i128::MIN % -1` is `0`, where the
+  machine division overflowed; a float past 2**127 through `int` is
+  refused, never saturated to a wrong number;
+- `wordwrap` refuses a width below 1 and `truncate` reports the length it
+  was given, as Jinja2 does.
+
+Every input is a conformance case, a security test and a fuzz seed.
+
+`dictsort` is Jinja2's own (stable, Python's reverse, an unknown `by`
+refused with Jinja2's message), and an operator the prepass routes answers
+for non-numbers by the engine's rules and messages without compiling an
+expression per call; a joined list is a list, so it can be indexed.
+
+The binary stays inside the +2% size gate on every artefact with all of
+this: the render environment starts empty and registers only the engine
+builtins that are not replaced (the replaced ones no longer ship, unused),
+filters register through one closure per signature, and `list.sort`,
+`dictsort` and the prepass sort through the engine's existing sort of
+values rather than instantiating their own.
+
+### Loop controls and `cycle` in the places Jinja2 refuses them
+
+Five-minute fuzz runs found two more engine panics. `loop.cycle()` with
+nothing to cycle computed `index % 0`; it is now Jinja2's `TypeError` (no
+items for cycling given) when the call runs. A `continue` or `break` in a
+loop's `else` -- which runs after the loop -- inside a macro defined in a
+loop was accepted, and popped a frame that was not a loop's; Jinja2's
+compiler refuses a loop control with no loop of its own to act on (a loop's
+`else` and a macro's body are outside the loop around them), and so does
+this one now, as a syntax error at the line.
+
+### Recursion reaches its limit on any stack
+
+Windows gives a main thread 1 MiB of stack, and the language host
+overflowed it ("has overflowed its stack") before a self-recursive macro
+reached the recursion limit -- an abort where a typed error belongs.
+Rendering now runs on the engine's deep-stack worker, the 64 MiB thread SQL
+parsing already used; the two share it rather than each keeping one. A
+render crosses to it as owned data and its diagnostic comes back re-sliced
+from the caller's source, so no signature changed. A test renders to the
+limit from a 1 MiB thread.
+
+Only a render that can recurse past its own nesting -- one naming a macro,
+a call block, another template or a recursive loop -- is handed over; the
+rest render on the caller's thread as before, since their depth is the
+template's nesting, which the parser caps (a release build renders the
+deepest it accepts in under 256 KiB, tested on 1 MiB). The handoff is a
+blocking round trip between two threads, measured at about 10us on macOS
+and 35-140us on Linux VMs; a thread starts one worker for its life (a
+counted test holds it to that), and work arriving on the worker runs
+where it is.
+
+The render environment's filters, tests and globals are built once per
+process and shared by every render, which adds only what is its own (fuel,
+limits, `readFile`, the loader): a small render costs what it did in
+0.5.39 (5.5us against 5.9us, measured on Linux).
+
+### One error, one kind
+
+A refused include whose name contained the text `readFile:` was reported as
+a readFile failure: the classifier matched that tag anywhere in the message,
+and a refusal quotes the name it was given. Tags are now matched where they
+are written, at the start (found by fuzz_jinja).
+
+Errors raised inside an expression the prepass rewrote -- `/`, `%`, `*`,
+dates -- now carry their column again: the rewrite records where it changed
+the text and the diagnostic maps back through it, so the caret is under what
+the author wrote. An undefined operand there is an undefined variable, not
+a type error.
+
+### Two engine crashes, found by fuzzing
+
+minijinja 2.24 panics on a negative-step slice of an empty list or string
+(`{{ [][::-1] }}`), and overflows the stack printing a namespace that holds
+itself (`{% set ns.v = ns %}`); release builds abort, taking the language
+host or the Python process with them. Backwards slices are now computed as
+Python computes them; a namespace assigned a value holding a namespace is
+refused at the assignment. minijinja is pinned to `=2.24.0` (the parser this
+needs is not semver-stable).
+
+### Errors
+
+A fault inside an included or imported template names that file, line and
+column, with its excerpt and the include chain (`origin` on
+`RenderDiagnostic`, and in `preprocess_jinja_diag`); the excerpt was missing
+from release builds. Errors are classified by their root cause; an undefined
+name is named (`undefined value: \`x\``); `YamlDuplicateKey` is produced
+again. The language host removes secret config values from error text. Every
+kind's exact text is golden-tested.
+
+### Policy and hardening
+
+- Every render is strict; `PULUMI_YAML_JINJA_UNDEFINED` takes `strict` or
+  `passthrough` and refuses anything else (it silently read typos as
+  strict). `graph` honours it as the host does.
+- `tojson`/`to_json` escape the characters YAML misreads (DEL, C1 controls,
+  U+0085, U+2028/2029, BOM), so a quoted value always round-trips.
+- Include names holding control characters are refused (`[bad name]`);
+  containment is proven against every spelling of "outside".
+- Auto-escaping is stated (none: output is YAML); the `debug()` global,
+  which dumped the context into the output, is removed.
+
+### Tests
+
+Unit (limits at their boundaries, policies, prepass, method tables, the
+calendar), conformance (292 cases and 73 method cases, Rust and Python; the
+methods also against Starlark), integration (`host-jinja-features` deployed with a
+real `pulumi up`; one stack per limit and an include chain through `graph`
+and `pulumi preview`), security (DoS shapes, containment, engine crashes,
+secret redaction), fuzz (`fuzz_jinja_template`, `fuzz_jinja_loader`,
+`fuzz_jinja_conformance`, `fuzz_jinja_methods`), regression (the
+capability ledger), performance (typical stack, large loop,
+include-heavy benches; fuel counted, not timed).
+
 ## 0.5.39
 
 ### Already-rendered projects: `PULUMI_YAML_JINJA=off`

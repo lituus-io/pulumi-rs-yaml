@@ -1,0 +1,2 @@
+outputs:
+{% include 'parts/a.j2' %}

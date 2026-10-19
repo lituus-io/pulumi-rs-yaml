@@ -1,0 +1,1 @@
+'a\nb'.splitlines(True)[0] == 'a\n'
