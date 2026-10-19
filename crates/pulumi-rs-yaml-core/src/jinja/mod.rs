@@ -1522,6 +1522,8 @@ pub fn validate_jinja_syntax<'src>(
 }
 
 /// Converts a provider-scope refusal into a RenderDiagnostic.
+#[cold]
+#[inline(never)]
 fn scope_diagnostic<'src>(
     source: &'src str,
     err: &crate::provider_scope::ScopeError,
@@ -2437,6 +2439,8 @@ fn yaml_safe_json(json: String) -> String {
 }
 
 /// A filter that would write past the output limit, classified with it.
+#[cold]
+#[inline(never)]
 fn output_refused(what: &str, size: u64, cap: usize) -> minijinja::Error {
     minijinja::Error::new(
         minijinja::ErrorKind::InvalidOperation,
@@ -2444,6 +2448,8 @@ fn output_refused(what: &str, size: u64, cap: usize) -> minijinja::Error {
     )
 }
 
+#[cold]
+#[inline(never)]
 fn json_error(e: &serde_json::Error) -> minijinja::Error {
     minijinja::Error::new(
         minijinja::ErrorKind::InvalidOperation,

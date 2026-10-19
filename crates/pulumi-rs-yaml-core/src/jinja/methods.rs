@@ -131,15 +131,27 @@ pub(super) fn output_cap(state: &State<'_, '_>) -> usize {
         .unwrap_or(super::limits::JinjaLimits::DEFAULT_OUTPUT_BYTES)
 }
 
+/// A render fault the template can name. Python's `TypeError` and
+/// `ValueError` both surface as the engine's invalid operation, built in one
+/// place, out of line: an error is the cold path at every call site.
+#[cold]
+#[inline(never)]
+pub(super) fn fault(msg: String) -> Error {
+    Error::new(ErrorKind::InvalidOperation, msg)
+}
+
+/// Python's `TypeError`.
 pub(super) fn type_error(msg: impl Into<String>) -> Error {
-    Error::new(ErrorKind::InvalidOperation, msg.into())
+    fault(msg.into())
 }
 
-/// Python's `ValueError`: a runtime fault the template can name.
+/// Python's `ValueError`.
 pub(super) fn value_error(msg: impl Into<String>) -> Error {
-    Error::new(ErrorKind::InvalidOperation, msg.into())
+    fault(msg.into())
 }
 
+#[cold]
+#[inline(never)]
 fn too_large(method: &str, len: usize, cap: usize) -> Error {
     Error::new(
         ErrorKind::InvalidOperation,

@@ -327,6 +327,8 @@ impl Object for PyList {
     }
 }
 
+#[cold]
+#[inline(never)]
 fn missing(method: &str, arg: &str) -> Error {
     Error::new(
         ErrorKind::MissingArgument,

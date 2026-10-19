@@ -132,6 +132,8 @@ fn as_f64(n: &Num) -> f64 {
     }
 }
 
+#[cold]
+#[inline(never)]
 fn zero_division(what: &str) -> Error {
     Error::new(
         ErrorKind::InvalidOperation,
@@ -245,6 +247,8 @@ fn count(v: &Value) -> Option<i128> {
 }
 
 /// Python's integers are unbounded; this engine's stop at 128 bits.
+#[cold]
+#[inline(never)]
 fn overflow(op: &str) -> Error {
     Error::new(
         ErrorKind::InvalidOperation,
@@ -252,6 +256,8 @@ fn overflow(op: &str) -> Error {
     )
 }
 
+#[cold]
+#[inline(never)]
 fn too_large(what: &str, bytes: u128, cap: usize) -> Error {
     Error::new(
         ErrorKind::InvalidOperation,

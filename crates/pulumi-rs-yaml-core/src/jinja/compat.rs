@@ -251,7 +251,7 @@ fn at_most(args: &[Value], n: usize, filter: &str) -> Result<(), Error> {
 }
 
 fn invalid(msg: impl Into<String>) -> Error {
-    Error::new(ErrorKind::InvalidOperation, msg.into())
+    super::methods::fault(msg.into())
 }
 
 fn undefined() -> Error {
@@ -844,32 +844,28 @@ fn url_quote(s: &str, for_query: bool) -> String {
 fn urlencode(value: Value) -> Result<Value, Error> {
     match value.kind() {
         ValueKind::Undefined => Err(undefined()),
-        ValueKind::Map => {
-            let mut parts = Vec::new();
-            for key in value.try_iter()? {
-                let v = value.get_item(&key)?;
-                parts.push(format!(
-                    "{}={}",
-                    url_quote(&text(&key)?, true),
-                    url_quote(&text(&v)?, true)
-                ));
+        ValueKind::Map | ValueKind::Seq | ValueKind::Iterable => {
+            let map = value.kind() == ValueKind::Map;
+            let mut out = String::new();
+            for item in value.try_iter()? {
+                // A map's keys index it; a sequence holds the pairs.
+                let (k, v) = if map {
+                    let v = value.get_item(&item)?;
+                    (item, v)
+                } else {
+                    (
+                        item.get_item(&Value::from(0))?,
+                        item.get_item(&Value::from(1))?,
+                    )
+                };
+                if !out.is_empty() {
+                    out.push('&');
+                }
+                out.push_str(&url_quote(&text(&k)?, true));
+                out.push('=');
+                out.push_str(&url_quote(&text(&v)?, true));
             }
-            Ok(Value::from(parts.join("&")))
-        }
-        ValueKind::Seq | ValueKind::Iterable => {
-            let mut parts = Vec::new();
-            for pair in value.try_iter()? {
-                let (k, v) = (
-                    pair.get_item(&Value::from(0))?,
-                    pair.get_item(&Value::from(1))?,
-                );
-                parts.push(format!(
-                    "{}={}",
-                    url_quote(&text(&k)?, true),
-                    url_quote(&text(&v)?, true)
-                ));
-            }
-            Ok(Value::from(parts.join("&")))
+            Ok(Value::from(out))
         }
         _ => Ok(Value::from(url_quote(&text(&value)?, false))),
     }
