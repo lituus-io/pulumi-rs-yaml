@@ -28,7 +28,7 @@ base64 = "0.22"
 # Exact: `unstable_machinery` (the parser, for the slice rewrite in
 # jinja/slice.rs) carries no semver guarantee. `fuel` and `loop_controls`
 # are minijinja features, not crates.
-minijinja = { version = "=2.24.0", features = ["debug", "loader", "multi_template", "loop_controls", "fuel", "unstable_machinery"] }
+minijinja = { version = "=2.24.0", default-features = false, features = ["builtins", "debug", "macros", "multi_template", "adjacent_loop_items", "serde", "loader", "loop_controls", "fuel", "unstable_machinery"] }
 uuid = { version = "1", features = ["v4"] }
 rand = "0.8.6" # >=0.8.6 fixes RUSTSEC-2026-0097 (thread_rng unsoundness), API-compatible
 pyo3 = { version = "0.29", features = ["extension-module"] }
@@ -62,9 +62,22 @@ opt-level = "s"
 # The template engine renders each project file once per deploy; size-tuned
 # it costs a few percent per render (measured in the jinja_* benches) and
 # keeps the language host inside the +2% size gate with 0.5.40's methods,
-# containers and dates.
+# containers, dates and Python operators.
 [profile.release.package.minijinja]
 opt-level = "s"
+
+# HCL is parsed only by GenerateProgram/GenerateProject (`pulumi convert`
+# from PCL), never on a deploy and in no benchmark; size-tuned like the
+# SQL parser.
+[profile.release.package.hcl-edit]
+opt-level = "z"
+
+[profile.release.package.winnow]
+opt-level = "z"
+
+[profile.release.package.hcl-rs]
+opt-level = "z"
+
 
 
 # Mirrored onto the bench profile so the benchmark regression gate measures the
