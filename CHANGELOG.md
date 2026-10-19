@@ -3,6 +3,64 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.39
+
+### Already-rendered projects: `PULUMI_YAML_JINJA=off`
+
+A caller that renders a project with this crate and hands the language host
+the result could not deploy text a `{% raw %}` block produced: the host
+rendered the file a second time and read the literal `{{ x }}` as an
+expression ("undefined value"). `PULUMI_YAML_JINJA=off` turns the runtime's
+own pass off: the language host, `exec` and `graph` parse every project file
+as written. Unset, empty or `on` is the old behaviour, byte for byte; any
+other value is refused with the value named; `off` with `exec`'s
+`PULUMI_YAML_JINJA_SOURCE` is refused as a contradiction. New:
+`jinja::JINJA_ENV`, `jinja::jinja_enabled`, `jinja::jinja_enabled_from`.
+Proven through a real `pulumi up` on a local backend
+(`tests/acceptance/host-prerendered-raw`).
+
+### Resource keys for three more shapes
+
+- `gcp:cloudrun:Service` (Cloud Run v1): the provider id
+  `locations/{l}/namespaces/{p}/services/{s}` keys as the v2 service it is,
+  `//run.googleapis.com/projects/{p}/locations/{l}/services/{s}`. A namespace
+  that is a project number gives no key.
+- `gcp:bigquery:Job`: the provider id `projects/{p}/jobs/{j}` holds no
+  location. `resource_key_with_properties(type, provider_id, props)` (new,
+  Python too) takes it from the `location` property, giving the key
+  `bq_job_resource_key` builds; no location, no key.
+- `gcp:serviceaccount:Account` from properties: `accountId` + `project` give
+  `{accountId}@{p}.iam.gserviceaccount.com`, the same key as the provider id.
+- `KeyTemplate` gains `id_form` (`IdForm`), how a type's provider id spells
+  its relative name. Every id segment is still validated before it is
+  written; a property-built key is held to the same rule.
+
+### Statement splitting: faster, and no longer at the mercy of code layout
+
+`split_statement_spans` dispatched on every byte of a script, and its speed
+depended on where the compiler placed that loop: on x86-64 runners the same
+machine code measured 1.36 ms per MiB in one build and 1.87 ms in another
+after unrelated code moved it. A plain byte now costs one table lookup, and
+quotes and comments are crossed by a search for their terminator (inline for
+short spans, `memchr` beyond). 1 MiB of dense statements: 1.36 to 1.12 ms on
+AMD EPYC 7763, 1.24 to 0.99 ms on Intel Xeon 6, 1.58 to 0.85 ms on Apple
+M-series; 1 MiB of long literals and comments now takes 0.17 to 0.23 ms
+(new bench `split_statement_spans_1mib_long_literals`). Output is unchanged:
+checked against the previous splitter on 200,000 random scripts.
+
+### README badges are checked
+
+- The fuzz-targets badge said 26; 25 targets are registered.
+  `fuzz/fuzz_targets/scope_grammar.rs` is a shared generator, not a target,
+  and 0.5.38 counted files. The README's target list also missed five
+  targets and said "nineteen".
+- The fuzz workflow's registration check now also fails when the fuzz badge
+  differs from the `[[bin]]` count in `fuzz/Cargo.toml`, when a registered
+  target is missing from the README's Fuzz section, or when the
+  security-tests badge differs from the `#[test]` count in
+  `security_tests.rs`. It runs on pull requests that touch any of them;
+  before, it ran only on the weekly schedule and never read the README.
+
 ## 0.5.38
 
 ### Where a referenced stack really is

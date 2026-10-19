@@ -3,6 +3,14 @@ name: Fuzz
 on:
   schedule:
     - cron: '0 3 * * 3'  # Weekly on Wednesday at 3 AM UTC
+  # A pull request runs only the registration and badge check below, and
+  # only when something it reads changes; the fuzzing itself stays weekly.
+  pull_request:
+    paths:
+      - README.md
+      - fuzz/**
+      - crates/pulumi-rs-yaml-core/tests/security_tests.rs
+      - .github/workflows/fuzz.yml
   workflow_dispatch:
     inputs:
       duration:
@@ -50,7 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Compare fuzz/Cargo.toml bins against the matrix
+      - name: Compare fuzz/Cargo.toml bins against the matrix, the README and its badges
         run: |
           python3 - <<'PY'
           import pathlib, re, sys
@@ -62,19 +70,53 @@ jobs:
           block = wf.split("        target:", 1)[1]
           listed = set(re.findall(r"^\s+- (fuzz_\w+)\s*$", block, re.M))
 
+          failed = False
           missing = registered - listed
           extra = listed - registered
           if missing:
               print(f"::error::registered but never run: {sorted(missing)}")
           if extra:
               print(f"::error::in the matrix but not registered: {sorted(extra)}")
-          if missing or extra:
+          failed |= bool(missing or extra)
+
+          # The README's badges are numbers a reader trusts; hold each to
+          # the thing it counts. scope_grammar.rs is a shared generator, not
+          # a target, so the fuzz badge counts registrations, not files.
+          readme = pathlib.Path("README.md").read_text()
+
+          def badge(label):
+              m = re.search(rf"badge/{label}-(\d+)-", readme)
+              if not m:
+                  print(f"::error::README has no '{label}' badge")
+                  return None
+              return int(m.group(1))
+
+          fuzz_badge = badge("fuzz%20targets")
+          if fuzz_badge is not None and fuzz_badge != len(registered):
+              print(f"::error::README fuzz badge says {fuzz_badge}, fuzz/Cargo.toml registers {len(registered)}")
+              failed = True
+          fuzz_section = readme.split("## Fuzz", 1)[-1].split("\n## ", 1)[0]
+          unnamed = registered - set(re.findall(r"`(fuzz_\w+)`", fuzz_section))
+          if unnamed:
+              print(f"::error::registered but not listed in the README's Fuzz section: {sorted(unnamed)}")
+              failed = True
+
+          sec = pathlib.Path("crates/pulumi-rs-yaml-core/tests/security_tests.rs").read_text()
+          tests = len(re.findall(r"^\s*#\[test\]", sec, re.M))
+          sec_badge = badge("security%20tests")
+          if sec_badge is not None and sec_badge != tests:
+              print(f"::error::README security-tests badge says {sec_badge}, security_tests.rs has {tests}")
+              failed = True
+          failed |= fuzz_badge is None or sec_badge is None
+
+          if failed:
               sys.exit(1)
-          print(f"{len(registered)} fuzz targets, all of them in the matrix")
+          print(f"{len(registered)} fuzz targets, all in the matrix, the README and its badge; {tests} security tests match their badge")
           PY
 
   fuzz:
     name: Fuzz (${{ matrix.target }})
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

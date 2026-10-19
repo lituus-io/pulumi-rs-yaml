@@ -1,0 +1,9 @@
+# A project a caller renders once and hands to the runtime already rendered.
+# The raw block below emits a literal expression as text; a second render would
+# read it as an expression. See
+# crates/pulumi-rs-yaml-language/tests/prerendered_tests.rs.
+name: prerendered
+runtime: yaml
+outputs:
+  stackName: "{{ pulumi_stack }}"
+  greeting: "{% raw %}{{ x }}{% endraw %}"

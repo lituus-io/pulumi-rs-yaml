@@ -11,7 +11,8 @@ use pulumi_rs_yaml_core::eval::callback::ResourceCallback;
 use pulumi_rs_yaml_core::eval::evaluator::Evaluator;
 use pulumi_rs_yaml_core::eval::value::Value;
 use pulumi_rs_yaml_core::jinja::{
-    validate_rendered_yaml, JinjaContext, JinjaPreprocessor, TemplatePreprocessor, UndefinedMode,
+    jinja_enabled, validate_rendered_yaml, JinjaContext, JinjaPreprocessor, TemplatePreprocessor,
+    UndefinedMode, JINJA_ENV,
 };
 use pulumi_rs_yaml_core::multi_file;
 use pulumi_rs_yaml_core::packages;
@@ -83,44 +84,56 @@ pub async fn run(
         extra: &empty_extra,
     };
 
-    // 3. Load template(s) — multi-file or single-file with Jinja source override
-    let (template, source_map) =
-        if let Ok(jinja_source_dir) = std::env::var(crate::exec::JINJA_SOURCE_ENV) {
-            // Exec wrapper is active: read original Jinja sources from temp directory
-            // and load/preprocess/merge them
-            match load_from_jinja_source(&jinja_source_dir, program_directory, &jinja_ctx) {
-                Ok((t, sm)) => (t, sm),
-                Err(e) => {
-                    // `bail: true` tells the engine the program has already
-                    // reported the problem, so it prints nothing further. Say
-                    // it here, as the non-exec path below does — otherwise the
-                    // deploy stops with an empty resource list and no reason,
-                    // which reads like an empty program rather than a failure.
-                    eprintln!("error: failed to load template: {}", e);
-                    return RunResult {
-                        error: format!("failed to load template: {}", e),
-                        bail: true,
-                    };
-                }
-            }
-        } else {
-            // Normal mode: discover and load all Pulumi.*.yaml files
-            let dir = Path::new(program_directory);
-            let (merged, load_diags) = multi_file::load_project(dir, Some(&jinja_ctx));
-            if load_diags.has_errors() {
-                for diag in load_diags.iter() {
-                    if diag.is_error() {
-                        eprintln!("error: {}", diag.summary);
-                    }
-                }
+    // 3. Load template(s) — multi-file or single-file with Jinja source override.
+    // `PULUMI_YAML_JINJA=off`: the caller rendered the files already, so they
+    // are parsed as written and never rendered a second time.
+    let jinja_source = std::env::var(crate::exec::JINJA_SOURCE_ENV).ok();
+    let render = match load_mode(jinja_enabled(), jinja_source.is_some()) {
+        Ok(render) => render,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return RunResult {
+                error: e,
+                bail: true,
+            };
+        }
+    };
+    let (template, source_map) = if let Some(jinja_source_dir) = jinja_source {
+        // Exec wrapper is active: read original Jinja sources from temp directory
+        // and load/preprocess/merge them
+        match load_from_jinja_source(&jinja_source_dir, program_directory, &jinja_ctx) {
+            Ok((t, sm)) => (t, sm),
+            Err(e) => {
+                // `bail: true` tells the engine the program has already
+                // reported the problem, so it prints nothing further. Say
+                // it here, as the non-exec path below does — otherwise the
+                // deploy stops with an empty resource list and no reason,
+                // which reads like an empty program rather than a failure.
+                eprintln!("error: failed to load template: {}", e);
                 return RunResult {
-                    error: "failed to load template".to_string(),
+                    error: format!("failed to load template: {}", e),
                     bail: true,
                 };
             }
-            let sm = merged.source_map_arc();
-            (merged.as_template_decl(), sm)
-        };
+        }
+    } else {
+        // Normal mode: discover and load all Pulumi.*.yaml files
+        let dir = Path::new(program_directory);
+        let (merged, load_diags) = multi_file::load_project(dir, render.then_some(&jinja_ctx));
+        if load_diags.has_errors() {
+            for diag in load_diags.iter() {
+                if diag.is_error() {
+                    eprintln!("error: {}", diag.summary);
+                }
+            }
+            return RunResult {
+                error: "failed to load template".to_string(),
+                bail: true,
+            };
+        }
+        let sm = merged.source_map_arc();
+        (merged.as_template_decl(), sm)
+    };
 
     // Leak the template to give it 'static lifetime
     // This is acceptable since the process runs once per evaluation
@@ -301,6 +314,21 @@ pub async fn run(
     }
 }
 
+/// Whether this run renders the project files, given [`jinja_enabled`]. The
+/// exec wrapper hands over Jinja sources to be rendered, so it contradicts a
+/// pass that is off, and the pair is refused.
+fn load_mode(render: Result<bool, String>, exec_sources: bool) -> Result<bool, String> {
+    let render = render?;
+    if !render && exec_sources {
+        return Err(format!(
+            "{}=off contradicts {}: the exec wrapper's sources need the Jinja pass",
+            JINJA_ENV,
+            crate::exec::JINJA_SOURCE_ENV
+        ));
+    }
+    Ok(render)
+}
+
 /// Loads templates from the Jinja source temp directory (exec wrapper mode).
 ///
 /// When the exec wrapper is active, original Jinja sources are stored in a temp
@@ -430,5 +458,21 @@ fn load_from_jinja_source(
             template,
             std::sync::Arc::new(std::collections::HashMap::new()),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::load_mode;
+
+    #[test]
+    fn the_pass_off_skips_rendering_and_refuses_exec_sources() {
+        assert_eq!(load_mode(Ok(true), false), Ok(true));
+        assert_eq!(load_mode(Ok(true), true), Ok(true));
+        assert_eq!(load_mode(Ok(false), false), Ok(false));
+        assert!(load_mode(Ok(false), true)
+            .unwrap_err()
+            .contains("PULUMI_YAML_JINJA_SOURCE"));
+        assert_eq!(load_mode(Err("bad".into()), false), Err("bad".into()));
     }
 }

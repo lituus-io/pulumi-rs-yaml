@@ -740,6 +740,20 @@ fn bench_sql_statement_layer(c: &mut Criterion) {
     c.bench_function("split_statement_spans_1mib", |b| {
         b.iter(|| std::hint::black_box(split_statement_spans(black_box(&script)).len()))
     });
+
+    // The same budget in long literals and comments, where the scan crosses
+    // each one with a vector search instead of byte by byte.
+    let mut long = String::with_capacity(1024 * 1024);
+    while long.len() < 1024 * 1024 - 512 {
+        long.push_str("SELECT a, '");
+        long.push_str(&"x".repeat(160));
+        long.push_str("' FROM `p.d.t` /* ");
+        long.push_str(&"c ".repeat(80));
+        long.push_str("*/ -- a trailing comment that runs on for a while\n;");
+    }
+    c.bench_function("split_statement_spans_1mib_long_literals", |b| {
+        b.iter(|| std::hint::black_box(split_statement_spans(black_box(&long)).len()))
+    });
 }
 
 #[cfg(not(feature = "sql-lineage"))]
@@ -1381,9 +1395,71 @@ fn bench_derive_string(c: &mut Criterion) {
     group.finish();
 }
 
+/// Resource keys for the deployed ids of one stack: every relative-name type,
+/// a bucket, and the property path -- the per-resource cost of a graph join.
+fn bench_resource_keys(c: &mut Criterion) {
+    use pulumi_rs_yaml_core::resource_key::{resource_key, resource_key_from_properties};
+    let ids: &[(&str, &str)] = &[
+        (
+            "gcp:bigquery/dataset:Dataset",
+            "projects/sample-proj/datasets/analytics",
+        ),
+        (
+            "gcp:bigquery/table:Table",
+            "projects/Sample-Proj/datasets/analytics/tables/events$20240101",
+        ),
+        (
+            "gcp:bigquery/routine:Routine",
+            "projects/sample-proj/datasets/analytics/routines/score",
+        ),
+        (
+            "gcp:workflows/workflow:Workflow",
+            "projects/sample-proj/locations/us-central1/workflows/nightly",
+        ),
+        (
+            "gcp:cloudscheduler/job:Job",
+            "projects/sample-proj/locations/us-central1/jobs/nightly",
+        ),
+        (
+            "gcp:cloudrunv2/service:Service",
+            "projects/sample-proj/locations/us-central1/services/api",
+        ),
+        ("gcp:storage/bucket:Bucket", "sample-proj-landing"),
+        (
+            "gcp:pubsub/topic:Topic",
+            "projects/sample-proj/topics/events",
+        ),
+        (
+            "gcp:serviceaccount/account:Account",
+            "projects/sample-proj/serviceAccounts/runner@sample-proj.iam.gserviceaccount.com",
+        ),
+        (
+            "gcp:compute/instance:Instance",
+            "projects/sample-proj/zones/z/instances/i",
+        ),
+    ];
+    let props = [
+        ("project", "sample-proj"),
+        ("region", "us-central1"),
+        ("name", "nightly"),
+    ];
+    c.bench_function("resource_keys_one_stack", |b| {
+        b.iter(|| {
+            for (ty, id) in ids {
+                black_box(resource_key(black_box(ty), black_box(id)));
+            }
+            black_box(resource_key_from_properties(
+                black_box("gcp:cloudscheduler:Job"),
+                black_box(props),
+            ));
+        })
+    });
+}
+
 criterion_group!(
     benches,
     bench_parse_simple,
+    bench_resource_keys,
     bench_parse_complex,
     bench_eval_simple,
     bench_protobuf_round_trip,

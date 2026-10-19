@@ -1326,6 +1326,22 @@ fn resource_key_from_properties(
     )
 }
 
+/// The resource key from a deployed resource's provider id and properties:
+/// the provider id first, then the properties filling what it lacks (a
+/// BigQuery job's `location`), then the properties alone; `None` otherwise.
+#[pyfunction]
+fn resource_key_with_properties(
+    pulumi_type: &str,
+    provider_id: &str,
+    properties: HashMap<String, String>,
+) -> Option<String> {
+    pulumi_rs_yaml_core::resource_key::resource_key_with_properties(
+        pulumi_type,
+        provider_id,
+        properties.iter().map(|(k, v)| (k.as_str(), v.as_str())),
+    )
+}
+
 /// The key of a BigQuery job (a runtime object):
 /// `//bigquery.googleapis.com/projects/{p}/locations/{l}/jobs/{id}`.
 #[pyfunction]
@@ -1609,6 +1625,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(resource_key, m)?)?;
     m.add_function(wrap_pyfunction!(bq_to_resource_key, m)?)?;
     m.add_function(wrap_pyfunction!(resource_key_from_properties, m)?)?;
+    m.add_function(wrap_pyfunction!(resource_key_with_properties, m)?)?;
     m.add_function(wrap_pyfunction!(bq_job_resource_key, m)?)?;
     #[cfg(feature = "sql-lineage")]
     m.add_function(wrap_pyfunction!(export_sql_lineage, m)?)?;

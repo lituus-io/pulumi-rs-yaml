@@ -1,0 +1,51 @@
+{
+  "edges": [],
+  "nodes": [
+    {
+      "id": "stackoutput::org/prerendered/golden::greeting",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "greeting",
+      "name": "greeting",
+      "organization": "org",
+      "project": "prerendered",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/prerendered/golden::stackName",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "stackName",
+      "name": "stackName",
+      "organization": "org",
+      "project": "prerendered",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::prerendered::pulumi:pulumi:Stack::prerendered-golden",
+      "kind": "stack",
+      "literal_properties": {},
+      "logical_name": "stack",
+      "name": "prerendered-golden",
+      "organization": "org",
+      "package": "pulumi",
+      "project": "prerendered",
+      "stack": "golden",
+      "type_token": "pulumi:pulumi:Stack"
+    }
+  ],
+  "organization": "org",
+  "project": "prerendered",
+  "schema_version": 1,
+  "sql_lineage": {
+    "edges": [],
+    "nodes": [],
+    "organization": "org",
+    "project": "prerendered",
+    "schema_version": 1,
+    "stack": "golden"
+  },
+  "stack": "golden"
+}

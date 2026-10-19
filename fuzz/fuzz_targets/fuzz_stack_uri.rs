@@ -14,7 +14,10 @@
 #![no_main]
 use libfuzzer_sys::fuzz_target;
 
-use pulumi_rs_yaml_core::resource_key::{bq_to_resource_key, resource_key, TEMPLATES};
+use pulumi_rs_yaml_core::resource_key::{
+    bq_to_resource_key, resource_key, resource_key_from_properties, resource_key_with_properties,
+    TEMPLATES,
+};
 use pulumi_rs_yaml_core::stack_uri::{
     current_backend_from_credentials, parse_backend, resolve_backend, Backend, BackendSource,
     StackUri,
@@ -40,6 +43,13 @@ fn check_key(key: &str) {
     );
     assert!(
         !key.contains("//",) || key.matches("//").count() == 1,
+        "{key}"
+    );
+    // Every segment after the host is a collection or an id: never empty,
+    // never a dot segment -- nothing escapes its place in the name.
+    let path = key[2..].split_once('/').map_or("", |(_, p)| p);
+    assert!(
+        path.split('/').all(|s| !s.is_empty() && s != "." && s != ".."),
         "{key}"
     );
 }
@@ -92,13 +102,50 @@ fuzz_target!(|data: &[u8]| {
         BackendSource::None => assert_eq!(got, None),
     }
 
-    // Resource keys: well-formed or absent, for every template.
+    // Resource keys: well-formed or absent, for every template, from a
+    // provider id, from properties, and from both.
+    let props = [
+        ("project", project),
+        ("location", org),
+        ("region", org),
+        ("name", stack),
+        ("datasetId", stack),
+        ("tableId", urn),
+        ("routineId", urn),
+        ("batchId", urn),
+        ("jobId", urn),
+        ("accountId", stack),
+    ];
     for t in TEMPLATES {
         let ty = format!("gcp:{}:{}", t.module, t.name);
         if let Some(k) = resource_key(&ty, url) {
             check_key(&k);
         }
+        if let Some(k) = resource_key_from_properties(&ty, props) {
+            check_key(&k);
+        }
+        if let Some(k) = resource_key_with_properties(&ty, url, props) {
+            check_key(&k);
+        }
     }
+    // A Cloud Run v1 id keys exactly as the v2 relative name it spells.
+    if let Some(k) = resource_key("gcp:cloudrun:Service", url) {
+        let mut p = url.split('/');
+        let (_, l, _, ns, _, s) = (p.next(), p.next(), p.next(), p.next(), p.next(), p.next());
+        let v2 = format!(
+            "projects/{}/locations/{}/services/{}",
+            ns.unwrap_or(""),
+            l.unwrap_or(""),
+            s.unwrap_or("")
+        );
+        assert_eq!(Some(k), resource_key("gcp:cloudrunv2:Service", &v2), "{url}");
+    }
+    // A BigQuery job's key never exists without a location.
+    assert_eq!(
+        resource_key_with_properties("gcp:bigquery:Job", url, [("project", project)]),
+        resource_key("gcp:bigquery:Job", url),
+        "{url}"
+    );
     if let Some(k) = bq_to_resource_key(url) {
         check_key(&k);
     }

@@ -1,6 +1,6 @@
 [package]
 name = "pulumi-rs-yaml-core"
-version = "0.5.38"
+version = "0.5.39"
 edition = "2021"
 description = "Core library for pulumi-rs-yaml: parser, AST, evaluator"
 license.workspace = true
@@ -9,7 +9,7 @@ license.workspace = true
 default = ["sql-lineage"]
 # SQL parsing + table/column lineage extraction (adds the polyglot-sql
 # parser; opt out with --no-default-features for a smaller build).
-sql-lineage = ["dep:polyglot-sql"]
+sql-lineage = ["dep:polyglot-sql", "dep:memchr"]
 
 [dependencies]
 pulumi-rs-yaml-proto = { path = "../pulumi-rs-yaml-proto" }
@@ -37,6 +37,8 @@ hcl-rs = { workspace = true }
 rayon = { workspace = true }
 starlark = { workspace = true }
 regex = { workspace = true }
+# Delimiter search in the SQL statement splitter; already in the tree via regex.
+memchr = { version = "2.7", optional = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

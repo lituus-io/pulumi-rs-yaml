@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "organization": "org",
+  "project": "prerendered",
+  "stack": "golden",
+  "nodes": [],
+  "edges": []
+}

@@ -359,7 +359,9 @@ deployed resource: its full resource name,
 `//{service}.googleapis.com/{relative-name}`. `resource_key(type,
 provider_id)` builds it from a Pulumi type and the provider id the deploy
 recorded; `resource_key_from_properties(type, props)` from literal
-properties when the id is a bare name; `bq_to_resource_key(id)` from a
+properties when the id is a bare name; `resource_key_with_properties(type,
+provider_id, props)` from both -- the provider id first, the properties
+filling in what it lacks, then the properties alone; `bq_to_resource_key(id)` from a
 lineage id (`bq://p/d/t`, `bq-routine://p/d/r`) or a SQL reference
 (`p.d.t`); `bq_job_resource_key(p, location, job_id)` for a BigQuery job.
 
@@ -368,9 +370,11 @@ lineage id (`bq://p/d/t`, `bq-routine://p/d/r`) or a SQL reference
 | `gcp:bigquery:Dataset` | `projects/{p}/datasets/{d}` | `//bigquery.googleapis.com/projects/{p}/datasets/{d}` |
 | `gcp:bigquery:Table` | `projects/{p}/datasets/{d}/tables/{t}` | `//bigquery.googleapis.com/projects/{p}/datasets/{d}/tables/{t}` |
 | `gcp:bigquery:Routine` | `projects/{p}/datasets/{d}/routines/{r}` | `//bigquery.googleapis.com/projects/{p}/datasets/{d}/routines/{r}` |
+| `gcp:bigquery:Job` | `projects/{p}/jobs/{j}` + `location` property | `//bigquery.googleapis.com/projects/{p}/locations/{l}/jobs/{j}` |
 | `gcp:bigquery:DataTransferConfig` | `projects/{p}/locations/{l}/transferConfigs/{id}` | `//bigquerydatatransfer.googleapis.com/projects/{p}/locations/{l}/transferConfigs/{id}` |
 | `gcp:workflows:Workflow` | `projects/{p}/locations/{l}/workflows/{w}` | `//workflows.googleapis.com/projects/{p}/locations/{l}/workflows/{w}` |
 | `gcp:cloudscheduler:Job` | `projects/{p}/locations/{l}/jobs/{j}` | `//cloudscheduler.googleapis.com/projects/{p}/locations/{l}/jobs/{j}` |
+| `gcp:cloudrun:Service` (v1) | `locations/{l}/namespaces/{p}/services/{s}` | `//run.googleapis.com/projects/{p}/locations/{l}/services/{s}` |
 | `gcp:cloudrunv2:Service` | `projects/{p}/locations/{l}/services/{s}` | `//run.googleapis.com/projects/{p}/locations/{l}/services/{s}` |
 | `gcp:cloudrunv2:Job` | `projects/{p}/locations/{l}/jobs/{j}` | `//run.googleapis.com/projects/{p}/locations/{l}/jobs/{j}` |
 | `gcp:storage:Bucket` | `{name}` | `//storage.googleapis.com/projects/_/buckets/{name}` |
@@ -379,6 +383,7 @@ lineage id (`bq://p/d/t`, `bq-routine://p/d/r`) or a SQL reference
 | `gcp:dataproc:Batch` | `projects/{p}/locations/{l}/batches/{b}` | `//dataproc.googleapis.com/projects/{p}/locations/{l}/batches/{b}` |
 | `gcp:batch:Job` | `projects/{p}/locations/{l}/jobs/{j}` | `//batch.googleapis.com/projects/{p}/locations/{l}/jobs/{j}` |
 | `gcp:serviceaccount:Account` | `projects/{p}/serviceAccounts/{email}` | `//iam.googleapis.com/projects/{p}/serviceAccounts/{email}` |
+| `gcp:serviceaccount:Account` (properties) | `accountId` + `project` | `//iam.googleapis.com/projects/{p}/serviceAccounts/{accountId}@{p}.iam.gserviceaccount.com` |
 | (BigQuery job, runtime only) | `projects/{p}/jobs/{id}` + location | `//bigquery.googleapis.com/projects/{p}/locations/{l}/jobs/{id}` |
 
 Normalization (the same as the lineage ids): the project is lowercased, a
@@ -386,6 +391,21 @@ domain-scoped project (`example.com:proj`) stays one segment, a table's
 `$partition` decorator is stripped, every other segment keeps its case. A
 segment that is empty or holds `/`, `#`, `?`, whitespace or a control
 character gives no key. The project is the project ID, never the number.
+
+Three types need more than the id:
+
+- A Cloud Run v1 service is the same resource as a v2 one, so it has the v2
+  key. Its namespace is the project; a namespace that is a project number
+  gives no key.
+- A BigQuery job's provider id holds no location, which the key needs. It
+  comes from the job's `location` property (`resource_key_with_properties`);
+  without one there is no key, never a guessed default. The key is the one
+  `bq_job_resource_key` builds from an audit log.
+- A service account's key built from properties uses `email` when present,
+  otherwise `{accountId}@{p}.iam.gserviceaccount.com` -- the email form Cloud
+  Asset Inventory accepts, and the same key as the provider-id path. A
+  domain-scoped project `example.com:proj` gives
+  `{accountId}@proj.example.com.iam.gserviceaccount.com`.
 
 The same templates in BigQuery SQL, for a view or a Workflow that builds keys
 from logs:

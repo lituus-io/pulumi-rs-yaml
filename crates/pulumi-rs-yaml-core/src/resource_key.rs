@@ -24,9 +24,25 @@
 //! The per-type table is [`TEMPLATES`]; `GRAPH.md` carries the same table for
 //! SQL and Workflow authors.
 
-/// One supported type: the Pulumi type module and name, the service, and the
-/// collections the provider id walks (`projects/{p}/datasets/{d}` is
-/// `["projects", "datasets"]`).
+/// How a type's provider id relates to its relative name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdForm {
+    /// The provider id is the relative name.
+    Relative,
+    /// A bucket's bare name (or `projects/_/buckets/{name}`): bucket names
+    /// are global, so the key's project is `_`.
+    BucketName,
+    /// Cloud Run v1: `locations/{l}/namespaces/{p}/services/{s}`, the same
+    /// service Cloud Run v2 names `projects/{p}/locations/{l}/services/{s}`.
+    RunV1,
+    /// `projects/{p}/jobs/{id}`: the id holds no location, which the key
+    /// needs; it comes from the `location` property, or there is no key.
+    LocationInProperty,
+}
+
+/// One supported type: the Pulumi type module and name, the service, the
+/// collections of the key's relative name (`projects/{p}/datasets/{d}` is
+/// `["projects", "datasets"]`), and how the provider id spells it.
 #[derive(Debug, Clone, Copy)]
 pub struct KeyTemplate {
     /// `module/name` as it appears in the canonical token
@@ -35,94 +51,122 @@ pub struct KeyTemplate {
     pub name: &'static str,
     pub service: &'static str,
     pub collections: &'static [&'static str],
+    pub id_form: IdForm,
+}
+
+impl KeyTemplate {
+    const fn relative(
+        module: &'static str,
+        name: &'static str,
+        service: &'static str,
+        collections: &'static [&'static str],
+    ) -> Self {
+        Self::with_form(module, name, service, collections, IdForm::Relative)
+    }
+
+    const fn with_form(
+        module: &'static str,
+        name: &'static str,
+        service: &'static str,
+        collections: &'static [&'static str],
+        id_form: IdForm,
+    ) -> Self {
+        Self {
+            module,
+            name,
+            service,
+            collections,
+            id_form,
+        }
+    }
 }
 
 /// Every type [`resource_key`] answers for.
 pub const TEMPLATES: &[KeyTemplate] = &[
-    KeyTemplate {
-        module: "bigquery",
-        name: "Dataset",
-        service: "bigquery",
-        collections: &["projects", "datasets"],
-    },
-    KeyTemplate {
-        module: "bigquery",
-        name: "Table",
-        service: "bigquery",
-        collections: &["projects", "datasets", "tables"],
-    },
-    KeyTemplate {
-        module: "bigquery",
-        name: "Routine",
-        service: "bigquery",
-        collections: &["projects", "datasets", "routines"],
-    },
-    KeyTemplate {
-        module: "bigquery",
-        name: "DataTransferConfig",
-        service: "bigquerydatatransfer",
-        collections: &["projects", "locations", "transferConfigs"],
-    },
-    KeyTemplate {
-        module: "workflows",
-        name: "Workflow",
-        service: "workflows",
-        collections: &["projects", "locations", "workflows"],
-    },
-    KeyTemplate {
-        module: "cloudscheduler",
-        name: "Job",
-        service: "cloudscheduler",
-        collections: &["projects", "locations", "jobs"],
-    },
-    KeyTemplate {
-        module: "cloudrunv2",
-        name: "Service",
-        service: "run",
-        collections: &["projects", "locations", "services"],
-    },
-    KeyTemplate {
-        module: "cloudrunv2",
-        name: "Job",
-        service: "run",
-        collections: &["projects", "locations", "jobs"],
-    },
-    KeyTemplate {
-        module: "storage",
-        name: "Bucket",
-        service: "storage",
-        collections: &["buckets"],
-    },
-    KeyTemplate {
-        module: "pubsub",
-        name: "Topic",
-        service: "pubsub",
-        collections: &["projects", "topics"],
-    },
-    KeyTemplate {
-        module: "pubsub",
-        name: "Subscription",
-        service: "pubsub",
-        collections: &["projects", "subscriptions"],
-    },
-    KeyTemplate {
-        module: "dataproc",
-        name: "Batch",
-        service: "dataproc",
-        collections: &["projects", "locations", "batches"],
-    },
-    KeyTemplate {
-        module: "batch",
-        name: "Job",
-        service: "batch",
-        collections: &["projects", "locations", "jobs"],
-    },
-    KeyTemplate {
-        module: "serviceaccount",
-        name: "Account",
-        service: "iam",
-        collections: &["projects", "serviceAccounts"],
-    },
+    KeyTemplate::relative("bigquery", "Dataset", "bigquery", &["projects", "datasets"]),
+    KeyTemplate::relative(
+        "bigquery",
+        "Table",
+        "bigquery",
+        &["projects", "datasets", "tables"],
+    ),
+    KeyTemplate::relative(
+        "bigquery",
+        "Routine",
+        "bigquery",
+        &["projects", "datasets", "routines"],
+    ),
+    KeyTemplate::with_form(
+        "bigquery",
+        "Job",
+        "bigquery",
+        &["projects", "locations", "jobs"],
+        IdForm::LocationInProperty,
+    ),
+    KeyTemplate::relative(
+        "bigquery",
+        "DataTransferConfig",
+        "bigquerydatatransfer",
+        &["projects", "locations", "transferConfigs"],
+    ),
+    KeyTemplate::relative(
+        "workflows",
+        "Workflow",
+        "workflows",
+        &["projects", "locations", "workflows"],
+    ),
+    KeyTemplate::relative(
+        "cloudscheduler",
+        "Job",
+        "cloudscheduler",
+        &["projects", "locations", "jobs"],
+    ),
+    KeyTemplate::with_form(
+        "cloudrun",
+        "Service",
+        "run",
+        &["projects", "locations", "services"],
+        IdForm::RunV1,
+    ),
+    KeyTemplate::relative(
+        "cloudrunv2",
+        "Service",
+        "run",
+        &["projects", "locations", "services"],
+    ),
+    KeyTemplate::relative(
+        "cloudrunv2",
+        "Job",
+        "run",
+        &["projects", "locations", "jobs"],
+    ),
+    KeyTemplate::with_form(
+        "storage",
+        "Bucket",
+        "storage",
+        &["buckets"],
+        IdForm::BucketName,
+    ),
+    KeyTemplate::relative("pubsub", "Topic", "pubsub", &["projects", "topics"]),
+    KeyTemplate::relative(
+        "pubsub",
+        "Subscription",
+        "pubsub",
+        &["projects", "subscriptions"],
+    ),
+    KeyTemplate::relative(
+        "dataproc",
+        "Batch",
+        "dataproc",
+        &["projects", "locations", "batches"],
+    ),
+    KeyTemplate::relative("batch", "Job", "batch", &["projects", "locations", "jobs"]),
+    KeyTemplate::relative(
+        "serviceaccount",
+        "Account",
+        "iam",
+        &["projects", "serviceAccounts"],
+    ),
 ];
 
 /// The template for a Pulumi type token: the canonical
@@ -160,39 +204,18 @@ pub fn valid_segment(s: &str) -> bool {
             .any(|c| matches!(c, '/' | '#' | '?' | '`') || c.is_whitespace() || c.is_control())
 }
 
-/// `//{service}.googleapis.com/{relative-name}` for a deployed resource, from
-/// its Pulumi type and the provider id the deploy recorded. `None` for a type
-/// not in [`TEMPLATES`] or an id that does not have the type's shape.
-///
-/// A storage bucket's provider id is its bare name, and its key is
-/// `//storage.googleapis.com/projects/_/buckets/{name}` (Cloud Asset
-/// Inventory's form: bucket names are global). Every other supported type's
-/// provider id is already its relative name.
-pub fn resource_key(pulumi_type: &str, provider_id: &str) -> Option<String> {
-    let t = template_for(pulumi_type)?;
-    if t.collections == ["buckets"] {
-        let name = provider_id
-            .strip_prefix("projects/_/buckets/")
-            .unwrap_or(provider_id);
-        if !valid_segment(name) {
-            return None;
-        }
-        return Some(format!(
-            "//storage.googleapis.com/projects/_/buckets/{}",
-            name
-        ));
-    }
-    let segments: Vec<&str> = provider_id.split('/').collect();
-    if segments.len() != t.collections.len() * 2 {
-        return None;
-    }
-    let mut out = String::with_capacity(provider_id.len() + t.service.len() + 20);
+/// The key from the relative name's ids, one per collection of `t`, in
+/// order. Every id is checked by [`valid_segment`] before it is written; the
+/// project is canonicalised and a table's partition decorator stripped.
+fn key_from_ids<'a>(t: &KeyTemplate, ids: impl IntoIterator<Item = &'a str>) -> Option<String> {
+    let mut out = String::with_capacity(t.service.len() + 96);
     out.push_str("//");
     out.push_str(t.service);
     out.push_str(".googleapis.com");
-    for (i, pair) in segments.chunks_exact(2).enumerate() {
-        let (collection, id) = (pair[0], pair[1]);
-        if collection != t.collections[i] || !valid_segment(id) {
+    let mut collections = t.collections.iter();
+    for (i, id) in ids.into_iter().enumerate() {
+        let collection = *collections.next()?;
+        if !valid_segment(id) {
             return None;
         }
         let id = if i == 0 && collection == "projects" {
@@ -210,7 +233,123 @@ pub fn resource_key(pulumi_type: &str, provider_id: &str) -> Option<String> {
         out.push('/');
         out.push_str(&id);
     }
-    Some(out)
+    collections.next().is_none().then_some(out)
+}
+
+/// The ids of a provider id spelled `c0/{id0}/c1/{id1}/...` with exactly
+/// `collections`, in that order; `None` for any other shape.
+fn ids_of<'a, const N: usize>(
+    provider_id: &'a str,
+    collections: [&str; N],
+) -> Option<[&'a str; N]> {
+    let mut parts = provider_id.split('/');
+    let mut ids = [""; N];
+    for (slot, collection) in ids.iter_mut().zip(collections) {
+        if parts.next()? != collection {
+            return None;
+        }
+        *slot = parts.next()?;
+    }
+    parts.next().is_none().then_some(ids)
+}
+
+/// Whether a segment is a project NUMBER: a project id starts with a letter.
+fn is_project_number(s: &str) -> bool {
+    !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// `//{service}.googleapis.com/{relative-name}` for a deployed resource, from
+/// its Pulumi type and the provider id the deploy recorded. `None` for a type
+/// not in [`TEMPLATES`] or an id that does not have the type's shape.
+///
+/// A storage bucket's provider id is its bare name, and its key is
+/// `//storage.googleapis.com/projects/_/buckets/{name}` (Cloud Asset
+/// Inventory's form: bucket names are global). A Cloud Run v1 service's id,
+/// `locations/{l}/namespaces/{p}/services/{s}`, keys as the v2 service it is.
+/// A BigQuery job's id, `projects/{p}/jobs/{id}`, holds no location: it has
+/// a key only through [`resource_key_with_properties`]. Every other supported
+/// type's provider id is already its relative name.
+pub fn resource_key(pulumi_type: &str, provider_id: &str) -> Option<String> {
+    let t = template_for(pulumi_type)?;
+    match t.id_form {
+        IdForm::BucketName => {
+            let name = provider_id
+                .strip_prefix("projects/_/buckets/")
+                .unwrap_or(provider_id);
+            if !valid_segment(name) {
+                return None;
+            }
+            Some(format!(
+                "//storage.googleapis.com/projects/_/buckets/{}",
+                name
+            ))
+        }
+        IdForm::RunV1 => {
+            let [l, p, s] = ids_of(provider_id, ["locations", "namespaces", "services"])?;
+            if is_project_number(p) {
+                return None;
+            }
+            key_from_ids(t, [p, l, s])
+        }
+        IdForm::Relative | IdForm::LocationInProperty => {
+            let mut parts = provider_id.split('/');
+            let mut ids = Vec::with_capacity(t.collections.len());
+            for collection in t.collections {
+                if parts.next()? != *collection {
+                    return None;
+                }
+                ids.push(parts.next()?);
+            }
+            if parts.next().is_some() {
+                return None;
+            }
+            key_from_ids(t, ids)
+        }
+    }
+}
+
+/// The key from a deployed resource's provider id and its properties (inputs
+/// or outputs): the provider id when it is the relative name, then the
+/// properties filling in what the id lacks (a BigQuery job's `location`),
+/// then the properties alone ([`resource_key_from_properties`]).
+pub fn resource_key_with_properties<'a, I>(
+    pulumi_type: &str,
+    provider_id: &str,
+    properties: I,
+) -> Option<String>
+where
+    I: IntoIterator<Item = (&'a str, &'a str)>,
+{
+    let t = template_for(pulumi_type)?;
+    if let Some(key) = resource_key(pulumi_type, provider_id) {
+        return Some(key);
+    }
+    let props: Vec<(&str, &str)> = properties.into_iter().collect();
+    if t.id_form == IdForm::LocationInProperty {
+        if let Some([p, j]) = ids_of(provider_id, ["projects", "jobs"]) {
+            let location = props.iter().find(|(k, _)| *k == "location")?.1;
+            return key_from_ids(t, [p, location, j]);
+        }
+    }
+    resource_key_from_properties(pulumi_type, props)
+}
+
+/// A service account's email from its `accountId` and `project`:
+/// `{accountId}@{project}.iam.gserviceaccount.com`, a domain-scoped project
+/// `example.com:proj` giving `{accountId}@proj.example.com.iam.gserviceaccount.com`.
+fn service_account_email(account_id: &str, project: &str) -> Option<String> {
+    if !valid_segment(account_id) || account_id.contains('@') || !valid_segment(project) {
+        return None;
+    }
+    let project = canonical_project(project);
+    let host = match project.split_once(':') {
+        Some((domain, name)) if !domain.is_empty() && !name.is_empty() => {
+            format!("{}.{}", name, domain)
+        }
+        Some(_) => return None,
+        None => project.into_owned(),
+    };
+    Some(format!("{}@{}.iam.gserviceaccount.com", account_id, host))
 }
 
 /// The key built from a resource's literal properties, for when the provider
@@ -218,8 +357,9 @@ pub fn resource_key(pulumi_type: &str, provider_id: &str) -> Option<String> {
 /// Each collection reads its usual property: `projects` <- `project`,
 /// `locations` <- `location` or `region`, `datasets` <- `datasetId`,
 /// `tables` <- `tableId`, `routines` <- `routineId`, `batches` <- `batchId`,
-/// a service account <- `email`, everything else <- `name`. A transfer
-/// config's id is assigned by the server, so it has no key before deploy.
+/// `jobs` <- `jobId` or `name`, a service account <- `email` or
+/// `accountId` + `project`, everything else <- `name`. A transfer config's
+/// id is assigned by the server, so it has no key before deploy.
 pub fn resource_key_from_properties<'a, I>(pulumi_type: &str, properties: I) -> Option<String>
 where
     I: IntoIterator<Item = (&'a str, &'a str)>,
@@ -230,30 +370,31 @@ where
         keys.iter()
             .find_map(|k| props.iter().find(|(pk, _)| pk == k).map(|(_, v)| *v))
     };
-    let mut relative = String::new();
+    if t.id_form == IdForm::BucketName {
+        return resource_key(pulumi_type, get(&["name"])?);
+    }
+    let derived_email = match get(&["email"]) {
+        None if t.collections.contains(&"serviceAccounts") => {
+            service_account_email(get(&["accountId"])?, get(&["project"])?)
+        }
+        _ => None,
+    };
+    let mut ids = Vec::with_capacity(t.collections.len());
     for collection in t.collections {
-        let value = match *collection {
+        ids.push(match *collection {
             "projects" => get(&["project"]),
             "locations" => get(&["location", "region"]),
             "datasets" => get(&["datasetId"]),
             "tables" => get(&["tableId"]),
             "routines" => get(&["routineId"]),
             "batches" => get(&["batchId"]),
-            "serviceAccounts" => get(&["email"]),
+            "jobs" => get(&["jobId", "name"]),
+            "serviceAccounts" => get(&["email"]).or(derived_email.as_deref()),
             "transferConfigs" => None,
             _ => get(&["name"]),
-        }?;
-        if t.collections == ["buckets"] {
-            return resource_key(pulumi_type, value);
-        }
-        if !relative.is_empty() {
-            relative.push('/');
-        }
-        relative.push_str(collection);
-        relative.push('/');
-        relative.push_str(value);
+        }?);
     }
-    resource_key(pulumi_type, &relative)
+    key_from_ids(t, ids)
 }
 
 /// The key of a BigQuery JOB -- a runtime object, never a Pulumi resource --
@@ -522,6 +663,275 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn a_cloud_run_v1_service_keys_as_the_v2_service_it_is() {
+        let v1 = resource_key(
+            "gcp:cloudrun/service:Service",
+            "locations/us-central1/namespaces/Sample-Proj/services/api",
+        );
+        assert_eq!(
+            v1.as_deref(),
+            Some("//run.googleapis.com/projects/sample-proj/locations/us-central1/services/api")
+        );
+        assert_eq!(
+            v1,
+            resource_key(
+                "gcp:cloudrunv2/service:Service",
+                "projects/sample-proj/locations/us-central1/services/api"
+            )
+        );
+        assert_eq!(
+            resource_key_from_properties(
+                "gcp:cloudrun:Service",
+                [
+                    ("project", "sample-proj"),
+                    ("location", "us-central1"),
+                    ("name", "api")
+                ]
+            ),
+            v1
+        );
+        for id in [
+            // The v2 spelling is not a v1 id.
+            "projects/p/locations/l/services/s",
+            "locations/l/namespaces/p/services",
+            "locations/l/namespaces/p/services/s/revisions/r",
+            "locations/l/namespace/p/services/s",
+            // A project number is not a project id: no key, never a guess.
+            "locations/l/namespaces/123456789012/services/s",
+            "locations/../namespaces/p/services/s",
+            "locations/l/namespaces/p/services/a b",
+        ] {
+            assert_eq!(resource_key("gcp:cloudrun:Service", id), None, "{id}");
+        }
+    }
+
+    #[test]
+    fn a_bigquery_job_takes_its_location_from_a_property() {
+        let ty = "gcp:bigquery/job:Job";
+        let want = bq_job_resource_key("sample-proj", "US", "job_abc123");
+        assert_eq!(
+            want.as_deref(),
+            Some("//bigquery.googleapis.com/projects/sample-proj/locations/US/jobs/job_abc123")
+        );
+        // The provider id alone holds no location: no key, never a guess.
+        assert_eq!(
+            resource_key(ty, "projects/sample-proj/jobs/job_abc123"),
+            None
+        );
+        assert_eq!(
+            resource_key_with_properties(
+                ty,
+                "projects/Sample-Proj/jobs/job_abc123",
+                [("location", "US"), ("jobId", "job_abc123")]
+            ),
+            want
+        );
+        assert_eq!(
+            resource_key_with_properties(ty, "projects/sample-proj/jobs/job_abc123", []),
+            None
+        );
+        assert_eq!(
+            resource_key_with_properties(
+                ty,
+                "projects/sample-proj/jobs/job_abc123",
+                [("location", "")]
+            ),
+            None
+        );
+        assert_eq!(
+            resource_key_with_properties(
+                ty,
+                "projects/sample-proj/jobs/job_abc123",
+                [("location", "US/../EU")]
+            ),
+            None
+        );
+        // The relative name, when a caller has it, is the key.
+        assert_eq!(
+            resource_key(ty, "projects/sample-proj/locations/US/jobs/job_abc123"),
+            want
+        );
+        assert_eq!(
+            resource_key_from_properties(
+                ty,
+                [
+                    ("project", "sample-proj"),
+                    ("location", "US"),
+                    ("jobId", "job_abc123")
+                ]
+            ),
+            want
+        );
+        assert_eq!(
+            resource_key_from_properties(ty, [("project", "p"), ("jobId", "j")]),
+            None
+        );
+        // Every other type keeps the provider-id path and falls back to
+        // the properties.
+        assert_eq!(
+            resource_key_with_properties("gcp:pubsub:Topic", "projects/p/topics/t", []),
+            resource_key("gcp:pubsub:Topic", "projects/p/topics/t")
+        );
+        assert_eq!(
+            resource_key_with_properties("gcp:storage:Bucket", "bad/id", [("name", "b")])
+                .as_deref(),
+            Some("//storage.googleapis.com/projects/_/buckets/b")
+        );
+        assert_eq!(
+            resource_key_with_properties("gcp:compute:Instance", "x", []),
+            None
+        );
+    }
+
+    #[test]
+    fn a_service_account_is_keyed_from_its_account_id() {
+        let ty = "gcp:serviceaccount/account:Account";
+        let by_id = resource_key(
+            ty,
+            "projects/sample-proj/serviceAccounts/runner@sample-proj.iam.gserviceaccount.com",
+        );
+        assert_eq!(
+            by_id.as_deref(),
+            Some("//iam.googleapis.com/projects/sample-proj/serviceAccounts/runner@sample-proj.iam.gserviceaccount.com")
+        );
+        assert_eq!(
+            resource_key_from_properties(ty, [("accountId", "runner"), ("project", "Sample-Proj")]),
+            by_id
+        );
+        // An explicit email wins over the derived one.
+        assert_eq!(
+            resource_key_from_properties(
+                ty,
+                [
+                    ("accountId", "other"),
+                    ("project", "sample-proj"),
+                    ("email", "runner@sample-proj.iam.gserviceaccount.com"),
+                ]
+            ),
+            by_id
+        );
+        // A domain-scoped project's accounts live under `name.domain`.
+        assert_eq!(
+            resource_key_from_properties(ty, [("accountId", "runner"), ("project", "example.com:proj")]).as_deref(),
+            Some("//iam.googleapis.com/projects/example.com:proj/serviceAccounts/runner@proj.example.com.iam.gserviceaccount.com")
+        );
+        for props in [
+            [("accountId", "runner"), ("project", "")],
+            [("accountId", ""), ("project", "p")],
+            [("accountId", "a@b"), ("project", "p")],
+            [("accountId", "a/b"), ("project", "p")],
+            [("accountId", ".."), ("project", "p")],
+            [("accountId", "a"), ("project", "p/q")],
+            [("accountId", "a"), ("project", ":p")],
+            [("accountId", "a\u{0}"), ("project", "p")],
+        ] {
+            assert_eq!(resource_key_from_properties(ty, props), None, "{props:?}");
+        }
+        assert_eq!(
+            resource_key_from_properties(ty, [("accountId", "runner")]),
+            None
+        );
+    }
+
+    /// `//{service}.googleapis.com/` then `collection/id` pairs, every id a
+    /// valid segment.
+    fn assert_well_formed(k: &str) {
+        let rest = k.strip_prefix("//").expect(k);
+        let (host, path) = rest.split_once('/').expect(k);
+        assert!(host.ends_with(".googleapis.com"), "{k}");
+        let segments: Vec<&str> = path.split('/').collect();
+        assert_eq!(segments.len() % 2, 0, "{k}");
+        assert!(segments.iter().all(|s| valid_segment(s)), "{k}");
+    }
+
+    /// No key is ever built from a segment that could escape its place in the
+    /// name: a separator, a dot segment, whitespace or a control character.
+    #[test]
+    fn no_key_is_built_from_an_unvalidated_segment() {
+        const HOSTILE: &[&str] = &[
+            "",
+            ".",
+            "..",
+            "a/b",
+            "a/../b",
+            "a#b",
+            "a?b",
+            "a`b",
+            "a b",
+            "a\tb",
+            "a\nb",
+            "a\u{0}b",
+            "a\u{7f}b",
+            "a\u{85}b",
+            "a\u{2028}b",
+        ];
+        for t in TEMPLATES {
+            let ty = format!("gcp:{}:{}", t.module, t.name);
+            for bad in HOSTILE {
+                // Each id slot of the provider id in turn.
+                let n = t.collections.len();
+                for slot in 0..n {
+                    let ids: Vec<&str> = (0..n)
+                        .map(|i| if i == slot { *bad } else { "ok" })
+                        .collect();
+                    let relative: Vec<String> = t
+                        .collections
+                        .iter()
+                        .zip(&ids)
+                        .map(|(c, id)| format!("{c}/{id}"))
+                        .collect();
+                    let id = relative.join("/");
+                    assert_eq!(resource_key(&ty, &id), None, "{ty} {id:?}");
+                }
+                assert_eq!(resource_key(&ty, bad), None, "{ty} {bad:?}");
+                for key in [
+                    "project",
+                    "location",
+                    "region",
+                    "name",
+                    "datasetId",
+                    "tableId",
+                    "routineId",
+                    "batchId",
+                    "jobId",
+                    "email",
+                    "accountId",
+                ] {
+                    let mut props: Vec<(&str, &str)> = [
+                        ("project", "p"),
+                        ("location", "l"),
+                        ("name", "n"),
+                        ("datasetId", "d"),
+                        ("tableId", "t"),
+                        ("routineId", "r"),
+                        ("batchId", "b"),
+                        ("jobId", "j"),
+                        ("accountId", "a"),
+                    ]
+                    .into_iter()
+                    .filter(|(k, _)| *k != key)
+                    .collect();
+                    props.insert(0, (key, bad));
+                    if let Some(k) = resource_key_from_properties(&ty, props.iter().copied()) {
+                        assert_well_formed(&k);
+                    }
+                    if let Some(k) = resource_key_with_properties(
+                        &ty,
+                        "projects/p/jobs/j",
+                        props.iter().copied(),
+                    ) {
+                        assert_well_formed(&k);
+                    }
+                }
+            }
+        }
+        for (l, p, s) in [("..", "p", "s"), ("l", "a/b", "s"), ("l", "p", "a\u{0}")] {
+            let id = format!("locations/{l}/namespaces/{p}/services/{s}");
+            assert_eq!(resource_key("gcp:cloudrun:Service", &id), None, "{id:?}");
+        }
     }
 
     #[test]
