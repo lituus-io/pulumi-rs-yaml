@@ -1565,6 +1565,7 @@ version = "0.5.39"
 dependencies = [
  "base64",
  "hcl-rs",
+ "memchr",
  "minijinja",
  "polyglot-sql",
  "prost-types",

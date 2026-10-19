@@ -35,6 +35,19 @@ Proven through a real `pulumi up` on a local backend
   its relative name. Every id segment is still validated before it is
   written; a property-built key is held to the same rule.
 
+### Statement splitting: faster, and no longer at the mercy of code layout
+
+`split_statement_spans` dispatched on every byte of a script, and its speed
+depended on where the compiler placed that loop: on x86-64 runners the same
+machine code measured 1.36 ms per MiB in one build and 1.87 ms in another
+after unrelated code moved it. A plain byte now costs one table lookup, and
+quotes and comments are crossed by a search for their terminator (inline for
+short spans, `memchr` beyond). 1 MiB of dense statements: 1.36 to 1.12 ms on
+AMD EPYC 7763, 1.24 to 0.99 ms on Intel Xeon 6, 1.58 to 0.85 ms on Apple
+M-series; 1 MiB of long literals and comments now takes 0.17 to 0.23 ms
+(new bench `split_statement_spans_1mib_long_literals`). Output is unchanged:
+checked against the previous splitter on 200,000 random scripts.
+
 ## 0.5.38
 
 ### Where a referenced stack really is
