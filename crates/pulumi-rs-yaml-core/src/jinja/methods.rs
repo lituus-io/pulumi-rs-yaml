@@ -72,10 +72,14 @@ impl<'a, 's, 'e> Call<'a, 's, 'e> {
         if self.args.len() > n {
             return Err(Error::new(
                 ErrorKind::TooManyArguments,
-                format!(
-                    "{method}() takes at most {n} arguments ({} given)",
-                    self.args.len()
-                ),
+                if n == 0 {
+                    format!("{method}() takes no arguments ({} given)", self.args.len())
+                } else {
+                    format!(
+                        "{method}() takes at most {n} arguments ({} given)",
+                        self.args.len()
+                    )
+                },
             ));
         }
         match &self.kwargs {
