@@ -700,18 +700,18 @@ fn arith(a: &Value, b: &Value, sub: bool) -> Option<Result<Value, Error>> {
 }
 
 /// `__rsyaml_add(a, b)`: `a + b`, dates included.
-pub(super) fn add(state: &State<'_, '_>, a: Value, b: Value) -> Result<Value, Error> {
+pub(super) fn add(_state: &State<'_, '_>, a: Value, b: Value) -> Result<Value, Error> {
     match arith(&a, &b, false) {
         Some(r) => r,
-        None => engine_op(state, a, b, "+"),
+        None => engine_op(a, b, "+"),
     }
 }
 
 /// `__rsyaml_sub(a, b)`: `a - b`, dates included.
-pub(super) fn sub(state: &State<'_, '_>, a: Value, b: Value) -> Result<Value, Error> {
+pub(super) fn sub(_state: &State<'_, '_>, a: Value, b: Value) -> Result<Value, Error> {
     match arith(&a, &b, true) {
         Some(r) => r,
-        None => engine_op(state, a, b, "-"),
+        None => engine_op(a, b, "-"),
     }
 }
 

@@ -39,31 +39,64 @@ const INCLUDE_DEPTH: &str = "__rsyaml_include_depth";
 /// recursion budget, so this matches what that budget allows.
 const MAX_ISOLATED_DEPTH: i64 = 50;
 
-/// The engine's own `a <op> b`, evaluated by it.
-pub(super) fn engine_op(
-    state: &State<'_, '_>,
-    a: Value,
-    b: Value,
-    op: &str,
-) -> Result<Value, Error> {
-    let src = match op {
-        "+" => "a + b",
-        "-" => "a - b",
-        "/" => "a / b",
-        "//" => "a // b",
-        "*" => "a * b",
-        "**" => "a ** b",
-        "%" => "a % b",
-        _ => unreachable!("an operator the prepass does not route"),
+/// `a <op> b` where Python's numbers do not apply: the engine's own rules
+/// for its operators, with its messages, so a routed operator answers as
+/// the unrouted one did. Numbers use checked arithmetic (an overflow is
+/// "unable to calculate"); `+` joins two strings or two lists; anything
+/// else is "tried to use <op> operator on unsupported types". A joined list
+/// is a list, where the engine kept a lazy sequence, so it can be indexed
+/// as in Python.
+pub(super) fn engine_op(a: Value, b: Value, op: &str) -> Result<Value, Error> {
+    let failed = || {
+        Error::new(
+            ErrorKind::InvalidOperation,
+            format!("unable to calculate {a} {op} {b}"),
+        )
     };
-    // Raised again without the inner expression's location, so the error
-    // is placed at the template's own line.
-    let relocated = |e: Error| Error::new(e.kind(), e.detail().unwrap_or_default().to_string());
-    state
-        .env()
-        .compile_expression(src)
-        .and_then(|expr| expr.eval(minijinja::context! { a => a, b => b }))
-        .map_err(relocated)
+    let unsupported = || {
+        Error::new(
+            ErrorKind::InvalidOperation,
+            format!(
+                "tried to use {op} operator on unsupported types {} and {}",
+                a.kind(),
+                b.kind()
+            ),
+        )
+    };
+    let seq = |v: &Value| matches!(v.kind(), ValueKind::Seq | ValueKind::Iterable);
+    match op {
+        "+" | "-" => match (num(&a), num(&b)) {
+            (Some(Num::Int(x)), Some(Num::Int(y))) => if op == "+" {
+                x.checked_add(y)
+            } else {
+                x.checked_sub(y)
+            }
+            .map(int_value)
+            .ok_or_else(failed),
+            (Some(x), Some(y)) => {
+                let (x, y) = (as_f64(&x), as_f64(&y));
+                Ok(Value::from(if op == "+" { x + y } else { x - y }))
+            }
+            _ if op == "+" && seq(&a) && seq(&b) => {
+                let mut out: Vec<Value> = a.try_iter()?.collect();
+                out.extend(b.try_iter()?);
+                Ok(Value::from(out))
+            }
+            _ => match (op, a.as_str(), b.as_str()) {
+                ("+", Some(x), Some(y)) => Ok(Value::from([x, y].concat())),
+                _ => Err(unsupported()),
+            },
+        },
+        "*" if a.kind() == ValueKind::String || b.kind() == ValueKind::String => Err(Error::new(
+            ErrorKind::InvalidOperation,
+            "strings can only be multiplied with integers",
+        )),
+        "*" if seq(&a) || seq(&b) => Err(Error::new(
+            ErrorKind::InvalidOperation,
+            "sequences and iterables can only be multiplied with integers",
+        )),
+        _ => Err(unsupported()),
+    }
 }
 
 /// An undefined operand is an undefined variable, as it is to the engine's
@@ -121,10 +154,10 @@ fn int_value(n: i128) -> Value {
 }
 
 /// `__rsyaml_div(a, b)`: Python's true division.
-pub(super) fn div(state: &State<'_, '_>, a: Value, b: Value) -> Result<Value, Error> {
+pub(super) fn div(_state: &State<'_, '_>, a: Value, b: Value) -> Result<Value, Error> {
     defined(&a, &b)?;
     let (Some(x), Some(y)) = (num(&a), num(&b)) else {
-        return engine_op(state, a, b, "/");
+        return engine_op(a, b, "/");
     };
     if is_zero(&y) {
         return Err(zero_division(match (&x, &y) {
@@ -136,10 +169,10 @@ pub(super) fn div(state: &State<'_, '_>, a: Value, b: Value) -> Result<Value, Er
 }
 
 /// `__rsyaml_floordiv(a, b)`: Python's floor division.
-pub(super) fn floordiv(state: &State<'_, '_>, a: Value, b: Value) -> Result<Value, Error> {
+pub(super) fn floordiv(_state: &State<'_, '_>, a: Value, b: Value) -> Result<Value, Error> {
     defined(&a, &b)?;
     let (Some(x), Some(y)) = (num(&a), num(&b)) else {
-        return engine_op(state, a, b, "//");
+        return engine_op(a, b, "//");
     };
     if is_zero(&y) {
         return Err(zero_division(match (&x, &y) {
@@ -170,7 +203,7 @@ pub(super) fn modulo(state: &State<'_, '_>, a: Value, b: Value) -> Result<Value,
         return Ok(Value::from(printf(fmt, &b, cap)?));
     }
     let (Some(x), Some(y)) = (num(&a), num(&b)) else {
-        return engine_op(state, a, b, "%");
+        return engine_op(a, b, "%");
     };
     if is_zero(&y) {
         return Err(zero_division(match (&x, &y) {
@@ -248,7 +281,7 @@ pub(super) fn mul(state: &State<'_, '_>, a: Value, b: Value) -> Result<Value, Er
                     x.checked_mul(y).map(int_value).ok_or_else(|| overflow("*"))
                 }
                 (Some(x), Some(y)) => Ok(Value::from(as_f64(&x) * as_f64(&y))),
-                _ => engine_op(state, a, b, "*"),
+                _ => engine_op(a, b, "*"),
             }
         }
     };
@@ -287,10 +320,10 @@ pub(super) fn mul(state: &State<'_, '_>, a: Value, b: Value) -> Result<Value, Er
 /// `__rsyaml_pow(a, b)`: Python's `**`. An integer to a negative integer
 /// power is a float, and zero to a negative power raises; the rest is the
 /// engine's.
-pub(super) fn pow(state: &State<'_, '_>, a: Value, b: Value) -> Result<Value, Error> {
+pub(super) fn pow(_state: &State<'_, '_>, a: Value, b: Value) -> Result<Value, Error> {
     defined(&a, &b)?;
     let (Some(x), Some(y)) = (num(&a), num(&b)) else {
-        return engine_op(state, a, b, "**");
+        return engine_op(a, b, "**");
     };
     let negative = match y {
         Num::Int(e) => e < 0,

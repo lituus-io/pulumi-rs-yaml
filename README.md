@@ -79,7 +79,7 @@ limits (`PULUMI_YAML_JINJA_LIMITS`), where includes may reach, the error
 format, and every difference from Python Jinja2. Its examples are executed
 by the test suite.
 
-The engine is held to pinned reference Jinja2 by a conformance corpus of 338
+The engine is held to pinned reference Jinja2 by a conformance corpus of 340
 cases and 73 method cases (the methods also against the embedded Starlark) ([MATRIX.md](tests/jinja_conformance/MATRIX.md),
 [DIVERGENCES.md](tests/jinja_conformance/DIVERGENCES.md)); CI regenerates the
 goldens from the reference and fails on any drift.

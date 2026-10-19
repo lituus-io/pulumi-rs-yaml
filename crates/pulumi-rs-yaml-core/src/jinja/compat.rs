@@ -698,18 +698,58 @@ fn join_compat(value: Value, args: &[Value], kwargs: Kwargs) -> Result<Value, Er
     Ok(Value::from(out))
 }
 
-/// Jinja2's `dictsort(value, case_sensitive=False, by='key', reverse=False)`
-/// with its positional spelling; the sort itself is minijinja's.
+/// Jinja2's `dictsort(value, case_sensitive=False, by='key', reverse=False)`,
+/// positional or by name: the `(key, value)` pairs of a mapping, sorted by
+/// key or value, strings compared case-insensitively unless asked, stable
+/// (equal entries keep their order, reversed too, as Python's `sorted`).
+///
+/// Sorted as `[sort key, position]` values through the engine's own sort of
+/// values, which the binary already carries.
 fn dictsort_compat(value: Value, args: &[Value], kwargs: Kwargs) -> Result<Value, Error> {
     at_most(args, 3, "dictsort")?;
-    let mut pass: Vec<(String, Value)> = Vec::with_capacity(3);
-    for (idx, name) in ["case_sensitive", "by", "reverse"].into_iter().enumerate() {
-        if let Some(v) = arg(args, idx, &kwargs, name)? {
-            pass.push((name.to_string(), v));
-        }
-    }
+    let case_sensitive = as_bool(arg(args, 0, &kwargs, "case_sensitive")?);
+    let by = arg(args, 1, &kwargs, "by")?;
+    let reverse = as_bool(arg(args, 2, &kwargs, "reverse")?);
     kwargs.assert_all_used()?;
-    minijinja::filters::dictsort(&value, Kwargs::from_iter(pass))
+    let by_value = match by.as_ref().map(|b| b.as_str()) {
+        None | Some(Some("key")) => false,
+        Some(Some("value")) => true,
+        _ => return Err(invalid("You can only sort by either \"key\" or \"value\"")),
+    };
+    if value.kind() != ValueKind::Map {
+        return Err(invalid("cannot convert value into pair list"));
+    }
+    let mut pairs = Vec::new();
+    for key in value.try_iter()? {
+        let item = value.get_item(&key).unwrap_or(Value::UNDEFINED);
+        pairs.push((key, item));
+    }
+    let mut order: Vec<Value> = Vec::with_capacity(pairs.len());
+    for (i, (k, v)) in pairs.iter().enumerate() {
+        let on = if by_value { v } else { k };
+        let sort_key = match on.as_str() {
+            Some(s) if !case_sensitive => Value::from(s.to_lowercase()),
+            _ => on.clone(),
+        };
+        let at = if reverse { -(i as i64) } else { i as i64 };
+        order.push(Value::from(vec![sort_key, Value::from(at)]));
+    }
+    order.sort();
+    if reverse {
+        order.reverse();
+    }
+    let mut out = Vec::with_capacity(order.len());
+    for entry in &order {
+        let at = entry
+            .get_item_by_index(1)
+            .ok()
+            .and_then(|v| i64::try_from(v).ok())
+            .unwrap_or(0)
+            .unsigned_abs() as usize;
+        let (k, v) = &pairs[at];
+        out.push(Value::from(vec![k.clone(), v.clone()]));
+    }
+    Ok(Value::from(out))
 }
 
 /// The characters Jinja2's `title` treats as starting a word.

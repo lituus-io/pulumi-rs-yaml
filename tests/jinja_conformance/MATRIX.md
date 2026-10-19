@@ -11,7 +11,7 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 
 ## Totals
 
-- cases: 338 (281 byte-identical to Jinja2, 57 listed divergences)
+- cases: 340 (283 byte-identical to Jinja2, 57 listed divergences)
 - rows extension: 24
 - rows partial: 38
 - rows supported: 311
@@ -34,7 +34,7 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `count` | supported | filter_count | - |
 | `d` | supported | filter_d | - |
 | `default` | supported | filter_default | - |
-| `dictsort` | partial | filter_dictsort, filter_dictsort_case_sensitive | intended (filter_dictsort); intended (filter_dictsort_case_sensitive) |
+| `dictsort` | partial | filter_dictsort, filter_dictsort_bad_by_error, filter_dictsort_case_sensitive, filter_dictsort_ties_and_positional | intended (filter_dictsort); intended (filter_dictsort_case_sensitive) |
 | `e` | supported | filter_e | - |
 | `escape` | partial | filter_escape | intended (filter_escape) |
 | `filesizeformat` | supported | filter_filesizeformat | - |

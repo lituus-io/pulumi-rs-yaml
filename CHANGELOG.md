@@ -10,10 +10,10 @@ is the reference; every example in it is executed by the test suite.
 
 ### Conformance with reference Jinja2
 
-A corpus of 338 cases -- every statement, expression form, whitespace rule
+A corpus of 340 cases -- every statement, expression form, whitespace rule
 and error class, and one case per filter, test and global Jinja2 3.1.6 ships
 -- renders through the runtime and must equal pinned Jinja2's output byte for
-byte. 281 do; the 57 that differ are listed with reasons in
+byte. 283 do; the 57 that differ are listed with reasons in
 `tests/jinja_conformance/DIVERGENCES.md` (value formatting deployed stacks
 already depend on, extensions, refusals by design), with the runtime's own
 output pinned. `MATRIX.md` is generated from the corpus and both registries.
@@ -133,6 +133,18 @@ Python does or refuses with a typed error:
   was given, as Jinja2 does.
 
 Every input is a conformance case, a security test and a fuzz seed.
+
+`dictsort` is Jinja2's own (stable, Python's reverse, an unknown `by`
+refused with Jinja2's message), and an operator the prepass routes answers
+for non-numbers by the engine's rules and messages without compiling an
+expression per call; a joined list is a list, so it can be indexed.
+
+The binary stays inside the +2% size gate on every artefact with all of
+this: the render environment starts empty and registers only the engine
+builtins that are not replaced (the replaced ones no longer ship, unused),
+filters register through one closure per signature, and `list.sort`,
+`dictsort` and the prepass sort through the engine's existing sort of
+values rather than instantiating their own.
 
 ### Recursion reaches its limit on any stack
 
