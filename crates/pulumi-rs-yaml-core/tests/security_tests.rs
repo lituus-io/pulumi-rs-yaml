@@ -4647,3 +4647,85 @@ mod jinja_builtin_audit_security {
         );
     }
 }
+
+/// Two more engine panics the five-minute fuzz runs found, each a process
+/// abort in a release build: `loop.cycle()` with nothing to cycle computed
+/// `index % 0`, and a `continue` in a loop's `else` inside a macro defined
+/// in a loop popped a frame that was not a loop's. Both are now Jinja2's
+/// own errors: a TypeError when the call runs, and the compiler's
+/// "not properly in loop".
+mod jinja_loop_control_security {
+    use pulumi_rs_yaml_core::jinja::{
+        JinjaContext, JinjaLimits, JinjaPreprocessor, RenderErrorKind, UndefinedMode,
+    };
+    use std::collections::HashMap;
+
+    fn render(source: &str) -> Result<String, (RenderErrorKind, String)> {
+        let (config, extra) = (HashMap::new(), HashMap::new());
+        let ctx = JinjaContext {
+            project_name: "p",
+            stack_name: "s",
+            cwd: "/nonexistent-loop-root",
+            organization: "",
+            root_directory: "/nonexistent-loop-root",
+            config: &config,
+            project_dir: "/nonexistent-loop-root",
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits: JinjaLimits::default(),
+        };
+        JinjaPreprocessor::new(&ctx)
+            .render(source, "Pulumi.yaml")
+            .map(|c| c.into_owned())
+            .map_err(|d| (d.kind, d.message))
+    }
+
+    #[test]
+    fn a_cycle_with_nothing_to_cycle_is_a_type_error() {
+        let fuzz = include_str!(
+            "../../../fuzz/corpus/fuzz_jinja_conformance/seed-loop-cycle-no-items.txt"
+        );
+        for src in [
+            fuzz,
+            "{% for i in [1] %}{{ loop.cycle() }}{% endfor %}",
+            "{% for i in [1] %}{% set o = loop %}{{ o.cycle() }}{% endfor %}",
+        ] {
+            let (kind, msg) = render(src).expect_err(src);
+            assert_eq!(kind, RenderErrorKind::JinjaFilterError, "{src}");
+            assert!(msg.contains("no items for cycling given"), "{src}: {msg}");
+        }
+        assert_eq!(
+            render("{% if false %}{{ loop.cycle() }}{% endif %}ok").unwrap(),
+            "ok"
+        );
+        assert_eq!(
+            render("{% for i in range(3) %}{{ loop.cycle('a', 'b') }}{% endfor %}").unwrap(),
+            "aba"
+        );
+    }
+
+    #[test]
+    fn a_loop_control_outside_its_loop_is_refused_at_compile() {
+        for src in [
+            "{% for a in 'ab' %}{% macro m() %}{% for b in [] %}{% else %}{% continue %}{% endfor %}{% endmacro %}{{ m() }}{% endfor %}",
+            "{% for a in [1] %}{% macro m() %}{% for b in [] %}{% else %}{% break %}{% endfor %}{% endmacro %}{{ m() }}{% endfor %}",
+            "{% for b in [] %}{% else %}{% continue %}{% endfor %}",
+            "{% for a in [1] %}{% call(x) m() %}{% if x %}{% break %}{% endif %}{% endcall %}{% endfor %}",
+        ] {
+            let (kind, msg) = render(src).expect_err(src);
+            // Refused when it compiles: by the prepass, or by the engine's
+            // parser where it already sees the statement is outside a loop.
+            assert_eq!(kind, RenderErrorKind::JinjaSyntax, "{src}");
+            assert!(
+                msg.contains("not properly in loop") || msg.contains("must be placed inside a loop"),
+                "{src}: {msg}"
+            );
+        }
+        // Inside the loop's body, or a loop's else within an outer loop, it acts.
+        assert_eq!(
+            render("{% for a in [1, 2, 3] %}{% for b in [] %}{% else %}{% if a == 2 %}{% continue %}{% endif %}{% endfor %}{{ a }}{% endfor %}").unwrap(),
+            "13"
+        );
+    }
+}

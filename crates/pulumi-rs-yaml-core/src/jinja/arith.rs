@@ -30,6 +30,7 @@ pub(super) const FLOORDIV_FN: &str = "__rsyaml_floordiv";
 pub(super) const MOD_FN: &str = "__rsyaml_mod";
 pub(super) const MUL_FN: &str = "__rsyaml_mul";
 pub(super) const POW_FN: &str = "__rsyaml_pow";
+pub(super) const CYCLE_FN: &str = "__rsyaml_cycle";
 pub(super) const ITER_FN: &str = "__rsyaml_iter";
 pub(super) const INCLUDE_FN: &str = "__rsyaml_include";
 pub(super) const VARIADIC_FN: &str = "__rsyaml_variadic";
@@ -451,6 +452,19 @@ pub(super) fn batch(
         out.push(Value::from(tmp));
     }
     Ok(Value::from(out))
+}
+
+/// `x.cycle()` with nothing to cycle, routed by the prepass. On a loop it is
+/// Jinja2's `TypeError` -- minijinja computed `index % 0` and panicked; on
+/// anything else it is the call as written.
+pub(super) fn cycle(state: &State<'_, '_>, obj: Value, _: Value) -> Result<Value, Error> {
+    let is_loop = ["index0", "revindex0", "depth0"]
+        .iter()
+        .all(|a| obj.get_attr(a).is_ok_and(|v| !v.is_undefined()));
+    if is_loop {
+        return Err(super::methods::type_error("no items for cycling given"));
+    }
+    obj.call_method(state, "cycle", &[])
 }
 
 /// Jinja2's `divisibleby` test: `value % num == 0`, so a zero divisor

@@ -87,6 +87,8 @@ const OPERATORS: &[(&str, Binary)] = &[
     (super::arith::MOD_FN, super::arith::modulo),
     (super::arith::MUL_FN, super::arith::mul),
     (super::arith::POW_FN, super::arith::pow),
+    // `x.cycle()` with no arguments.
+    (super::arith::CYCLE_FN, super::arith::cycle),
 ];
 
 /// The engine's own filters, tests and globals that Jinja2 has and this

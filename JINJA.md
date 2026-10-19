@@ -22,7 +22,7 @@ page and the engine ever disagree, CI fails.
 
 The engine is [minijinja](https://github.com/mitsuhiko/minijinja) 2, extended
 and configured to behave as Jinja2 does, and held to it: the conformance
-corpus (`tests/jinja_conformance/`) renders 340 cases and 73 method
+corpus (`tests/jinja_conformance/`) renders 345 cases and 73 method
 cases through this runtime
 and compares each byte for byte with what pinned reference Jinja2 produces.
 The generated [capability matrix](tests/jinja_conformance/MATRIX.md) lists

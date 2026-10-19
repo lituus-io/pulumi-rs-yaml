@@ -66,6 +66,8 @@ Classes:
 | `filter_xmlattr` | unsupported | HTML-only: builds HTML attribute strings; a YAML program has no HTML to produce |
 | `global_dict` | intended | a list or map renders JSON-style (`["a"]`, `{"k": 1}`; pairs as lists) where Jinja2 prints Python reprs (`['a']`, `('k', 1)`); the values are identical, both are valid YAML flow, and stacks already deploy the JSON spelling -- use `tojson` for portable text |
 | `global_lipsum` | unsupported | refused by design: placeholder text has no place in an infrastructure program, and it is random, so a render would never be repeatable |
+| `stmt_continue_in_loop_else_error` | intended | the same refusal (`'continue' not properly in loop`), reported as the template syntax error it is; Jinja2 lets Python's compiler raise it, which surfaces as a generic error |
+| `stmt_continue_in_macro_loop_else_error` | intended | the same refusal (`'continue' not properly in loop`), reported as the template syntax error it is; Jinja2 lets Python's compiler raise it, which surfaces as a generic error |
 | `stmt_for_dict_items` | intended | a map literal iterates in key order; Jinja2 keeps insertion order -- use a list of pairs when order matters |
 | `stmt_for_dict_iter_keys` | intended | a map literal iterates in key order; Jinja2 keeps insertion order |
 | `stmt_namespace_self_reference` | intended | a namespace attribute may not be assigned a value holding a namespace: printing one that contains itself recursed until the stack overflowed, so it is refused at the assignment |

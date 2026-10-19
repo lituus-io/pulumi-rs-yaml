@@ -10,10 +10,10 @@ is the reference; every example in it is executed by the test suite.
 
 ### Conformance with reference Jinja2
 
-A corpus of 340 cases -- every statement, expression form, whitespace rule
+A corpus of 345 cases -- every statement, expression form, whitespace rule
 and error class, and one case per filter, test and global Jinja2 3.1.6 ships
 -- renders through the runtime and must equal pinned Jinja2's output byte for
-byte. 283 do; the 57 that differ are listed with reasons in
+byte. 286 do; the 59 that differ are listed with reasons in
 `tests/jinja_conformance/DIVERGENCES.md` (value formatting deployed stacks
 already depend on, extensions, refusals by design), with the runtime's own
 output pinned. `MATRIX.md` is generated from the corpus and both registries.
@@ -145,6 +145,17 @@ builtins that are not replaced (the replaced ones no longer ship, unused),
 filters register through one closure per signature, and `list.sort`,
 `dictsort` and the prepass sort through the engine's existing sort of
 values rather than instantiating their own.
+
+### Loop controls and `cycle` in the places Jinja2 refuses them
+
+Five-minute fuzz runs found two more engine panics. `loop.cycle()` with
+nothing to cycle computed `index % 0`; it is now Jinja2's `TypeError` (no
+items for cycling given) when the call runs. A `continue` or `break` in a
+loop's `else` -- which runs after the loop -- inside a macro defined in a
+loop was accepted, and popped a frame that was not a loop's; Jinja2's
+compiler refuses a loop control with no loop of its own to act on (a loop's
+`else` and a macro's body are outside the loop around them), and so does
+this one now, as a syntax error at the line.
 
 ### Recursion reaches its limit on any stack
 

@@ -16,6 +16,14 @@
 
 [[entry]]
 version = "0.5.40"
+heading = "Loop controls and `cycle` in the places Jinja2 refuses them"
+tests = [
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_cycle_with_nothing_to_cycle_is_a_type_error",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_loop_control_outside_its_loop_is_refused_at_compile",
+]
+
+[[entry]]
+version = "0.5.40"
 heading = "Every builtin, held to hostile counts and widths"
 tests = [
     "crates/pulumi-rs-yaml-core/tests/security_tests.rs::divisibleby_by_zero_is_a_zero_division_error",

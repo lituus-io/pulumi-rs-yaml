@@ -1326,8 +1326,17 @@ impl JinjaPreprocessor<'_> {
 
 /// The diagnostic for a template the pre-pass refused before it compiled.
 fn prepass_refusal<'src>(source: &'src str, refusal: prepass::Refusal) -> RenderDiagnostic<'src> {
+    let (kind, suggestion) = if refusal.syntax {
+        (
+            RenderErrorKind::JinjaSyntax,
+            "`break` and `continue` act on the loop whose body holds them; a loop's \
+             `else` and a macro's body are outside it",
+        )
+    } else {
+        (RenderErrorKind::JinjaTypeError, NAMESPACE_SUGGESTION)
+    };
     RenderDiagnostic {
-        kind: RenderErrorKind::JinjaTypeError,
+        kind,
         line: refusal.line,
         column: 0,
         end_column: 0,
@@ -1337,7 +1346,7 @@ fn prepass_refusal<'src>(source: &'src str, refusal: prepass::Refusal) -> Render
             .unwrap_or(""),
         expression: "",
         message: refusal.message,
-        suggestion: Some(NAMESPACE_SUGGESTION),
+        suggestion: Some(suggestion),
         origin: None,
     }
 }

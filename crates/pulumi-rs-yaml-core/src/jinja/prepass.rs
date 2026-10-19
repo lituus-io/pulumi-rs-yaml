@@ -124,6 +124,8 @@ struct Want {
     isolated: bool,
     /// Macros that take `varargs`/`kwargs`.
     variadic: bool,
+    /// `.cycle()` with nothing to cycle.
+    cycle: bool,
 }
 
 impl Want {
@@ -135,6 +137,7 @@ impl Want {
             || self.loops
             || self.isolated
             || self.variadic
+            || self.cycle
     }
 }
 
@@ -332,6 +335,17 @@ impl Walker<'_> {
                 self.expr(&g.subscript_expr);
             }
             Expr::Call(c) => {
+                if let (true, true, Expr::GetAttr(g)) =
+                    (self.want.cycle, c.args.is_empty(), &c.expr)
+                {
+                    if g.name == "cycle" {
+                        self.out.push(Site::new(
+                            range(e),
+                            super::arith::CYCLE_FN,
+                            &[Some(range(&g.expr)), None],
+                        ));
+                    }
+                }
                 if self.want.containers && matches!(&c.expr, Expr::Var(v) if v.id == "dict") {
                     self.out.push(Site::new(
                         range(e),
@@ -694,6 +708,9 @@ pub(super) const NAMESPACE_TAG: &str = "a namespace would hold itself";
 pub(super) struct Refusal {
     pub(super) line: u32,
     pub(super) message: String,
+    /// A misplaced `break`/`continue` is a syntax error, as Jinja2's
+    /// compiler reports it; a namespace cycle is a type error.
+    pub(super) syntax: bool,
 }
 
 /// `source` ready to compile: every slice that could take a negative step
@@ -723,9 +740,11 @@ pub(super) fn prepare_mapped<'s>(
         loops: source.contains("loop."),
         isolated: source.contains("without context"),
         variadic: source.contains("varargs") || source.contains("kwargs"),
+        cycle: source.contains("cycle("),
     };
     let attributes = may_set_attribute(source);
-    if !want.any() && !attributes {
+    let controls = source.contains("continue") || source.contains("break");
+    if !want.any() && !attributes && !controls {
         return Ok(Cow::Borrowed(source));
     }
     let Ok(ast) = parse(
@@ -738,6 +757,11 @@ pub(super) fn prepare_mapped<'s>(
     };
     if attributes {
         if let Some(refusal) = namespace_cycle(&ast) {
+            return Err(refusal);
+        }
+    }
+    if controls {
+        if let Some(refusal) = stray_loop_control(std::slice::from_ref(&ast), false) {
             return Err(refusal);
         }
     }
@@ -777,6 +801,39 @@ fn rewrite<'s>(source: &'s str, name: &str) -> Cow<'s, str> {
 // ---------------------------------------------------------------------------
 // Namespaces that would hold themselves
 // ---------------------------------------------------------------------------
+
+/// A `break` or `continue` with no loop of its own to act on. Jinja2
+/// compiles a template to Python, where a loop's `else` runs after the loop
+/// and a macro or call block is a function, so neither is inside the loop
+/// around it, and the compiler refuses the statement there. minijinja
+/// accepted it inside a macro defined in a loop and, at run time, popped a
+/// frame that was not a loop's: an engine panic, found by
+/// fuzz_jinja_template.
+fn stray_loop_control(stmts: &[Stmt<'_>], in_loop: bool) -> Option<Refusal> {
+    let refuse = |what: &str, line: u16| Refusal {
+        line: u32::from(line),
+        message: format!("'{what}' not properly in loop"),
+        syntax: true,
+    };
+    stmts.iter().find_map(|s| match s {
+        Stmt::Continue(c) if !in_loop => Some(refuse("continue", c.span().start_line)),
+        Stmt::Break(b) if !in_loop => Some(refuse("break", b.span().start_line)),
+        Stmt::Template(t) => stray_loop_control(&t.children, in_loop),
+        Stmt::ForLoop(l) => {
+            stray_loop_control(&l.body, true).or_else(|| stray_loop_control(&l.else_body, in_loop))
+        }
+        Stmt::IfCond(c) => stray_loop_control(&c.true_body, in_loop)
+            .or_else(|| stray_loop_control(&c.false_body, in_loop)),
+        Stmt::WithBlock(w) => stray_loop_control(&w.body, in_loop),
+        Stmt::SetBlock(b) => stray_loop_control(&b.body, in_loop),
+        Stmt::AutoEscape(a) => stray_loop_control(&a.body, in_loop),
+        Stmt::FilterBlock(b) => stray_loop_control(&b.body, in_loop),
+        Stmt::Block(b) => stray_loop_control(&b.body, in_loop),
+        Stmt::Macro(m) => stray_loop_control(&m.body, false),
+        Stmt::CallBlock(c) => stray_loop_control(&c.macro_decl.body, false),
+        _ => None,
+    })
+}
 
 /// Every statement of a template, depth first, with a callback.
 fn each_stmt<'a, F: FnMut(&'a Stmt<'a>)>(stmts: &'a [Stmt<'a>], f: &mut F) {
@@ -928,6 +985,7 @@ fn namespace_cycle<'a>(ast: &'a Stmt<'a>) -> Option<Refusal> {
                      without end",
                     root.id, target.name
                 ),
+                syntax: false,
             });
         }
     });
