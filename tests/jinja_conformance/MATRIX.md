@@ -11,10 +11,10 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 
 ## Totals
 
-- cases: 336 (279 byte-identical to Jinja2, 57 listed divergences)
+- cases: 338 (281 byte-identical to Jinja2, 57 listed divergences)
 - rows extension: 24
 - rows partial: 38
-- rows supported: 309
+- rows supported: 311
 - rows unit-tested: 1
 - rows unsupported: 6
 
@@ -264,6 +264,7 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `mut_list_set_return` | supported | - |
 | `mut_list_sort_key_reverse` | supported | - |
 | `mut_list_sort_mixed_error` | supported | - |
+| `mut_list_sort_stable_ties` | supported | - |
 | `mut_nested_append` | supported | - |
 | `stmt_autoescape_block` | supported | - |
 | `stmt_block_scoped` | supported | - |
@@ -291,6 +292,7 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `stmt_for_nested_cycle` | supported | - |
 | `stmt_for_nested_outer_loop` | supported | - |
 | `stmt_for_recursive` | supported | - |
+| `stmt_for_rewritten_iterable_same_span` | supported | - |
 | `stmt_for_scope_no_leak` | supported | - |
 | `stmt_for_string` | supported | - |
 | `stmt_for_string_loop_vars` | supported | - |

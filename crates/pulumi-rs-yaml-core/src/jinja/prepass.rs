@@ -749,11 +749,20 @@ pub(super) fn prepare_mapped<'s>(
     if want.any() {
         walker.stmt(&ast);
     }
-    let mut sites = walker.out;
-    if sites.is_empty() {
+    if walker.out.is_empty() {
         return Ok(Cow::Borrowed(source));
     }
-    sites.sort_by(|a, b| a.whole.0.cmp(&b.whole.0).then(b.whole.1.cmp(&a.whole.1)));
+    // Outermost first: by start, then the longer first, then in the order
+    // found (a stable order matters: two rewrites of one span nest in the
+    // order the walker met them). The walk finds them almost in order, so
+    // each is inserted after its equals near the end -- no sort is
+    // instantiated for a list this short and this nearly sorted.
+    let mut sites: Vec<Site> = Vec::with_capacity(walker.out.len());
+    for site in walker.out {
+        let key = |s: &Site| (s.whole.0, std::cmp::Reverse(s.whole.1));
+        let at = sites.partition_point(|t| key(t) <= key(&site));
+        sites.insert(at, site);
+    }
     let refs: Vec<&Site> = sites.iter().collect();
     let mut out = String::with_capacity(source.len() + sites.len() * 24);
     emit(source, &refs, 0, source.len(), &mut out, Some(edits));

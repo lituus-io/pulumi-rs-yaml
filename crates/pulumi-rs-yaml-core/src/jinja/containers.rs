@@ -267,17 +267,34 @@ impl Object for PyList {
                 if !comparable(&keys) {
                     return Err(type_error("'<' not supported between the list's values"));
                 }
-                let mut order: Vec<usize> = (0..snapshot.len()).collect();
-                // Stable, and reversal keeps equal items in place, as Python's.
-                order.sort_by(|&a, &b| {
-                    let o = keys[a].cmp(&keys[b]);
-                    if reverse {
-                        o.reverse()
-                    } else {
-                        o
-                    }
-                });
-                let sorted: Vec<Value> = order.into_iter().map(|i| snapshot[i].clone()).collect();
+                // Each item as `[key, position]`: ordered by key, equal keys
+                // by position, so the sort is stable. Reversed, the position
+                // is negated and the result turned round, which keeps equal
+                // items in their original order, as Python's does. Values
+                // compare as Values, so this is the engine's own sort of
+                // values rather than another instantiation of one.
+                let mut order: Vec<Value> = keys
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, k)| {
+                        let at = if reverse { -(i as i64) } else { i as i64 };
+                        Value::from(vec![k, Value::from(at)])
+                    })
+                    .collect();
+                order.sort();
+                if reverse {
+                    order.reverse();
+                }
+                let sorted: Vec<Value> = order
+                    .iter()
+                    .map(|pair| {
+                        let at = pair
+                            .get_item_by_index(1)
+                            .ok()
+                            .and_then(|v| i64::try_from(v).ok());
+                        snapshot[at.unwrap_or(0).unsigned_abs() as usize].clone()
+                    })
+                    .collect();
                 *self.mutate()? = sorted;
                 Ok(none)
             }

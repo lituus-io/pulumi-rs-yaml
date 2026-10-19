@@ -10,10 +10,10 @@ is the reference; every example in it is executed by the test suite.
 
 ### Conformance with reference Jinja2
 
-A corpus of 336 cases -- every statement, expression form, whitespace rule
+A corpus of 338 cases -- every statement, expression form, whitespace rule
 and error class, and one case per filter, test and global Jinja2 3.1.6 ships
 -- renders through the runtime and must equal pinned Jinja2's output byte for
-byte. 279 do; the 57 that differ are listed with reasons in
+byte. 281 do; the 57 that differ are listed with reasons in
 `tests/jinja_conformance/DIVERGENCES.md` (value formatting deployed stacks
 already depend on, extensions, refusals by design), with the runtime's own
 output pinned. `MATRIX.md` is generated from the corpus and both registries.
