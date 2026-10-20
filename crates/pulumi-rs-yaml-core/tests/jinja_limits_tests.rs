@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 //! Each render limit at its boundary: exactly at the limit renders, one past
 //! it is refused with its own kind. Counted, not timed: fuel is the number of

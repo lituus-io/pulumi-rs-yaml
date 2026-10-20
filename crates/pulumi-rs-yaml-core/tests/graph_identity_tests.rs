@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 //! Acceptance fixtures for stack identity, reference backends, cross-stack
 //! resolution and the IAM graph with host-supplied config.

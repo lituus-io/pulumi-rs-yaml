@@ -1,3 +1,6 @@
+<!-- Author: spicyzhug@gmail.com -->
+<!-- Copyright: lituus-io, all rights reserved -->
+
 # pulumi-rs-yaml
 
 [![CI](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/ci.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/ci.yml)

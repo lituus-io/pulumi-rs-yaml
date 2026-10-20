@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 //! A pass over a template before it compiles, for the two template shapes
 //! that crash minijinja 2.24 rather than fail. Release builds abort on panic

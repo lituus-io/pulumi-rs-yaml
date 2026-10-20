@@ -1,3 +1,6 @@
+# Author: spicyzhug@gmail.com
+# Copyright: lituus-io, all rights reserved
+
 # Force LF line endings for all text files to ensure consistent behavior
 # across platforms (prevents CRLF issues in golden tests on Windows)
 * text=auto eol=lf

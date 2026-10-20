@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 //! The single polyglot-sql integration boundary. Every parser call
 //! lives here so an API bump touches one file. All functions degrade

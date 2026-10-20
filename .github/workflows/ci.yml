@@ -1,3 +1,6 @@
+# Author: spicyzhug@gmail.com
+# Copyright: lituus-io, all rights reserved
+
 name: CI
 
 on:
@@ -24,6 +27,10 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --check
+      # Every authored file carries the Author/Copyright pair in its own
+      # comment syntax; the script lists what it excludes and why.
+      - name: File headers
+        run: python3 scripts/check_headers.py
 
   clippy:
     name: Clippy

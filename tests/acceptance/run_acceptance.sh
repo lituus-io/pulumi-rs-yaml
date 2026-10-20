@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Author: spicyzhug@gmail.com
+# Copyright: lituus-io, all rights reserved
+
 # Acceptance tests for pulumi-rs-yaml using GCP
 #
 # This script:

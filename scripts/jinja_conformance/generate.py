@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-# Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+# Author: spicyzhug@gmail.com
+# Copyright: lituus-io, all rights reserved
 """Generates the Jinja conformance goldens with pinned reference Jinja2.
 
 Dev-time only: nothing at runtime imports Jinja2. Each case directory under

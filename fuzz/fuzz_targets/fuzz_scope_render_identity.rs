@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 // The property a deploy actually depends on: after the full pipeline —
 // protect, render, restore — every protected scalar's bytes are identical to

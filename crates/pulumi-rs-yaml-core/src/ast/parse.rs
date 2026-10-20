@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 use crate::ast::expr::{Expr, InvokeExpr, InvokeOptions, ObjectProperty, StarlarkCallExpr};
 use crate::ast::interpolation::{needs_interpolation_pass, parse_interpolation};

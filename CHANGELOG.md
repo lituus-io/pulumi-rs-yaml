@@ -1,3 +1,6 @@
+<!-- Author: spicyzhug@gmail.com -->
+<!-- Copyright: lituus-io, all rights reserved -->
+
 # Changelog
 
 Releases before 0.5.25 are described in their release commits and in the

@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 //! Integration tests for the Jinja2 template pre-processing module.
 
@@ -2102,7 +2103,7 @@ mod loader_security {
         )
         .unwrap();
         let src = "{% import '../environment.j2' as e %}location: {{ e.location }}\n";
-        // project_dir = child, root_directory = base (as BLI passes it).
+        // project_dir = child, root_directory = base (as a wrapper passes it).
         let out = render_in(&child, &base, src).expect("legit import must render");
         assert!(
             out.contains("northamerica-northeast1"),

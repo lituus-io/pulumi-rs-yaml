@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 // A panic here takes down the language host in the middle of a deploy, with a
 // half-applied stack and a backtrace instead of a diagnostic. Every entry point

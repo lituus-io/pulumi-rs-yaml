@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 //! The text of every file a program names with `fn::readFile`, read once and
 //! held by the caller, so lineage can borrow SQL instead of copying it.

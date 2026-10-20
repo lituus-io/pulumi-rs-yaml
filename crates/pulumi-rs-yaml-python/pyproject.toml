@@ -1,3 +1,6 @@
+# Author: spicyzhug@gmail.com
+# Copyright: lituus-io, all rights reserved
+
 [build-system]
 requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"

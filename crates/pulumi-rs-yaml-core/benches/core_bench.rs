@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use std::collections::HashMap;

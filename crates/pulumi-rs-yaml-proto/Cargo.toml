@@ -1,3 +1,6 @@
+# Author: spicyzhug@gmail.com
+# Copyright: lituus-io, all rights reserved
+
 [package]
 name = "pulumi-rs-yaml-proto"
 version = "0.5.41"

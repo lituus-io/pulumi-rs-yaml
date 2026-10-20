@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 //! The undefined-name policy: every render is strict, passthrough only
 //! escapes names this runtime does not define, and compiling for syntax

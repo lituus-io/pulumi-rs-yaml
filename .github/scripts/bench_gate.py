@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-# Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+# Author: spicyzhug@gmail.com
+# Copyright: lituus-io, all rights reserved
 """Fail when a benchmark regressed beyond the noise threshold.
 
     bench_gate.py BASE.json HEAD.json --base-version X.Y.Z

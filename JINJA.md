@@ -1,3 +1,6 @@
+<!-- Author: spicyzhug@gmail.com -->
+<!-- Copyright: lituus-io, all rights reserved -->
+
 # Jinja in pulumi-rs-yaml
 
 Every Pulumi YAML project file this runtime reads is first rendered as a

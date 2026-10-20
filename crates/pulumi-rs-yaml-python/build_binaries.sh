@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Author: spicyzhug@gmail.com
+# Copyright: lituus-io, all rights reserved
+
 set -euo pipefail
 
 # Build language and converter binaries, then copy into the Python package

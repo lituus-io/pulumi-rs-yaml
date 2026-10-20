@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 //! The names that may not appear in this repository.
 //!
@@ -22,7 +23,24 @@ fn needles() -> Vec<String> {
         format!("{}{}", "Cla", "ude"),
         format!("{}{}", "Anthro", "pic"),
         format!("{}{}", "Co-Authored", "-By"),
+        format!("{}{}", "mock", "-lab"),
+        format!("{}{}", "bi-water", "melon"),
     ]
+}
+
+/// Needles that are short enough to sit inside ordinary words ("public"),
+/// matched only as a whole word.
+fn word_needles() -> Vec<String> {
+    vec![format!("{}{}", "bl", "i")]
+}
+
+/// Whether `word` occurs in `lower` with no letter, digit or `_` either side.
+fn has_word(lower: &str, word: &str) -> bool {
+    let is_word = |c: char| c.is_alphanumeric() || c == '_';
+    lower.match_indices(word).any(|(i, _)| {
+        !lower[..i].chars().next_back().is_some_and(is_word)
+            && !lower[i + word.len()..].chars().next().is_some_and(is_word)
+    })
 }
 
 fn repo_root() -> PathBuf {
@@ -59,7 +77,20 @@ fn is_checked(path: &Path) -> bool {
     }
     matches!(
         path.extension().and_then(|e| e.to_str()),
-        Some("rs" | "toml" | "md" | "yaml" | "yml" | "json" | "pp" | "star" | "sh")
+        Some(
+            "rs" | "toml"
+                | "md"
+                | "yaml"
+                | "yml"
+                | "json"
+                | "pp"
+                | "star"
+                | "sh"
+                | "py"
+                | "pyi"
+                | "j2"
+                | "ps1"
+        )
     )
 }
 
@@ -113,6 +144,15 @@ fn no_downstream_or_agent_name_appears_in_the_tree() {
                 ));
             }
         }
+        for word in word_needles() {
+            if has_word(&lower, &word) {
+                findings.push(format!(
+                    "{}: contains the word {:?}",
+                    file.strip_prefix(&root).unwrap_or(file).display(),
+                    word
+                ));
+            }
+        }
     }
     assert!(
         findings.is_empty(),
@@ -132,20 +172,30 @@ fn is_ours(path: &Path) -> bool {
         .any(|c| c.as_os_str().to_str() == Some("generated"))
 }
 
-/// Every Rust source file this project authored carries the copyright header.
+#[test]
+fn a_word_needle_is_matched_as_a_word_only() {
+    let w = format!("{}{}", "bl", "i");
+    assert!(has_word(&format!("as {w} passes it"), &w));
+    assert!(has_word(&format!("`{w} exec`"), &w));
+    assert!(!has_word("public, publish, obligate", &w));
+}
+
+/// Every Rust source file this project authored carries the header pair.
+/// `scripts/check_headers.py`, run by the CI lint job, holds every other
+/// file type to it; this keeps a local `cargo test` honest for Rust.
 #[test]
 fn every_source_file_carries_the_copyright_header() {
     let root = repo_root();
     let mut files = Vec::new();
     walk(&root, &mut files);
-    let header = "Copyright (c) 2024-2026 Lituus-io. All rights reserved.";
+    let header = "// Author: spicyzhug@gmail.com\n// Copyright: lituus-io, all rights reserved\n";
     let missing: Vec<String> = files
         .iter()
         .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("rs"))
         .filter(|p| is_ours(p))
         .filter(|p| {
             std::fs::read_to_string(p)
-                .map(|t| !t.contains(header))
+                .map(|t| !t.replace("\r\n", "\n").contains(header))
                 .unwrap_or(false)
         })
         .map(|p| p.strip_prefix(&root).unwrap_or(p).display().to_string())

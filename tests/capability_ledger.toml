@@ -1,3 +1,6 @@
+# Author: spicyzhug@gmail.com
+# Copyright: lituus-io, all rights reserved
+
 # Capability ledger: every `### ` entry in CHANGELOG.md (except "Tests")
 # names the live tests that still prove it.
 #

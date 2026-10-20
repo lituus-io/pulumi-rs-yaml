@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 //! The `exec` subcommand: wraps a child process (e.g. `pulumi up`) so that
 //! full Jinja `{% %}` blocks can appear in Pulumi.*.yaml files.
@@ -683,8 +684,8 @@ resources:
     /// A marked file with `{% %}` blocks reaches the child process.
     ///
     /// The wrapper validates the stripped YAML before spawning, so this gate
-    /// has to accept exactly what the runtime accepts — otherwise `bli exec`
-    /// refuses a file the language host would have run. `strip_jinja_blocks`
+    /// has to accept exactly what the runtime accepts — otherwise a wrapper's
+    /// `exec` refuses a file the language host would have run. `strip_jinja_blocks`
     /// hands the mark through untouched on purpose: its output is written over
     /// the user's file, and the original is restored byte for byte.
     #[cfg(unix)]

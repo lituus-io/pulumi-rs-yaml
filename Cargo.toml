@@ -1,3 +1,6 @@
+# Author: spicyzhug@gmail.com
+# Copyright: lituus-io, all rights reserved
+
 [workspace.package]
 license = "AGPL-3.0-or-later"
 

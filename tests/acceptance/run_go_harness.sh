@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Author: spicyzhug@gmail.com
+# Copyright: lituus-io, all rights reserved
+
 # Run the Go pulumi-test-language harness against our Rust pulumi-language-yaml binary.
 #
 # The Go test harness (pulumi-test-language) runs all L1/L2 test projects via gRPC

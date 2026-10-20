@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 //! Integration tests for the SQL lineage export: full pipeline from
 //! template text through the infra graph join, cross-stack ID

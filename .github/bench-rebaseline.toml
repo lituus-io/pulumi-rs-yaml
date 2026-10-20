@@ -1,3 +1,6 @@
+# Author: spicyzhug@gmail.com
+# Copyright: lituus-io, all rights reserved
+
 # Reviewed re-baselines for the benchmark regression gate
 # (.github/scripts/bench_gate.py). The 25% threshold applies to every
 # benchmark; an entry here moves ONE benchmark's expectation, recorded with

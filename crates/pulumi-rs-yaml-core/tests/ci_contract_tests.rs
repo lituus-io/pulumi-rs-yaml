@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 //! Capabilities that live in CI configuration rather than in the engine,
 //! held in place by reading that configuration. Each was shipped as a
