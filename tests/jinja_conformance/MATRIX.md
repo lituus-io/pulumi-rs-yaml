@@ -11,12 +11,12 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 
 ## Totals
 
-- cases: 352 (293 byte-identical to Jinja2, 59 listed divergences)
+- cases: 354 (294 byte-identical to Jinja2, 60 listed divergences)
 - rows extension: 24
 - rows partial: 40
-- rows supported: 321
+- rows supported: 322
 - rows unit-tested: 1
-- rows unsupported: 6
+- rows unsupported: 7
 
 ## Filters
 
@@ -296,6 +296,7 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `stmt_for_loop_changed` | supported | - |
 | `stmt_for_loop_cycle` | supported | - |
 | `stmt_for_loop_cycle_no_items_error` | supported | - |
+| `stmt_for_loop_cycle_spaced_no_items_error` | supported | - |
 | `stmt_for_loop_cycle_unexecuted` | supported | - |
 | `stmt_for_loop_first_last_length` | supported | - |
 | `stmt_for_loop_index` | supported | - |
@@ -328,6 +329,7 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `stmt_include_without_context` | supported | - |
 | `stmt_include_without_context_ignore_missing` | supported | - |
 | `stmt_include_without_context_trim` | supported | - |
+| `stmt_loop_control_in_with` | unsupported | unsupported (stmt_loop_control_in_with) |
 | `stmt_macro_basic` | supported | - |
 | `stmt_macro_caller` | supported | - |
 | `stmt_macro_defaults` | supported | - |

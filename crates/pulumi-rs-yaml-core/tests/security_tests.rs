@@ -4814,6 +4814,18 @@ mod jinja_loop_control_security {
             assert_eq!(kind, RenderErrorKind::JinjaFilterError, "{src}");
             assert!(msg.contains("no items for cycling given"), "{src}: {msg}");
         }
+        // Whitespace before the parenthesis reached the engine's own
+        // `cycle`, which divides by the item count: an abort (found by
+        // fuzz_jinja_conformance in CI).
+        for src in [
+            "{% for i in range(5) %}{{ loop.cycle\r\r\r() }}{% endfor %}",
+            "{% for i in [1] %}{{ loop.cycle ( ) }}{% endfor %}",
+            "{% for i in [1] %}{{ loop.cycle\n() }}{% endfor %}",
+        ] {
+            let (kind, msg) = render(src).expect_err(src);
+            assert_eq!(kind, RenderErrorKind::JinjaFilterError, "{src:?}");
+            assert!(msg.contains("no items for cycling given"), "{src:?}: {msg}");
+        }
         assert_eq!(
             render("{% if false %}{{ loop.cycle() }}{% endif %}ok").unwrap(),
             "ok"
@@ -4821,6 +4833,30 @@ mod jinja_loop_control_security {
         assert_eq!(
             render("{% for i in range(3) %}{{ loop.cycle('a', 'b') }}{% endfor %}").unwrap(),
             "aba"
+        );
+    }
+
+    #[test]
+    fn a_loop_control_inside_a_block_the_engine_opens_is_refused_at_compile() {
+        // minijinja's jump leaves the block open: a `with` scope is then
+        // popped as if it were the loop's frame -- an engine panic (found by
+        // fuzz_jinja_template in CI) -- and a capture swallows the output.
+        for (src, block) in [
+            ("{% for i in [1, 2] %}{% with a = i %}{% break %}{% endwith %}{% endfor %}", "`with`"),
+            ("{% for i in [1, 2] %}{% with %}{% if i %}{% continue %}{% endif %}{% endwith %}{% endfor %}", "`with`"),
+            ("{% for i in [1] %}{% set x %}{% break %}{% endset %}{% endfor %}", "`set`"),
+            ("{% for i in [1] %}{% filter upper %}a{% continue %}{% endfilter %}b{% endfor %}", "`filter`"),
+            ("{% for i in [1] %}{% autoescape true %}{% break %}{% endautoescape %}{% endfor %}", "`autoescape`"),
+        ] {
+            let (kind, msg) = render(src).expect_err(src);
+            assert_eq!(kind, RenderErrorKind::JinjaSyntax, "{src}: {msg}");
+            assert!(msg.contains(block) && msg.contains("not supported"), "{src}: {msg}");
+        }
+        // A loop of its own inside the block is fine, as is the block
+        // without a loop control.
+        assert_eq!(
+            render("{% for i in [1, 2] %}{% with a = i %}{% for j in [a] %}{% break %}{% endfor %}{{ a }}{% endwith %}{% endfor %}").unwrap(),
+            "12"
         );
     }
 

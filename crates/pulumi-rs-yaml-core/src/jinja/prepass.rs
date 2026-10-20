@@ -778,7 +778,8 @@ pub(super) fn prepare_mapped<'s>(
         loops: source.contains("loop."),
         isolated: source.contains("without context"),
         variadic: source.contains("varargs") || source.contains("kwargs"),
-        cycle: source.contains("cycle("),
+        // Not `cycle(`: whitespace may stand before the parenthesis.
+        cycle: source.contains("cycle"),
     };
     let attributes = may_set_attribute(source);
     let controls = source.contains("continue") || source.contains("break");
@@ -799,7 +800,7 @@ pub(super) fn prepare_mapped<'s>(
         }
     }
     if controls {
-        if let Some(refusal) = stray_loop_control(std::slice::from_ref(&ast), false) {
+        if let Some(refusal) = stray_loop_control(std::slice::from_ref(&ast), LoopCtx::Outside) {
             return Err(refusal);
         }
     }
@@ -840,6 +841,18 @@ fn rewrite<'s>(source: &'s str, name: &str) -> Cow<'s, str> {
 // Namespaces that would hold themselves
 // ---------------------------------------------------------------------------
 
+/// Where a `break` or `continue` stands, for [`stray_loop_control`].
+#[derive(Clone, Copy)]
+enum LoopCtx {
+    /// No loop of its own to act on.
+    Outside,
+    /// Directly in a loop's body (through `if`s).
+    InLoop,
+    /// In a loop's body, inside a block the engine opens and must close: a
+    /// `with` scope, a `set` or `filter` capture, an `autoescape` setting.
+    Held(&'static str),
+}
+
 /// A `break` or `continue` with no loop of its own to act on. Jinja2
 /// compiles a template to Python, where a loop's `else` runs after the loop
 /// and a macro or call block is a function, so neither is inside the loop
@@ -847,28 +860,45 @@ fn rewrite<'s>(source: &'s str, name: &str) -> Cow<'s, str> {
 /// accepted it inside a macro defined in a loop and, at run time, popped a
 /// frame that was not a loop's: an engine panic, found by
 /// fuzz_jinja_template.
-fn stray_loop_control(stmts: &[Stmt<'_>], in_loop: bool) -> Option<Refusal> {
+///
+/// Inside a `with`, a `set` block, a `filter` block or an `autoescape`
+/// within the loop, minijinja's jump leaves the block open: a `with` scope
+/// is then popped as if it were the loop's (a panic), a capture swallows the
+/// rest of the output. Jinja2 accepts those; here they are refused at
+/// compile time, naming the block -- move the loop control out of it.
+fn stray_loop_control(stmts: &[Stmt<'_>], ctx: LoopCtx) -> Option<Refusal> {
     let refuse = |what: &str, line: u16| Refusal {
         line: u32::from(line),
-        message: format!("'{what}' not properly in loop"),
+        message: match ctx {
+            LoopCtx::Held(block) => format!(
+                "'{what}' inside {block} is not supported: the block would be left open; \
+                 move it outside the block"
+            ),
+            _ => format!("'{what}' not properly in loop"),
+        },
         syntax: true,
     };
+    let held = |block| match ctx {
+        LoopCtx::Outside => LoopCtx::Outside,
+        _ => LoopCtx::Held(block),
+    };
+    let stray = !matches!(ctx, LoopCtx::InLoop);
     stmts.iter().find_map(|s| match s {
-        Stmt::Continue(c) if !in_loop => Some(refuse("continue", c.span().start_line)),
-        Stmt::Break(b) if !in_loop => Some(refuse("break", b.span().start_line)),
-        Stmt::Template(t) => stray_loop_control(&t.children, in_loop),
-        Stmt::ForLoop(l) => {
-            stray_loop_control(&l.body, true).or_else(|| stray_loop_control(&l.else_body, in_loop))
+        Stmt::Continue(c) if stray => Some(refuse("continue", c.span().start_line)),
+        Stmt::Break(b) if stray => Some(refuse("break", b.span().start_line)),
+        Stmt::Template(t) => stray_loop_control(&t.children, ctx),
+        Stmt::ForLoop(l) => stray_loop_control(&l.body, LoopCtx::InLoop)
+            .or_else(|| stray_loop_control(&l.else_body, ctx)),
+        Stmt::IfCond(c) => {
+            stray_loop_control(&c.true_body, ctx).or_else(|| stray_loop_control(&c.false_body, ctx))
         }
-        Stmt::IfCond(c) => stray_loop_control(&c.true_body, in_loop)
-            .or_else(|| stray_loop_control(&c.false_body, in_loop)),
-        Stmt::WithBlock(w) => stray_loop_control(&w.body, in_loop),
-        Stmt::SetBlock(b) => stray_loop_control(&b.body, in_loop),
-        Stmt::AutoEscape(a) => stray_loop_control(&a.body, in_loop),
-        Stmt::FilterBlock(b) => stray_loop_control(&b.body, in_loop),
-        Stmt::Block(b) => stray_loop_control(&b.body, in_loop),
-        Stmt::Macro(m) => stray_loop_control(&m.body, false),
-        Stmt::CallBlock(c) => stray_loop_control(&c.macro_decl.body, false),
+        Stmt::WithBlock(w) => stray_loop_control(&w.body, held("a `with` block")),
+        Stmt::SetBlock(b) => stray_loop_control(&b.body, held("a `set` block")),
+        Stmt::AutoEscape(a) => stray_loop_control(&a.body, held("an `autoescape` block")),
+        Stmt::FilterBlock(b) => stray_loop_control(&b.body, held("a `filter` block")),
+        Stmt::Block(b) => stray_loop_control(&b.body, ctx),
+        Stmt::Macro(m) => stray_loop_control(&m.body, LoopCtx::Outside),
+        Stmt::CallBlock(c) => stray_loop_control(&c.macro_decl.body, LoopCtx::Outside),
         _ => None,
     })
 }

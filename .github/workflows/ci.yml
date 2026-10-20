@@ -306,8 +306,30 @@ jobs:
           done
           merge_base="$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
           base_version="$(git show "$merge_base:crates/pulumi-rs-yaml-core/Cargo.toml" | sed -n 's/^version = "\(.*\)"/\1/p' | head -1)"
-          python3 .github/scripts/bench_gate.py base.json head.json \
-            --base-version "$base_version" --rebaseline .github/bench-rebaseline.toml
+          gate() {
+            python3 .github/scripts/bench_gate.py "$1" "$2" \
+              --base-version "$base_version" --rebaseline .github/bench-rebaseline.toml --flagged flagged.txt
+          }
+          if gate base.json head.json; then exit 0; fi
+          # A refused re-baseline file flags nothing: that fails as it is.
+          test -s flagged.txt || exit 1
+          # Confirm before failing: a neighbour can only make a run slower,
+          # so each flagged benchmark is measured twice more on each side,
+          # alternately, and judged on each side's fastest mean. A regression
+          # in the code shows every time; a disturbed sample does not.
+          filter="^($(paste -sd'|' flagged.txt))\$"
+          echo "re-measuring: $filter"
+          for round in 1 2; do
+            git checkout -q -f "$merge_base"
+            cargo bench -p pulumi-rs-yaml-core --bench core_bench -- "$filter" --save-baseline "base$round"
+            git checkout -q -f ${{ github.sha }}
+            cargo bench -p pulumi-rs-yaml-core --bench core_bench -- "$filter" --save-baseline "head$round"
+          done
+          for side in base1 base2 head1 head2; do
+            critcmp --export "$side" | python3 -c 'import json,sys; print(json.dumps({n: b["criterion_estimates_v1"]["mean"]["point_estimate"] for n, b in json.load(sys.stdin)["benchmarks"].items()}))' > "$side.json"
+          done
+          critcmp base1 base2 head1 head2 | tee -a critcmp.txt
+          gate base.json,base1.json,base2.json head.json,head1.json,head2.json
 
       # The gate itself, held to what it promises: a re-baselined bench still
       # fails past 25% of its new expectation, any other bench past 25% of
@@ -335,6 +357,20 @@ jobs:
           echo '{"jinja_preprocessor_include_at_cap": 1000000, "other": 1000000}' > th.json
           if python3 $g tb.json th.json --base-version 999.0.0 --rebaseline $r; then
             echo "::error::a stale re-baseline entry was accepted"; exit 1
+          fi
+          # Confirmation: the flagged names are written, and each side is
+          # judged on its fastest measurement -- a slow sample clears, a
+          # regression on every measurement does not.
+          echo '{"jinja_preprocessor_include_at_cap": 1000000, "other": 1500000}' > th.json
+          if python3 $g tb.json th.json --base-version 0.0.1 --flagged fl.txt; then
+            echo "::error::a 50% regression passed"; exit 1
+          fi
+          test "$(cat fl.txt)" = other || { echo "::error::flagged names: $(cat fl.txt)"; exit 1; }
+          echo '{"other": 1010000}' > th2.json
+          python3 $g tb.json th.json,th2.json --base-version 0.0.1
+          echo '{"other": 1400000}' > th2.json
+          if python3 $g tb.json th.json,th2.json --base-version 0.0.1; then
+            echo "::error::a regression on every measurement passed"; exit 1
           fi
 
   # The one check a branch rule needs to require. A job skipped because a

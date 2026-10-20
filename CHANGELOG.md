@@ -33,7 +33,7 @@ a loop over a changed list or dict did not know its length (`loop.length`,
 `revindex` and `last` were undefined, and an argument-less `loop.cycle()`
 panicked inside the engine), and the filter section of `{% filter %}` and
 `{% set x | f %}` was wrapped as if it were a value ("undefined value").
-Both are fixed. The corpus (352 cases) and the method corpus (77) now run in
+Both are fixed. The corpus (354 cases) and the method corpus (77) now run in
 both modes, in Rust and through the Python binding, and must render the same.
 
 ### A changed container cannot hold itself or outgrow the limits
@@ -54,6 +54,21 @@ through:
   may now hold at most the range limit's entries (100,000 by default), a
   `RangeTooLarge` refusal, as a repeated list already was;
 - an argument-less `loop.cycle()` over a changed list **aborted** (above).
+
+### Three more aborts, found by fuzzing this release
+
+- `loop.cycle ()` -- whitespace before the parenthesis -- slipped past the
+  0.5.40 guard for a cycle with nothing to cycle and reached the engine's
+  own, which divides by the item count: a process abort. The guard is now
+  found from the parsed template however the call is spaced.
+- `break` or `continue` inside a `with` block within a loop popped the
+  `with` scope as if it were the loop's frame: an engine panic. Inside a
+  `set`, `filter` or `autoescape` block it left a capture open. Jinja2
+  accepts these; here they are refused at compile time, naming the block
+  (listed in DIVERGENCES.md as unsupported).
+- a BigQuery table id whose partition decorator stripped to a dot segment
+  (`.$1`) built a resource key ending `/tables/.`. The id is checked again
+  after the decorator is removed.
 
 ### Output-limit crossings are placed
 
@@ -83,6 +98,12 @@ stops the render at once rather than letting it run on to the end.
 - The 0.5.40 benchmark re-baseline is retired: its release is the merge
   base now, so the slower include path is the baseline. The gate's
   self-test uses its own fixture entry.
+- The benchmark gate confirms before it fails: a benchmark flagged on one
+  measurement is measured twice more on each side, alternately, and judged
+  on each side's fastest mean -- a shared runner's neighbour can only slow a
+  run down, so a regression in the code shows on every measurement and a
+  disturbed sample does not (a byte-identical function measured 1.45x on
+  one sample).
 
 ## 0.5.40
 

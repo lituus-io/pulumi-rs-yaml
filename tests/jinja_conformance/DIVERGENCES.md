@@ -70,6 +70,7 @@ Classes:
 | `stmt_continue_in_macro_loop_else_error` | intended | the same refusal (`'continue' not properly in loop`), reported as the template syntax error it is; Jinja2 lets Python's compiler raise it, which surfaces as a generic error |
 | `stmt_for_dict_items` | intended | a map literal iterates in key order; Jinja2 keeps insertion order -- use a list of pairs when order matters |
 | `stmt_for_dict_iter_keys` | intended | a map literal iterates in key order; Jinja2 keeps insertion order |
+| `stmt_loop_control_in_with` | unsupported | `break`/`continue` inside a `with`, `set`, `filter` or `autoescape` block within a loop is refused at compile time: the engine's jump would leave the block open (a `with` scope popped as the loop's frame aborts the process); move the loop control outside the block |
 | `stmt_namespace_self_reference` | intended | a namespace attribute may not be assigned a value holding a namespace: printing one that contains itself recursed until the stack overflowed, so it is refused at the assignment |
 | `ws_crlf` | intended | line endings are preserved byte for byte; Jinja2 rewrites CRLF to LF |
 | `ws_trailing_newline_stripped` | intended | text with no Jinja syntax is returned exactly as written (the zero-copy fast path), keeping its final newline |

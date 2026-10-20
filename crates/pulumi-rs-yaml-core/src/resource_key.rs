@@ -226,7 +226,9 @@ fn key_from_ids<'a>(t: &KeyTemplate, ids: impl IntoIterator<Item = &'a str>) -> 
         } else {
             std::borrow::Cow::Borrowed(id)
         };
-        if id.is_empty() {
+        // Checked again after the decorator is stripped: `.$1` is a valid
+        // segment, `.` is not.
+        if !valid_segment(&id) {
             return None;
         }
         out.push('/');
@@ -846,6 +848,37 @@ mod tests {
         let segments: Vec<&str> = path.split('/').collect();
         assert_eq!(segments.len() % 2, 0, "{k}");
         assert!(segments.iter().all(|s| valid_segment(s)), "{k}");
+    }
+
+    /// A table's partition decorator is stripped before the key is built;
+    /// what is left is held to the same rule, so `.$1` cannot leave a dot
+    /// segment (found by fuzz_stack_uri).
+    #[test]
+    fn a_stripped_decorator_cannot_leave_a_dot_segment() {
+        for id in [".$1", "..$20260101", "$1", ".$"] {
+            let props = [("project", "p"), ("datasetId", "d"), ("tableId", id)];
+            assert_eq!(
+                resource_key_from_properties("gcp:bigquery:Table", props),
+                None,
+                "{id}"
+            );
+            assert_eq!(
+                resource_key(
+                    "gcp:bigquery:Table",
+                    &format!("projects/p/datasets/d/tables/{id}")
+                ),
+                None,
+                "{id}"
+            );
+        }
+        assert_eq!(
+            resource_key_from_properties(
+                "gcp:bigquery:Table",
+                [("project", "p"), ("datasetId", "d"), ("tableId", "t$1")]
+            )
+            .as_deref(),
+            Some("//bigquery.googleapis.com/projects/p/datasets/d/tables/t")
+        );
     }
 
     /// No key is ever built from a segment that could escape its place in the
