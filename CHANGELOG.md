@@ -55,7 +55,7 @@ through:
   `RangeTooLarge` refusal, as a repeated list already was;
 - an argument-less `loop.cycle()` over a changed list **aborted** (above).
 
-### Three more aborts, found by fuzzing this release
+### Four more aborts, found by fuzzing this release
 
 - `loop.cycle ()` -- whitespace before the parenthesis -- slipped past the
   0.5.40 guard for a cycle with nothing to cycle and reached the engine's
@@ -66,6 +66,10 @@ through:
   `set`, `filter` or `autoescape` block it left a capture open. Jinja2
   accepts these; here they are refused at compile time, naming the block
   (listed in DIVERGENCES.md as unsupported).
+- `chain` over a value that cannot be iterated (`1 | chain(2)`) carried it
+  as an invalid value, and sorting or comparing the result (`| min`,
+  `| sort`) unwrapped an object that was not there: a panic. `chain` now
+  refuses such a value when it is called.
 - a BigQuery table id whose partition decorator stripped to a dot segment
   (`.$1`) built a resource key ending `/tables/.`. The id is checked again
   after the decorator is removed.

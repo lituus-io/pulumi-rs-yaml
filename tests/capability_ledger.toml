@@ -42,11 +42,12 @@ tests = [
 
 [[entry]]
 version = "0.5.41"
-heading = "Three more aborts, found by fuzzing this release"
+heading = "Four more aborts, found by fuzzing this release"
 tests = [
     "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_cycle_with_nothing_to_cycle_is_a_type_error",
     "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_loop_control_inside_a_block_the_engine_opens_is_refused_at_compile",
     "crates/pulumi-rs-yaml-core/src/resource_key.rs::a_stripped_decorator_cannot_leave_a_dot_segment",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::chaining_a_value_that_cannot_be_iterated_is_refused_not_a_panic",
 ]
 
 [[entry]]

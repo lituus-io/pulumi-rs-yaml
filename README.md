@@ -11,7 +11,7 @@
 [![PyPI](https://img.shields.io/pypi/v/pulumi-rs-yaml?label=PyPI)](https://pypi.org/project/pulumi-rs-yaml/)
 [![Python](https://img.shields.io/badge/python-%E2%89%A53.9-blue)](https://pypi.org/project/pulumi-rs-yaml/)
 [![fuzz targets](https://img.shields.io/badge/fuzz%20targets-29-blue)](fuzz/fuzz_targets)
-[![security tests](https://img.shields.io/badge/security%20tests-235-blue)](crates/pulumi-rs-yaml-core/tests/security_tests.rs)
+[![security tests](https://img.shields.io/badge/security%20tests-236-blue)](crates/pulumi-rs-yaml-core/tests/security_tests.rs)
 [![Jinja conformance](https://img.shields.io/badge/jinja2%20conformance-431%20cases-blue)](tests/jinja_conformance/MATRIX.md)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE)
 

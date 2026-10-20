@@ -4861,6 +4861,28 @@ mod jinja_loop_control_security {
     }
 
     #[test]
+    fn chaining_a_value_that_cannot_be_iterated_is_refused_not_a_panic() {
+        // minijinja's `chain` carried such a value lazily as an invalid
+        // value, and comparing one unwrapped an object that was not there
+        // (found by fuzz_jinja_template).
+        for src in [
+            "{{ 1 | chain(2) | min }}",
+            "{{ 1 | chain(2) | sort | list }}",
+            "{{ ((13107 | chain(13107, 13107, 13107)) | min('')) | reject('') }}",
+            "{{ [1] | chain(none) | max }}",
+            "{{ [1] | chain(true) | list }}",
+        ] {
+            let (kind, msg) = render(src).expect_err(src);
+            assert_eq!(kind, RenderErrorKind::JinjaFilterError, "{src}: {msg}");
+            assert!(msg.contains("not iterable"), "{src}: {msg}");
+        }
+        assert_eq!(
+            render("{{ [2] | chain([1], 'ab') | list | join(',') }} {{ {'a': 1} | chain({'b': 2}) | list | join(',') }}").unwrap(),
+            "2,1,a,b a,b"
+        );
+    }
+
+    #[test]
     fn a_loop_control_outside_its_loop_is_refused_at_compile() {
         for src in [
             "{% for a in 'ab' %}{% macro m() %}{% for b in [] %}{% else %}{% continue %}{% endfor %}{% endmacro %}{{ m() }}{% endfor %}",
