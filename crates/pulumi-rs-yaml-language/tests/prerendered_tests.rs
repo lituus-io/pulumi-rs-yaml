@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 //! A project rendered once by the caller and handed to the runtime with
 //! `PULUMI_YAML_JINJA=off` is parsed as written: a literal `{{` that a

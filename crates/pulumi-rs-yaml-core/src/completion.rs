@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 //! Schema-driven completion API for IDE support.
 //!

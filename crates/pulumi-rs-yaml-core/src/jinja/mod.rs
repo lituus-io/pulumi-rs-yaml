@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 //! Jinja2 template pre-processing with GAT-based architecture.
 //!
@@ -440,6 +441,12 @@ fn classify_jinja_error(err: &minijinja::Error) -> (RenderErrorKind, Option<&'st
     }
     if detail.starts_with(prepass::NAMESPACE_TAG) {
         return (RenderErrorKind::JinjaTypeError, Some(NAMESPACE_SUGGESTION));
+    }
+    if detail.starts_with(containers::HOLDS_ITSELF_TAG) {
+        return (
+            RenderErrorKind::JinjaTypeError,
+            Some(HOLDS_ITSELF_SUGGESTION),
+        );
     }
     if detail.starts_with(OUTPUT_TAG) {
         return (RenderErrorKind::OutputTooLarge, Some(OUTPUT_SUGGESTION));
@@ -1261,7 +1268,7 @@ impl JinjaPreprocessor<'_> {
         register_readfile_function(
             &mut env,
             self.context.project_dir,
-            limits.output_bytes,
+            Arc::clone(&budget),
             Arc::clone(&cache),
         );
 
@@ -1306,13 +1313,24 @@ impl JinjaPreprocessor<'_> {
         // so an oversized render stops where it crosses the line rather than
         // after it has filled memory.
         let mj_ctx = build_minijinja_context(self.context);
-        let mut out = limits::CappedWriter::new(Arc::clone(&budget), source.len() * 2);
+        let mut out =
+            limits::CappedWriter::new(Arc::clone(&budget), source.len() * 2, compiled.text);
         let fuel = match tmpl.render_captured_to(&mj_ctx, &mut out) {
             Ok(captured) => captured.state().fuel_levels().map_or(0, |(used, _)| used),
-            Err(e) => return Err(fail(&e)),
+            Err(e) => {
+                let mut diag = fail(&e);
+                // Literal text crossed the limit: the engine does not place
+                // a write, so it is placed by where the text lies.
+                if let (RenderErrorKind::OutputTooLarge, 0, Some(at)) =
+                    (diag.kind, diag.line, out.crossed())
+                {
+                    place_at(&mut diag, source, compiled, at);
+                }
+                return Err(diag);
+            }
         };
-        // Literal text alone crossed the line, with no expression after it
-        // to stop the render where it happened.
+        // Every crossing fails the render above; a write refused and yet
+        // not reported must never pass as a complete file.
         if budget.is_over() {
             return Err(output_too_large(out.buf.len(), &limits));
         }
@@ -1384,8 +1402,45 @@ fn prepass_refusal<'src>(source: &'src str, refusal: prepass::Refusal) -> Render
     }
 }
 
+const HOLDS_ITSELF_SUGGESTION: &str = "put a copy in (`x.copy()`), or the values you need, \
+     not the list or dict itself";
+
 const NAMESPACE_SUGGESTION: &str = "store the values you need in the namespace's attributes, \
      not the namespace itself";
+
+/// Places `diag` at byte `at` of the compiled text: the line, and the
+/// column when the author's line is the one compiled (a rewrite or a
+/// passthrough escape on the line leaves the column unknown). Every slice
+/// is checked, so a mismatch degrades to an unplaced column, never a panic.
+fn place_at<'src>(
+    diag: &mut RenderDiagnostic<'src>,
+    source: &'src str,
+    compiled: Compiled<'_>,
+    at: usize,
+) {
+    let (at, _) = prepass::to_source(compiled.edits, at, at.saturating_add(1));
+    let Some(before) = compiled.original.get(..at) else {
+        return;
+    };
+    let line_start = before.rfind('\n').map_or(0, |i| i + 1);
+    let line = before.matches('\n').count() + 1;
+    let Some(source_line) = source.lines().nth(line - 1) else {
+        return;
+    };
+    diag.line = line as u32;
+    diag.source_line = source_line;
+    let compiled_line = compiled.original[line_start..]
+        .split('\n')
+        .next()
+        .unwrap_or("");
+    let col = at - line_start;
+    if compiled_line.trim_end_matches('\r') == source_line && source_line.is_char_boundary(col) {
+        let width = source_line[col..].chars().next().map_or(1, char::len_utf8);
+        diag.column = col as u32 + 1;
+        diag.end_column = diag.column + width as u32;
+        diag.expression = source_line.get(col..col + width).unwrap_or("");
+    }
+}
 
 /// The diagnostic for a render whose output crossed the limit after the
 /// engine finished (`readFile()` contents are spliced in afterwards).
@@ -2130,28 +2185,39 @@ pub(crate) fn resolve_contained_path(
 fn register_readfile_function(
     env: &mut minijinja::Environment<'_>,
     project_dir: &str,
-    max_bytes: usize,
+    budget: Arc<limits::OutputBudget>,
     cache: Arc<Mutex<ReadFileCache>>,
 ) {
     let project_dir = project_dir.to_string();
+    let max_bytes = budget.cap();
     env.add_function(
         "readFile",
         move |path: String| -> Result<String, minijinja::Error> {
             let resolved = resolve_contained_path(&project_dir, &path).map_err(|msg| {
                 minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, msg)
             })?;
+            // Each call's contents land in the output where its marker is
+            // written, after the render; charged here, a call that would
+            // carry the output over the limit is refused at its own line.
+            let refuse = || {
+                minijinja::Error::new(
+                    minijinja::ErrorKind::InvalidOperation,
+                    format!("{} of {} bytes reading {:?}", OUTPUT_TAG, max_bytes, path),
+                )
+            };
             let mut cache = cache.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(&id) = cache.by_path.get(&resolved) {
+                let held = cache.get(id).map_or(0, str::len);
+                if !budget.charge(held) {
+                    return Err(refuse());
+                }
                 return Ok(readfile_marker(id));
             }
             // Sized before it is read: what every file read so far holds,
             // plus this one, may not pass the output limit.
             let size = std::fs::metadata(&resolved).map(|m| m.len()).unwrap_or(0);
             if (cache.bytes as u64).saturating_add(size) > max_bytes as u64 {
-                return Err(minijinja::Error::new(
-                    minijinja::ErrorKind::InvalidOperation,
-                    format!("{} of {} bytes reading {:?}", OUTPUT_TAG, max_bytes, path),
-                ));
+                return Err(refuse());
             }
 
             let content = std::fs::read_to_string(&resolved).map_err(|e| {
@@ -2161,6 +2227,9 @@ fn register_readfile_function(
                 )
             })?;
 
+            if !budget.charge(content.len()) {
+                return Err(refuse());
+            }
             let id = cache.add(content);
             cache.by_path.insert(resolved, id);
             Ok(readfile_marker(id))

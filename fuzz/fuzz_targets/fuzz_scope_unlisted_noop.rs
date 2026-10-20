@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 // The guarantee every existing stack relies on: listing no package changes
 // nothing at all.

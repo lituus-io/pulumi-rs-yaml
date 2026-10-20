@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 //! Jinja2 semantics where minijinja ships a name differently or not at all.
 //!
@@ -89,6 +90,12 @@ const OPERATORS: &[(&str, Binary)] = &[
     (super::arith::POW_FN, super::arith::pow),
     // `x.cycle()` with no arguments.
     (super::arith::CYCLE_FN, super::arith::cycle),
+    // A namespace attribute's new value, in a template that changes
+    // containers.
+    (
+        super::containers::ATTR_FN,
+        super::containers::guard_attribute,
+    ),
 ];
 
 /// The engine's own filters, tests and globals that Jinja2 has and this
@@ -127,7 +134,7 @@ pub(super) fn builtins(env: &mut Environment<'_>) {
     env.add_filter("map", f::map);
     env.add_filter("groupby", f::groupby);
     env.add_filter("unique", f::unique);
-    env.add_filter("chain", f::chain);
+    env.add_filter("chain", chain);
     env.add_filter("zip", f::zip);
     env.add_filter("pprint", f::pprint);
 
@@ -786,6 +793,29 @@ fn format_filter(
 
 /// Jinja2's `title`: a word starts after whitespace, `-` or an opening
 /// bracket -- not after `_` or `'`, which minijinja's builtin also splits on.
+/// minijinja's `chain`, refusing a value that cannot be iterated when it is
+/// called. Its own chained such a value lazily, as an invalid value inside
+/// the result; comparing one (`1 | chain(2) | sort`, `| min`) unwraps an
+/// object that is not there -- an engine panic, found by fuzz_jinja_template.
+fn chain(
+    state: &State<'_, '_>,
+    value: Value,
+    others: minijinja::value::Rest<Value>,
+) -> Result<Value, Error> {
+    for v in std::iter::once(&value).chain(others.0.iter()) {
+        if !matches!(
+            v.kind(),
+            ValueKind::Seq | ValueKind::Map | ValueKind::Iterable | ValueKind::String
+        ) {
+            return Err(Error::new(
+                ErrorKind::InvalidOperation,
+                format!("chain: {} is not iterable", v.kind()),
+            ));
+        }
+    }
+    minijinja::filters::chain(state, value, others)
+}
+
 fn title_compat(value: Value) -> Result<Value, Error> {
     let s = text(&value)?;
     let mut out = String::with_capacity(s.len());

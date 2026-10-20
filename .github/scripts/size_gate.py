@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-# Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+# Author: spicyzhug@gmail.com
+# Copyright: lituus-io, all rights reserved
 """Fail when any release artefact grew more than the allowed share.
 
     size_gate.py PREVIOUS.json CURRENT.json [--max-growth-pct 2] [--summary FILE]

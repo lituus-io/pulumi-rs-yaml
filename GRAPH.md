@@ -1,3 +1,6 @@
+<!-- Author: spicyzhug@gmail.com -->
+<!-- Copyright: lituus-io, all rights reserved -->
+
 # Graph and lineage export
 
 Reference for the two graph layers `pulumi-rs-yaml` can export from a YAML

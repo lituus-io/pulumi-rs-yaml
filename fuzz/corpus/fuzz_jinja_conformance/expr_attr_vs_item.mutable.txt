@@ -1,0 +1,1 @@
+{% set d = {'items': 'x'} %}{{ d['items'] }}

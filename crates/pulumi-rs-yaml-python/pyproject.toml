@@ -1,10 +1,13 @@
+# Author: spicyzhug@gmail.com
+# Copyright: lituus-io, all rights reserved
+
 [build-system]
 requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
 
 [project]
 name = "pulumi-rs-yaml"
-version = "0.5.40"
+version = "0.5.41"
 description = "Python bindings for the Rust Pulumi YAML engine"
 license = {text = "AGPL-3.0-or-later"}
 requires-python = ">=3.9"

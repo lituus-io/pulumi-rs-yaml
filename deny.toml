@@ -1,3 +1,6 @@
+# Author: spicyzhug@gmail.com
+# Copyright: lituus-io, all rights reserved
+
 [advisories]
 # Transitive dependencies of the starlark crate (by Meta) that are
 # flagged as unmaintained. These are upstream issues in starlark v0.13;

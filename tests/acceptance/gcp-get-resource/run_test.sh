@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Author: spicyzhug@gmail.com
+# Copyright: lituus-io, all rights reserved
+
 # Two-phase acceptance test for get: resource option
 #
 # Phase 1: Create a bucket with a known name

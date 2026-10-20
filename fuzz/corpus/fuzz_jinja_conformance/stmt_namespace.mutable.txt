@@ -1,0 +1,1 @@
+{% set ns = namespace(total=0, seen=false) %}{% for i in [1,2,3] %}{% set ns.total = ns.total + i %}{% endfor %}{{ ns.total }} {{ ns.seen }}

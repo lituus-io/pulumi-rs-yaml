@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 //! A pass over a template before it compiles, for the two template shapes
 //! that crash minijinja 2.24 rather than fail. Release builds abort on panic
@@ -203,8 +204,9 @@ impl Site {
 }
 
 /// The bytes an expression's text covers. minijinja starts a postfix or
-/// filter node's span at its operator (`.`, `(`, `|`) in some cases; the
-/// text starts with the leftmost operand, so that is found by descending.
+/// filter node's span at its operator (`.`, `(`, `|`) in some cases, and a
+/// bare tuple's (`{% set a, b = 1, 2 %}`) after its first comma; the text
+/// starts with the leftmost operand, so that is found by descending.
 fn range(e: &Expr<'_>) -> (usize, usize) {
     let s = e.span();
     let first = match e {
@@ -216,12 +218,22 @@ fn range(e: &Expr<'_>) -> (usize, usize) {
         Expr::Test(t) => Some(&t.expr),
         Expr::BinOp(b) => Some(&b.left),
         Expr::Compare(c) => Some(&c.expr),
+        Expr::List(l) => l.items.first(),
         _ => None,
     };
     let start = first.map_or(s.start_offset as usize, |x| {
         range(x).0.min(s.start_offset as usize)
     });
     (start, s.end_offset as usize)
+}
+
+/// Whether a filter chain has a value at its root (`x | f | g`), rather
+/// than being a bare chain of filters (`f | g`).
+fn filters_a_value(e: &Expr<'_>) -> bool {
+    match e {
+        Expr::Filter(f) => f.expr.as_ref().is_some_and(filters_a_value),
+        _ => true,
+    }
 }
 
 /// A step that cannot be negative: a positive integer literal.
@@ -309,11 +321,13 @@ impl Walker<'_> {
             }
             Expr::Filter(f) => {
                 // A filter returns a new object in Python; in a template that
-                // changes containers, it is one the template may change.
-                if let (true, Some(x)) = (self.want.containers, &f.expr) {
+                // changes containers, it is one the template may change. A
+                // chain with no value at its root -- the filter section of
+                // `{% filter %}` or `{% set x | f %}` -- is not an
+                // expression, and stays as written.
+                if self.want.containers && filters_a_value(e) {
                     // A filter node's span starts at the `|`; its text starts
                     // with the value it filters.
-                    let _ = x;
                     self.out.push(Site::new(
                         range(e),
                         super::containers::OWN_FN,
@@ -428,6 +442,22 @@ impl Walker<'_> {
             }
             Stmt::Set(x) => {
                 if let Expr::GetAttr(g) = &x.target {
+                    // A namespace attribute, where containers change: the
+                    // value may hold the namespace through a container
+                    // changed since, which no reading of the source can
+                    // see, so it is checked as it is assigned.
+                    if self.want.containers {
+                        let value = range(&x.expr);
+                        let mut site = Site::new(
+                            value,
+                            super::containers::ATTR_FN,
+                            &[Some(range(&g.expr)), Some(value)],
+                        );
+                        // The namespace's text lies before the value; only
+                        // the value is replaced.
+                        site.whole = value;
+                        self.out.push(site);
+                    }
                     self.expr(&g.expr);
                 }
                 self.expr(&x.expr);
@@ -644,7 +674,15 @@ fn emit(
                 out.push_str(", ");
             }
             match part {
-                Some((a, b)) => emit(source, &inner, *a, *b, out, None),
+                // Grouped: a part is one expression, and a bare tuple
+                // (`{% set a, b = 1, 2 %}`, `{% for x in 1, 2 %}`) written
+                // as an argument unparenthesised would be that many
+                // arguments.
+                Some((a, b)) => {
+                    out.push('(');
+                    emit(source, &inner, *a, *b, out, None);
+                    out.push(')');
+                }
                 None => out.push_str("none"),
             }
         }
@@ -740,7 +778,8 @@ pub(super) fn prepare_mapped<'s>(
         loops: source.contains("loop."),
         isolated: source.contains("without context"),
         variadic: source.contains("varargs") || source.contains("kwargs"),
-        cycle: source.contains("cycle("),
+        // Not `cycle(`: whitespace may stand before the parenthesis.
+        cycle: source.contains("cycle"),
     };
     let attributes = may_set_attribute(source);
     let controls = source.contains("continue") || source.contains("break");
@@ -761,7 +800,7 @@ pub(super) fn prepare_mapped<'s>(
         }
     }
     if controls {
-        if let Some(refusal) = stray_loop_control(std::slice::from_ref(&ast), false) {
+        if let Some(refusal) = stray_loop_control(std::slice::from_ref(&ast), LoopCtx::Outside) {
             return Err(refusal);
         }
     }
@@ -802,6 +841,18 @@ fn rewrite<'s>(source: &'s str, name: &str) -> Cow<'s, str> {
 // Namespaces that would hold themselves
 // ---------------------------------------------------------------------------
 
+/// Where a `break` or `continue` stands, for [`stray_loop_control`].
+#[derive(Clone, Copy)]
+enum LoopCtx {
+    /// No loop of its own to act on.
+    Outside,
+    /// Directly in a loop's body (through `if`s).
+    InLoop,
+    /// In a loop's body, inside a block the engine opens and must close: a
+    /// `with` scope, a `set` or `filter` capture, an `autoescape` setting.
+    Held(&'static str),
+}
+
 /// A `break` or `continue` with no loop of its own to act on. Jinja2
 /// compiles a template to Python, where a loop's `else` runs after the loop
 /// and a macro or call block is a function, so neither is inside the loop
@@ -809,28 +860,45 @@ fn rewrite<'s>(source: &'s str, name: &str) -> Cow<'s, str> {
 /// accepted it inside a macro defined in a loop and, at run time, popped a
 /// frame that was not a loop's: an engine panic, found by
 /// fuzz_jinja_template.
-fn stray_loop_control(stmts: &[Stmt<'_>], in_loop: bool) -> Option<Refusal> {
+///
+/// Inside a `with`, a `set` block, a `filter` block or an `autoescape`
+/// within the loop, minijinja's jump leaves the block open: a `with` scope
+/// is then popped as if it were the loop's (a panic), a capture swallows the
+/// rest of the output. Jinja2 accepts those; here they are refused at
+/// compile time, naming the block -- move the loop control out of it.
+fn stray_loop_control(stmts: &[Stmt<'_>], ctx: LoopCtx) -> Option<Refusal> {
     let refuse = |what: &str, line: u16| Refusal {
         line: u32::from(line),
-        message: format!("'{what}' not properly in loop"),
+        message: match ctx {
+            LoopCtx::Held(block) => format!(
+                "'{what}' inside {block} is not supported: the block would be left open; \
+                 move it outside the block"
+            ),
+            _ => format!("'{what}' not properly in loop"),
+        },
         syntax: true,
     };
+    let held = |block| match ctx {
+        LoopCtx::Outside => LoopCtx::Outside,
+        _ => LoopCtx::Held(block),
+    };
+    let stray = !matches!(ctx, LoopCtx::InLoop);
     stmts.iter().find_map(|s| match s {
-        Stmt::Continue(c) if !in_loop => Some(refuse("continue", c.span().start_line)),
-        Stmt::Break(b) if !in_loop => Some(refuse("break", b.span().start_line)),
-        Stmt::Template(t) => stray_loop_control(&t.children, in_loop),
-        Stmt::ForLoop(l) => {
-            stray_loop_control(&l.body, true).or_else(|| stray_loop_control(&l.else_body, in_loop))
+        Stmt::Continue(c) if stray => Some(refuse("continue", c.span().start_line)),
+        Stmt::Break(b) if stray => Some(refuse("break", b.span().start_line)),
+        Stmt::Template(t) => stray_loop_control(&t.children, ctx),
+        Stmt::ForLoop(l) => stray_loop_control(&l.body, LoopCtx::InLoop)
+            .or_else(|| stray_loop_control(&l.else_body, ctx)),
+        Stmt::IfCond(c) => {
+            stray_loop_control(&c.true_body, ctx).or_else(|| stray_loop_control(&c.false_body, ctx))
         }
-        Stmt::IfCond(c) => stray_loop_control(&c.true_body, in_loop)
-            .or_else(|| stray_loop_control(&c.false_body, in_loop)),
-        Stmt::WithBlock(w) => stray_loop_control(&w.body, in_loop),
-        Stmt::SetBlock(b) => stray_loop_control(&b.body, in_loop),
-        Stmt::AutoEscape(a) => stray_loop_control(&a.body, in_loop),
-        Stmt::FilterBlock(b) => stray_loop_control(&b.body, in_loop),
-        Stmt::Block(b) => stray_loop_control(&b.body, in_loop),
-        Stmt::Macro(m) => stray_loop_control(&m.body, false),
-        Stmt::CallBlock(c) => stray_loop_control(&c.macro_decl.body, false),
+        Stmt::WithBlock(w) => stray_loop_control(&w.body, held("a `with` block")),
+        Stmt::SetBlock(b) => stray_loop_control(&b.body, held("a `set` block")),
+        Stmt::AutoEscape(a) => stray_loop_control(&a.body, held("an `autoescape` block")),
+        Stmt::FilterBlock(b) => stray_loop_control(&b.body, held("a `filter` block")),
+        Stmt::Block(b) => stray_loop_control(&b.body, ctx),
+        Stmt::Macro(m) => stray_loop_control(&m.body, LoopCtx::Outside),
+        Stmt::CallBlock(c) => stray_loop_control(&c.macro_decl.body, LoopCtx::Outside),
         _ => None,
     })
 }
@@ -1078,6 +1146,7 @@ pub(super) fn slice(value: Value, start: Value, stop: Value, step: Value) -> Res
 
 #[cfg(test)]
 mod tests {
+    use super::super::containers::{LIST_FN, OWN_FN};
     use super::*;
 
     #[test]
@@ -1110,19 +1179,56 @@ mod tests {
         assert!(matches!(rewrite("{{ x[::2] }}", "t"), Cow::Borrowed(_)));
         assert_eq!(
             rewrite("{{ x[::-1] }}", "t"),
-            format!("{{{{ {SLICE_FN}(x, none, none, -1) }}}}")
+            format!("{{{{ {SLICE_FN}((x), none, none, (-1)) }}}}")
         );
         assert_eq!(
             rewrite("{{ a.b[1:n:s][0] }}", "t"),
-            format!("{{{{ {SLICE_FN}(a.b, 1, n, s)[0] }}}}")
+            format!("{{{{ {SLICE_FN}((a.b), (1), (n), (s))[0] }}}}")
         );
         // Nested: the inner slice inside the outer's target.
         assert_eq!(
             rewrite("{{ x[::-1][::-1] }}", "t"),
-            format!("{{{{ {SLICE_FN}({SLICE_FN}(x, none, none, -1), none, none, -1) }}}}")
+            format!("{{{{ {SLICE_FN}(({SLICE_FN}((x), none, none, (-1))), none, none, (-1)) }}}}")
         );
         // Unparseable input is left for the compiler to report.
         assert!(matches!(rewrite("{{ x[::-1 }}", "t"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn a_bare_tuple_is_rewritten_whole_and_grouped() {
+        let m = "{% do m.append(0) %}";
+        // minijinja starts the tuple's span after its first comma; the
+        // rewrite covers the whole tuple, as one argument.
+        assert_eq!(
+            rewrite(&format!("{m}{{% set a, b = 1, 2 %}}"), "t"),
+            format!("{m}{{% set a, b = {LIST_FN}((1, 2)) %}}")
+        );
+        // A one-tuple: the span the parser gives runs backwards.
+        assert_eq!(
+            rewrite(&format!("{m}{{% set t = 1, %}}"), "t"),
+            format!("{m}{{% set t = {LIST_FN}((1,)) %}}")
+        );
+        assert_eq!(
+            rewrite(&format!("{m}{{% set (a, b), c = (1, 2), [3] %}}"), "t"),
+            format!(
+                "{m}{{% set (a, b), c = {LIST_FN}(({LIST_FN}(((1, 2))), {LIST_FN}(([3])))) %}}"
+            )
+        );
+    }
+
+    #[test]
+    fn a_filter_section_is_not_a_value() {
+        let m = "{% do m.append(0) %}";
+        for src in [
+            "{% filter trim | upper %} a {% endfilter %}",
+            "{% set b | trim | upper %} a {% endset %}",
+        ] {
+            assert_eq!(rewrite(&format!("{m}{src}"), "t"), format!("{m}{src}"));
+        }
+        assert_eq!(
+            rewrite(&format!("{m}{{{{ x | trim | upper }}}}"), "t"),
+            format!("{m}{{{{ {OWN_FN}(({OWN_FN}((x | trim)) | upper)) }}}}")
+        );
     }
 
     #[test]
@@ -1185,6 +1291,6 @@ mod tests {
             src.matches('\n').count(),
             "{out}"
         );
-        assert!(out.contains(&format!("c: {{{{ {SLICE_FN}(y")));
+        assert!(out.contains(&format!("c: {{{{ {SLICE_FN}((y)")));
     }
 }

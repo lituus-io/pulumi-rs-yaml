@@ -1,0 +1,1 @@
+{% set xs = [] %}{% do xs.append('a') %}{% do xs.append('b') %}{% do xs.append('c') %}{% for x in xs %}{{ loop.index }}/{{ loop.length }}{{ loop.cycle('o', 'e') }}{{ 'L' if loop.last }}{{ loop.revindex }}{{ x }} {% endfor %}

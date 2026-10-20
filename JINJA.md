@@ -1,3 +1,6 @@
+<!-- Author: spicyzhug@gmail.com -->
+<!-- Copyright: lituus-io, all rights reserved -->
+
 # Jinja in pulumi-rs-yaml
 
 Every Pulumi YAML project file this runtime reads is first rendered as a
@@ -287,7 +290,25 @@ are **read-only**: changing one is an error that says to copy it first
 (`x.copy()`, or `x | list`). Changing a list or dict while a loop walks it is
 an error too (Python allows it for lists; here it would loop without end or
 skip silently). A dict keeps its keys in key order, as every map literal here
-does.
+does. A list or dict cannot be made to hold itself (Python prints such a
+list as `[[...]]`; here printing or comparing it would never end), and one
+holds at most the `range` limit's entries.
+
+Nothing else changes when a template mutates: every other method answers
+with the same arguments (`xs.index(x, start, stop)`), every assignment form
+unpacks the same (`{% set a, b = 1, 2 %}`, nested tuples, a namespace
+attribute), and a loop over a changed list knows its `length`. The
+conformance corpus is rendered a second time with a mutation in front of
+every case to hold this.
+
+```jinja
+{% set xs = ['a', 'b', 'a'] %}{% do xs.append('c') %}{% set first, rest = xs[0], xs[1:] -%}
+{{ xs.index('a', 1) }} {{ first }} {{ rest | length }}{% for x in xs %} {{ loop.index }}/{{ loop.length }}{% endfor %}
+```
+
+```text
+2 a 3 1/4 2/4 3/4 4/4
+```
 
 ```jinja
 {% do config.update(region='south') %}
@@ -360,15 +381,23 @@ rendering, so it evaluates nothing and cannot report an undefined name.
 ## Limits
 
 Each file's render runs under four limits. A render that crosses one stops
-with an error of its own kind, naming the line and the limit -- never a hang
-or an out-of-memory.
+with an error of its own kind, naming the limit and the place it was crossed,
+as `file:line:column` -- never a hang or an out-of-memory.
+
+Where the output limit is crossed: at the expression that would carry it
+over, counting the text already written before it (so a comment line that
+writes a long string under a few lines of YAML is placed at its `{{ }}`); at
+the `readFile()` call whose contents would; and, when literal text alone
+crosses it (a loop of plain text), at the character of the line where the
+limit falls. Text from an included or parent template is placed at the
+`{% include %}` or `{% extends %}` that brought it in.
 
 | Limit | Default | Kind | Bounds |
 |---|---|---|---|
 | `fuel` | 100,000 instructions | `FuelExhausted` | time: every loop, macro and filter call spends fuel |
 | `recursion` | 500 (the engine maximum) | `RecursionLimit`, `IncludeCycle` | nesting: a macro call costs about 4, an include 10; reached on any caller's stack (rendering runs on a 64 MiB worker) |
 | `output` | 16 MiB | `OutputTooLarge` | the rendered file, `readFile()` contents included; also any one value a filter builds from a width (`indent`, `tojson`, `center`), and a repeated string at four times this |
-| `range` | 100,000 elements | `RangeTooLarge` | one `range()` call (Jinja2's own limit), a repeated list, and `slice`'s count |
+| `range` | 100,000 elements | `RangeTooLarge` | one `range()` call (Jinja2's own limit), a repeated list, `slice`'s count, and a list or dict the template grows |
 
 The defaults were set from measurement: the heaviest of 4,583 production
 project files used 6,575 instructions and rendered 61 KB, so the budget is

@@ -1,3 +1,6 @@
+<!-- Author: spicyzhug@gmail.com -->
+<!-- Copyright: lituus-io, all rights reserved -->
+
 # pulumi-rs-yaml
 
 [![CI](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/ci.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/ci.yml)
@@ -8,8 +11,8 @@
 [![PyPI](https://img.shields.io/pypi/v/pulumi-rs-yaml?label=PyPI)](https://pypi.org/project/pulumi-rs-yaml/)
 [![Python](https://img.shields.io/badge/python-%E2%89%A53.9-blue)](https://pypi.org/project/pulumi-rs-yaml/)
 [![fuzz targets](https://img.shields.io/badge/fuzz%20targets-29-blue)](fuzz/fuzz_targets)
-[![security tests](https://img.shields.io/badge/security%20tests-226-blue)](crates/pulumi-rs-yaml-core/tests/security_tests.rs)
-[![Jinja conformance](https://img.shields.io/badge/jinja2%20conformance-390%20cases-blue)](tests/jinja_conformance/MATRIX.md)
+[![security tests](https://img.shields.io/badge/security%20tests-236-blue)](crates/pulumi-rs-yaml-core/tests/security_tests.rs)
+[![Jinja conformance](https://img.shields.io/badge/jinja2%20conformance-431%20cases-blue)](tests/jinja_conformance/MATRIX.md)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE)
 
 Rust implementation of the [Pulumi](https://www.pulumi.com/) YAML language runtime. Drop-in replacement for the Go-based `pulumi-yaml` with 1:1 compatibility.
@@ -79,10 +82,12 @@ limits (`PULUMI_YAML_JINJA_LIMITS`), where includes may reach, the error
 format, and every difference from Python Jinja2. Its examples are executed
 by the test suite.
 
-The engine is held to pinned reference Jinja2 by a conformance corpus of 345
-cases and 73 method cases (the methods also against the embedded Starlark) ([MATRIX.md](tests/jinja_conformance/MATRIX.md),
+The engine is held to pinned reference Jinja2 by a conformance corpus of 354
+cases and 77 method cases (the methods also against the embedded Starlark) ([MATRIX.md](tests/jinja_conformance/MATRIX.md),
 [DIVERGENCES.md](tests/jinja_conformance/DIVERGENCES.md)); CI regenerates the
-goldens from the reference and fails on any drift.
+goldens from the reference and fails on any drift. Every case is rendered a
+second time with a mutation in front of it, so a template that changes a
+list renders everything else exactly as one that does not.
 
 ## Provider-templated blocks
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-# Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+# Author: spicyzhug@gmail.com
+# Copyright: lituus-io, all rights reserved
 """Fail when a benchmark regressed beyond the noise threshold.
 
     bench_gate.py BASE.json HEAD.json --base-version X.Y.Z
@@ -17,6 +18,14 @@ so a further regression is still caught relative to the new expectation.
 Entries name the release they apply to (`valid_for`) and are refused once
 the merge-base is at or past it, so none outlives the change it explains;
 an entry naming a benchmark that does not exist is refused too.
+
+Shared runners are noisy in one direction only: a neighbour can make a run
+slower, never faster. So a benchmark flagged on one measurement is measured
+again, base and head back to back, and judged on each side's fastest mean:
+`--flagged FILE` writes the names that failed (one per line) for the CI job
+to re-measure, and BASE/HEAD may each be given as several files joined by
+commas, of which the minimum per benchmark is taken. A regression the code
+causes shows on every measurement and still fails; a slow sample does not.
 """
 
 import argparse
@@ -82,6 +91,16 @@ def check(base, head, entries, base_version, threshold, min_delta_ns):
     return errors, regressions, notes
 
 
+def load_fastest(paths):
+    """Each benchmark's minimum mean across the comma-separated files."""
+    out = {}
+    for path in paths.split(","):
+        with open(path) as f:
+            for name, mean in json.load(f).items():
+                out[name] = min(mean, out.get(name, mean))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("base")
@@ -90,11 +109,10 @@ def main():
     ap.add_argument("--rebaseline")
     ap.add_argument("--threshold", type=float, default=1.25)
     ap.add_argument("--min-delta-ns", type=float, default=100.0)
+    ap.add_argument("--flagged")
     args = ap.parse_args()
-    with open(args.base) as f:
-        base = json.load(f)
-    with open(args.head) as f:
-        head = json.load(f)
+    base = load_fastest(args.base)
+    head = load_fastest(args.head)
     errors, regressions, notes = check(
         base,
         head,
@@ -111,6 +129,9 @@ def main():
     if regressions:
         print(f"benchmark regressions beyond {round((args.threshold - 1) * 100)}% threshold:")
         print("\n".join(regressions))
+    if args.flagged:
+        with open(args.flagged, "w") as f:
+            f.writelines(r.split(":", 1)[0] + "\n" for r in regressions)
     if errors or regressions:
         sys.exit(1)
     print(f"no regressions beyond {round((args.threshold - 1) * 100)}% across {len(base)} benchmarks")

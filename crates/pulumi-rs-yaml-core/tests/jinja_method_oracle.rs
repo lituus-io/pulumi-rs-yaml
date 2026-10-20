@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 //! Python methods on values, held to two references at once.
 //!
@@ -49,7 +50,15 @@ fn class_of(kind: RenderErrorKind) -> &'static str {
     }
 }
 
+/// Turns on mutable-container mode, where a list or dict literal -- the
+/// receiver of most cases here -- is built as one the template can change.
+const MUTABLE_PREAMBLE: &str = "{% set _rsyaml_mode = [] %}{% do _rsyaml_mode.append(0) %}";
+
 fn rsyaml(expr: &str) -> Outcome {
+    rsyaml_with(expr, "")
+}
+
+fn rsyaml_with(expr: &str, preamble: &str) -> Outcome {
     let (config, extra) = (HashMap::new(), HashMap::new());
     let ctx = JinjaContext {
         project_name: "p",
@@ -64,7 +73,7 @@ fn rsyaml(expr: &str) -> Outcome {
         extra: &extra,
         limits: JinjaLimits::default(),
     };
-    match JinjaPreprocessor::new(&ctx).render(&format!("{{{{ {expr} }}}}"), "m.j2") {
+    match JinjaPreprocessor::new(&ctx).render(&format!("{preamble}{{{{ {expr} }}}}"), "m.j2") {
         Ok(out) => Outcome::Text(out.into_owned()),
         Err(d) => Outcome::Error(class_of(d.kind).to_string()),
     }
@@ -186,6 +195,29 @@ fn every_method_agrees_with_jinja2_and_starlark_or_is_listed() {
     for id in listed.keys() {
         if !dirs.iter().any(|d| d.ends_with(id)) {
             failures.push(format!("{id}: listed but no such case"));
+        }
+    }
+    assert!(failures.is_empty(), "\n{}\n", failures.join("\n"));
+}
+
+/// Every method case again with its receiver built as a mutable container:
+/// the method must answer exactly as it does on the value it was before.
+#[test]
+fn every_method_answers_the_same_in_mutable_container_mode() {
+    let mut failures = Vec::new();
+    for entry in fs::read_dir(corpus()).unwrap() {
+        let dir = entry.unwrap().path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let expr = fs::read_to_string(dir.join("expr.txt")).unwrap();
+        let expr = expr.trim_end_matches('\n');
+        let (plain, mutable) = (rsyaml(expr), rsyaml_with(expr, MUTABLE_PREAMBLE));
+        if plain != mutable {
+            failures.push(format!(
+                "{}: differs in mutable-container mode\n    plain:   {plain:?}\n    mutable: {mutable:?}",
+                dir.display()
+            ));
         }
     }
     assert!(failures.is_empty(), "\n{}\n", failures.join("\n"));

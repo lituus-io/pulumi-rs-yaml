@@ -1,0 +1,1 @@
+{% filter upper %}hello {{ 'x' }}{% endfilter %}

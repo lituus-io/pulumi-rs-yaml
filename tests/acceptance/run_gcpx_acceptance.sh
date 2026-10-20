@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Author: spicyzhug@gmail.com
+# Copyright: lituus-io, all rights reserved
+
 # GCPX provider acceptance tests — full CRUD lifecycle through the Rust YAML runtime.
 #
 # Tests: Pulumi CLI → pulumi-language-yaml (Rust) → pulumi-resource-gcpx (Rust) → real GCP

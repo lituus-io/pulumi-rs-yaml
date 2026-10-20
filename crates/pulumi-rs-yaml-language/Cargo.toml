@@ -1,6 +1,9 @@
+# Author: spicyzhug@gmail.com
+# Copyright: lituus-io, all rights reserved
+
 [package]
 name = "pulumi-rs-yaml-language"
-version = "0.5.40"
+version = "0.5.41"
 edition = "2021"
 description = "Pulumi YAML language host plugin (Rust implementation)"
 license.workspace = true

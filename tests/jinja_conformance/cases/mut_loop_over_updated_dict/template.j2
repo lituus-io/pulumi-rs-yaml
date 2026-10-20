@@ -1,0 +1,1 @@
+{% set d = {'a': 1} %}{% do d.update(b=2) %}{% for k in d %}{{ loop.length }}{{ k }}{{ 'L' if loop.last }}{% endfor %}

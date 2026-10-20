@@ -1,0 +1,1 @@
+{% if x == 'a' %}yes{% endif %}|{% if x == 'b' %}no{% endif %}

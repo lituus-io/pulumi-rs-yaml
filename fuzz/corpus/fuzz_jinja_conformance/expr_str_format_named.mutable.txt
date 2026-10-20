@@ -1,0 +1,1 @@
+{{ '{a}/{b}'.format(a='x', b=2) }} {{ '{0}{1}{0}'.format('a', 'b') }} {{ '{{literal}}'.format() }}

@@ -1,7 +1,113 @@
+<!-- Author: spicyzhug@gmail.com -->
+<!-- Copyright: lituus-io, all rights reserved -->
+
 # Changelog
 
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
+
+## 0.5.41
+
+Three defects found by a consumer's functionality matrix on macOS, Linux and
+Windows, and the class behind two of them closed.
+
+### One method table and one lowering in mutable-container mode
+
+A template that calls a mutating method (`{% do xs.append(1) %}`) has its
+list and dict literals built as containers it can change. Two things then
+went wrong that never did otherwise:
+- those containers answered `index`, `count`, `copy`, `get`, `items`,
+  `keys` and `values` from a second, shorter implementation: `xs.index(x,
+  start)` was refused ("index() takes at most 1 arguments (2 given)"). Only
+  the mutators live on the containers now; every read-only method is the one
+  table every sequence and mapping uses;
+- a bare tuple (`{% set a, b = 1, 2 %}`) was rewritten from its second
+  element on, because the parser starts its span after the first comma:
+  "number is not iterable". A one-tuple (`{% set t = 1, %}`) gave a span
+  that runs backwards, and slicing the source with it **aborted the
+  process** in a release build. The rewrite now covers the whole tuple and
+  passes it as one argument.
+
+Rendering the conformance corpus a second time in this mode found two more:
+a loop over a changed list or dict did not know its length (`loop.length`,
+`revindex` and `last` were undefined, and an argument-less `loop.cycle()`
+panicked inside the engine), and the filter section of `{% filter %}` and
+`{% set x | f %}` was wrapped as if it were a value ("undefined value").
+Both are fixed. The corpus (354 cases) and the method corpus (77) now run in
+both modes, in Rust and through the Python binding, and must render the same.
+
+### A changed container cannot hold itself or outgrow the limits
+
+Hostile templates in mutable-container mode, each of which 0.5.40 let
+through:
+- a list or dict that holds itself (`{% do xs.append(xs) %}`, or through
+  another list, a dict or a namespace, in either order) recursed without end
+  when printed, serialised, hashed or compared: a **stack overflow that
+  killed the host process**. Every change that puts a value into a
+  container (`append`, `insert`, `extend`, `update`, `setdefault`, and a
+  namespace attribute assigned where containers change) now asks whether the
+  value holds that container and refuses it, a `JinjaTypeError`. The walk is
+  iterative, reads each container once however often it is shared, and
+  returns at once for a value with nothing inside;
+- a list doubled in a loop (`{% do xs.extend(xs) %}`) costs one instruction
+  per doubling: 26 instructions built 67 million elements. A list or dict
+  may now hold at most the range limit's entries (100,000 by default), a
+  `RangeTooLarge` refusal, as a repeated list already was;
+- an argument-less `loop.cycle()` over a changed list **aborted** (above).
+
+### Four more aborts, found by fuzzing this release
+
+- `loop.cycle ()` -- whitespace before the parenthesis -- slipped past the
+  0.5.40 guard for a cycle with nothing to cycle and reached the engine's
+  own, which divides by the item count: a process abort. The guard is now
+  found from the parsed template however the call is spaced.
+- `break` or `continue` inside a `with` block within a loop popped the
+  `with` scope as if it were the loop's frame: an engine panic. Inside a
+  `set`, `filter` or `autoescape` block it left a capture open. Jinja2
+  accepts these; here they are refused at compile time, naming the block
+  (listed in DIVERGENCES.md as unsupported).
+- `chain` over a value that cannot be iterated (`1 | chain(2)`) carried it
+  as an invalid value, and sorting or comparing the result (`| min`,
+  `| sort`) unwrapped an object that was not there: a panic. `chain` now
+  refuses such a value when it is called.
+- a BigQuery table id whose partition decorator stripped to a dot segment
+  (`.$1`) built a resource key ending `/tables/.`. The id is checked again
+  after the decorator is removed.
+
+### Output-limit crossings are placed
+
+A render that crossed the output limit through text written before an
+expression, through literal text alone, or through `readFile()` contents
+reported line 0. Each is now placed, `file:line:column` as every other
+limit: at the expression that would carry the output over (the text
+already written counts against it), at the `readFile()` call, or at the
+character where literal text crossed it -- found by address, since the
+compiled template borrows the file's text. Text from an included or parent
+template is placed at the statement that brought it in. A refused write now
+stops the render at once rather than letting it run on to the end.
+
+### Tests
+
+- `jinja_conformance.rs::every_case_renders_the_same_in_mutable_container_mode`
+  and `jinja_method_oracle.rs::every_method_answers_the_same_in_mutable_container_mode`,
+  with their Python twins; seven new cases and four method cases.
+- `fuzz_jinja_conformance` has a mode bit (a leading `\x01`) that renders the
+  input behind the same preamble and checks the two modes agree wherever both
+  render; seeds for both modes.
+- Each of the four limits placed at a known line (`jinja_limits_tests.rs`,
+  `test_jinja_conformance.py`); a bare one-tuple never aborts the process
+  (`security_tests.rs`); `jinja_mutable_mode_security` holds hostile
+  templates in that mode: self-holding containers, growth, every limit at
+  its line, and no reach past the program's inputs or the include root.
+- The 0.5.40 benchmark re-baseline is retired: its release is the merge
+  base now, so the slower include path is the baseline. The gate's
+  self-test uses its own fixture entry.
+- The benchmark gate confirms before it fails: a benchmark flagged on one
+  measurement is measured twice more on each side, alternately, and judged
+  on each side's fastest mean -- a shared runner's neighbour can only slow a
+  run down, so a regression in the code shows on every measurement and a
+  disturbed sample does not (a byte-identical function measured 1.45x on
+  one sample).
 
 ## 0.5.40
 

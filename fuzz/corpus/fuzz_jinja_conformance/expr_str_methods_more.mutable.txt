@@ -1,0 +1,1 @@
+{{ '-'.join(['a', 'b']) }} {{ 'hello world'.title() }} {{ 'hello'.capitalize() }} {{ '{}-{}'.format('a', 1) }} {{ 'abca'.count('a') }} {{ 'abc'.find('c') }}

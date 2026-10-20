@@ -1,4 +1,5 @@
-// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+// Author: spicyzhug@gmail.com
+// Copyright: lituus-io, all rights reserved
 
 //! Each render limit at its boundary: exactly at the limit renders, one past
 //! it is refused with its own kind. Counted, not timed: fuel is the number of
@@ -170,5 +171,183 @@ fn the_default_budget_holds_thousands_of_resources() {
     assert!(
         capacity >= 2_000,
         "{per} fuel per resource allows only {capacity}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Every limit names where it was crossed
+// ---------------------------------------------------------------------------
+
+/// The diagnostic for `source`, rendered under `limits` from `project_dir`.
+fn diagnose_in(
+    source: &str,
+    limits: JinjaLimits,
+    project_dir: &str,
+) -> (RenderErrorKind, u32, u32, String) {
+    let config = HashMap::new();
+    let extra = HashMap::new();
+    let ctx = JinjaContext {
+        project_name: "app",
+        stack_name: "dev",
+        cwd: project_dir,
+        organization: "org",
+        root_directory: project_dir,
+        config: &config,
+        project_dir,
+        undefined: UndefinedMode::Strict,
+        provider_templated_packages: &[],
+        extra: &extra,
+        limits,
+    };
+    let d = JinjaPreprocessor::new(&ctx)
+        .render(source, "Pulumi.yaml")
+        .expect_err("the limit must refuse");
+    let rich = d.format_rich("Pulumi.yaml");
+    (d.kind, d.line, d.column, rich)
+}
+
+fn diagnose(source: &str, limits: JinjaLimits) -> (RenderErrorKind, u32, u32, String) {
+    diagnose_in(source, limits, ".")
+}
+
+/// YAML above and below the line under test, which is always line 3.
+fn at_line_3(line: &str) -> String {
+    format!("name: app\nruntime: yaml\n{line}\nvariables:\n  v: 1\n")
+}
+
+#[track_caller]
+fn assert_at(got: (RenderErrorKind, u32, u32, String), kind: RenderErrorKind, col: u32) {
+    let (k, line, column, rich) = got;
+    assert_eq!(k, kind, "{rich}");
+    assert_eq!((line, column), (3, col), "{rich}");
+    assert!(
+        rich.starts_with(&format!("Pulumi.yaml:3:{col}: error: ")),
+        "{rich}"
+    );
+}
+
+#[test]
+fn fuel_is_located_at_its_line() {
+    let src = at_line_3("x: {% for i in range(100) %}{{ i }}{% endfor %}");
+    assert_at(
+        diagnose(&src, with(|l| l.fuel = 50)),
+        RenderErrorKind::FuelExhausted,
+        diagnose(&src, with(|l| l.fuel = 50)).2,
+    );
+}
+
+#[test]
+fn recursion_is_located_at_its_line() {
+    let src = at_line_3("{% macro r(n) %}{{ r(n + 1) }}{% endmacro %}x: {{ r(0) }}");
+    let got = diagnose(&src, with(|l| l.recursion = 40));
+    let col = got.2;
+    assert_at(got, RenderErrorKind::RecursionLimit, col);
+}
+
+#[test]
+fn range_is_located_at_its_expression() {
+    let src = at_line_3("x: {{ range(11) | length }}");
+    assert_at(
+        diagnose(&src, with(|l| l.range = 10)),
+        RenderErrorKind::RangeTooLarge,
+        7,
+    );
+}
+
+#[test]
+fn output_crossed_by_one_expression_is_located_at_it() {
+    let src = at_line_3("x: {{ 'x' * 100 }}");
+    assert_at(
+        diagnose(&src, with(|l| l.output_bytes = 99)),
+        RenderErrorKind::OutputTooLarge,
+        7,
+    );
+}
+
+#[test]
+fn output_crossed_by_text_before_an_expression_is_located_at_the_expression() {
+    // The expression alone fits; with the text written before it, it does
+    // not. The default limit, as the file was found: a comment line that
+    // writes just under 16 MiB beneath two lines of YAML.
+    let src = "name: r\nruntime: yaml\n# {{ 'x' * 16777200 }}\n";
+    let (kind, line, column, rich) = diagnose(src, JinjaLimits::default());
+    assert_eq!(kind, RenderErrorKind::OutputTooLarge, "{rich}");
+    assert_eq!((line, column), (3, 6), "{rich}");
+    assert!(rich.starts_with("Pulumi.yaml:3:6: error: "), "{rich}");
+    // The same, under a small limit.
+    assert_at(
+        diagnose(
+            &at_line_3("x: {{ 'x' * 90 }}"),
+            with(|l| l.output_bytes = 100),
+        ),
+        RenderErrorKind::OutputTooLarge,
+        7,
+    );
+}
+
+#[test]
+fn output_crossed_by_literal_text_alone_is_located_where_it_crossed() {
+    // No expression is ever written: a loop of plain text.
+    let src = at_line_3("{% for i in range(50) %}0123456789{% endfor %}");
+    let (kind, line, _, rich) = diagnose(&src, with(|l| l.output_bytes = 100));
+    assert_eq!(kind, RenderErrorKind::OutputTooLarge, "{rich}");
+    assert_eq!(line, 3, "{rich}");
+    assert!(rich.starts_with("Pulumi.yaml:3:"), "{rich}");
+    // Text after the last expression: the line it crossed on.
+    let src = "a: {{ 'x' * 40 }}\nb: 1\nc: 0123456789012345678901234567890123456789\nd: 2\n";
+    let (kind, line, column, rich) = diagnose(src, with(|l| l.output_bytes = 70));
+    assert_eq!(kind, RenderErrorKind::OutputTooLarge, "{rich}");
+    assert_eq!(line, 3, "{rich}");
+    assert!(column > 0, "{rich}");
+}
+
+#[test]
+fn output_crossed_by_a_read_file_is_located_at_the_call() {
+    let dir = std::env::temp_dir().join(format!("rsyaml-limit-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("big.txt"), "y".repeat(80)).unwrap();
+    let src = at_line_3("x: {{ 'a' * 30 }} {{ readFile('big.txt') }}");
+    let got = diagnose_in(&src, with(|l| l.output_bytes = 100), dir.to_str().unwrap());
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_at(got, RenderErrorKind::OutputTooLarge, 22);
+}
+
+#[test]
+fn output_crossed_inside_an_include_or_a_parent_is_located_at_the_statement() {
+    let dir = std::env::temp_dir().join(format!("rsyaml-limit-inc-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("part.j2"),
+        "{% for i in range(50) %}0123456789{% endfor %}",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("base.j2"),
+        "{% for i in range(50) %}0123456789{% endfor %}{% block b %}{% endblock %}",
+    )
+    .unwrap();
+    let d = dir.to_str().unwrap();
+    let inc = diagnose_in(
+        &at_line_3("{% include 'part.j2' %}"),
+        with(|l| l.output_bytes = 100),
+        d,
+    );
+    let ext = diagnose_in(
+        "{% extends 'base.j2' %}\n\n{% block b %}x{% endblock %}\n",
+        with(|l| l.output_bytes = 100),
+        d,
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(
+        (inc.0, inc.1),
+        (RenderErrorKind::OutputTooLarge, 3),
+        "{}",
+        inc.3
+    );
+    assert_eq!(
+        (ext.0, ext.1),
+        (RenderErrorKind::OutputTooLarge, 1),
+        "{}",
+        ext.3
     );
 }

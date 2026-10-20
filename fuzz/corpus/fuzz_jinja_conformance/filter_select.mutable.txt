@@ -1,0 +1,1 @@
+{{ [1,2,3,4]|select('even')|list }} {{ [0, 1, '', 'a']|select|list }} {{ [1, 5, 9]|select('>', 3)|list }}

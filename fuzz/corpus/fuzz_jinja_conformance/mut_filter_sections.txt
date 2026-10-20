@@ -1,0 +1,1 @@
+{% set xs = [] %}{% do xs.append(1) %}{% filter trim | upper %} ab {% endfilter %}{% set body | trim | upper %} x {% endset %}[{{ body }}]

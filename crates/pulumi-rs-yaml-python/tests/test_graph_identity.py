@@ -1,4 +1,5 @@
-# Copyright (c) 2024-2026 Lituus-io. All rights reserved.
+# Author: spicyzhug@gmail.com
+# Copyright: lituus-io, all rights reserved
 
 """Stack identity, backend resolution, host config, IAM and resource keys."""
 

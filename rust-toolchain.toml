@@ -1,3 +1,6 @@
+# Author: spicyzhug@gmail.com
+# Copyright: lituus-io, all rights reserved
+
 [toolchain]
 channel = "1.90"
 components = ["rustfmt", "clippy"]

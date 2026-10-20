@@ -1,0 +1,1 @@
+{% set ns = namespace(v=0) %}{% set ns.v = ns %}{{ ns.v is defined }}

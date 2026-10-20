@@ -1,0 +1,1 @@
+{% set rows = [{'k': 'a', 'v': 1}, {'k': 'b', 'v': 2}, {'k': 'a', 'v': 3}] %}{% for g in rows|groupby('k') %}{{ g.grouper }}:{{ g.list|map(attribute='v')|list }} {% endfor %}

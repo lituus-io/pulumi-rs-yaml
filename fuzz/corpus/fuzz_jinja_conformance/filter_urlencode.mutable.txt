@@ -1,0 +1,1 @@
+{{ 'a b&c/d'|urlencode }} {{ {'k': 'v w', 'x': 1}|urlencode }}

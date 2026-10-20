@@ -1,0 +1,1 @@
+{{ [{'n': 1}, {'n': 2}]|map(attribute='n')|list }} {{ [{'n': 1}, {}]|map(attribute='n', default=0)|list }}
