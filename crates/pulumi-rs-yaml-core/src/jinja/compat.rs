@@ -89,6 +89,12 @@ const OPERATORS: &[(&str, Binary)] = &[
     (super::arith::POW_FN, super::arith::pow),
     // `x.cycle()` with no arguments.
     (super::arith::CYCLE_FN, super::arith::cycle),
+    // A namespace attribute's new value, in a template that changes
+    // containers.
+    (
+        super::containers::ATTR_FN,
+        super::containers::guard_attribute,
+    ),
 ];
 
 /// The engine's own filters, tests and globals that Jinja2 has and this

@@ -1,0 +1,4 @@
+items:
+{% for i in [1,2] %}
+  - {{ i }}
+{% endfor %}

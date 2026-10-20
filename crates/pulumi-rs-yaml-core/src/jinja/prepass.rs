@@ -203,8 +203,9 @@ impl Site {
 }
 
 /// The bytes an expression's text covers. minijinja starts a postfix or
-/// filter node's span at its operator (`.`, `(`, `|`) in some cases; the
-/// text starts with the leftmost operand, so that is found by descending.
+/// filter node's span at its operator (`.`, `(`, `|`) in some cases, and a
+/// bare tuple's (`{% set a, b = 1, 2 %}`) after its first comma; the text
+/// starts with the leftmost operand, so that is found by descending.
 fn range(e: &Expr<'_>) -> (usize, usize) {
     let s = e.span();
     let first = match e {
@@ -216,12 +217,22 @@ fn range(e: &Expr<'_>) -> (usize, usize) {
         Expr::Test(t) => Some(&t.expr),
         Expr::BinOp(b) => Some(&b.left),
         Expr::Compare(c) => Some(&c.expr),
+        Expr::List(l) => l.items.first(),
         _ => None,
     };
     let start = first.map_or(s.start_offset as usize, |x| {
         range(x).0.min(s.start_offset as usize)
     });
     (start, s.end_offset as usize)
+}
+
+/// Whether a filter chain has a value at its root (`x | f | g`), rather
+/// than being a bare chain of filters (`f | g`).
+fn filters_a_value(e: &Expr<'_>) -> bool {
+    match e {
+        Expr::Filter(f) => f.expr.as_ref().is_some_and(filters_a_value),
+        _ => true,
+    }
 }
 
 /// A step that cannot be negative: a positive integer literal.
@@ -309,11 +320,13 @@ impl Walker<'_> {
             }
             Expr::Filter(f) => {
                 // A filter returns a new object in Python; in a template that
-                // changes containers, it is one the template may change.
-                if let (true, Some(x)) = (self.want.containers, &f.expr) {
+                // changes containers, it is one the template may change. A
+                // chain with no value at its root -- the filter section of
+                // `{% filter %}` or `{% set x | f %}` -- is not an
+                // expression, and stays as written.
+                if self.want.containers && filters_a_value(e) {
                     // A filter node's span starts at the `|`; its text starts
                     // with the value it filters.
-                    let _ = x;
                     self.out.push(Site::new(
                         range(e),
                         super::containers::OWN_FN,
@@ -428,6 +441,22 @@ impl Walker<'_> {
             }
             Stmt::Set(x) => {
                 if let Expr::GetAttr(g) = &x.target {
+                    // A namespace attribute, where containers change: the
+                    // value may hold the namespace through a container
+                    // changed since, which no reading of the source can
+                    // see, so it is checked as it is assigned.
+                    if self.want.containers {
+                        let value = range(&x.expr);
+                        let mut site = Site::new(
+                            value,
+                            super::containers::ATTR_FN,
+                            &[Some(range(&g.expr)), Some(value)],
+                        );
+                        // The namespace's text lies before the value; only
+                        // the value is replaced.
+                        site.whole = value;
+                        self.out.push(site);
+                    }
                     self.expr(&g.expr);
                 }
                 self.expr(&x.expr);
@@ -644,7 +673,15 @@ fn emit(
                 out.push_str(", ");
             }
             match part {
-                Some((a, b)) => emit(source, &inner, *a, *b, out, None),
+                // Grouped: a part is one expression, and a bare tuple
+                // (`{% set a, b = 1, 2 %}`, `{% for x in 1, 2 %}`) written
+                // as an argument unparenthesised would be that many
+                // arguments.
+                Some((a, b)) => {
+                    out.push('(');
+                    emit(source, &inner, *a, *b, out, None);
+                    out.push(')');
+                }
                 None => out.push_str("none"),
             }
         }
@@ -1078,6 +1115,7 @@ pub(super) fn slice(value: Value, start: Value, stop: Value, step: Value) -> Res
 
 #[cfg(test)]
 mod tests {
+    use super::super::containers::{LIST_FN, OWN_FN};
     use super::*;
 
     #[test]
@@ -1110,19 +1148,56 @@ mod tests {
         assert!(matches!(rewrite("{{ x[::2] }}", "t"), Cow::Borrowed(_)));
         assert_eq!(
             rewrite("{{ x[::-1] }}", "t"),
-            format!("{{{{ {SLICE_FN}(x, none, none, -1) }}}}")
+            format!("{{{{ {SLICE_FN}((x), none, none, (-1)) }}}}")
         );
         assert_eq!(
             rewrite("{{ a.b[1:n:s][0] }}", "t"),
-            format!("{{{{ {SLICE_FN}(a.b, 1, n, s)[0] }}}}")
+            format!("{{{{ {SLICE_FN}((a.b), (1), (n), (s))[0] }}}}")
         );
         // Nested: the inner slice inside the outer's target.
         assert_eq!(
             rewrite("{{ x[::-1][::-1] }}", "t"),
-            format!("{{{{ {SLICE_FN}({SLICE_FN}(x, none, none, -1), none, none, -1) }}}}")
+            format!("{{{{ {SLICE_FN}(({SLICE_FN}((x), none, none, (-1))), none, none, (-1)) }}}}")
         );
         // Unparseable input is left for the compiler to report.
         assert!(matches!(rewrite("{{ x[::-1 }}", "t"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn a_bare_tuple_is_rewritten_whole_and_grouped() {
+        let m = "{% do m.append(0) %}";
+        // minijinja starts the tuple's span after its first comma; the
+        // rewrite covers the whole tuple, as one argument.
+        assert_eq!(
+            rewrite(&format!("{m}{{% set a, b = 1, 2 %}}"), "t"),
+            format!("{m}{{% set a, b = {LIST_FN}((1, 2)) %}}")
+        );
+        // A one-tuple: the span the parser gives runs backwards.
+        assert_eq!(
+            rewrite(&format!("{m}{{% set t = 1, %}}"), "t"),
+            format!("{m}{{% set t = {LIST_FN}((1,)) %}}")
+        );
+        assert_eq!(
+            rewrite(&format!("{m}{{% set (a, b), c = (1, 2), [3] %}}"), "t"),
+            format!(
+                "{m}{{% set (a, b), c = {LIST_FN}(({LIST_FN}(((1, 2))), {LIST_FN}(([3])))) %}}"
+            )
+        );
+    }
+
+    #[test]
+    fn a_filter_section_is_not_a_value() {
+        let m = "{% do m.append(0) %}";
+        for src in [
+            "{% filter trim | upper %} a {% endfilter %}",
+            "{% set b | trim | upper %} a {% endset %}",
+        ] {
+            assert_eq!(rewrite(&format!("{m}{src}"), "t"), format!("{m}{src}"));
+        }
+        assert_eq!(
+            rewrite(&format!("{m}{{{{ x | trim | upper }}}}"), "t"),
+            format!("{m}{{{{ {OWN_FN}(({OWN_FN}((x | trim)) | upper)) }}}}")
+        );
     }
 
     #[test]
@@ -1185,6 +1260,6 @@ mod tests {
             src.matches('\n').count(),
             "{out}"
         );
-        assert!(out.contains(&format!("c: {{{{ {SLICE_FN}(y")));
+        assert!(out.contains(&format!("c: {{{{ {SLICE_FN}((y)")));
     }
 }

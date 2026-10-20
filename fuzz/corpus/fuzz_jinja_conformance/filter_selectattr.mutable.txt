@@ -1,0 +1,1 @@
+{{ [{'a': true, 'n': 1}, {'a': false, 'n': 2}]|selectattr('a')|map(attribute='n')|list }} {{ [{'n': 1}, {'n': 2}]|selectattr('n', 'equalto', 2)|list }}

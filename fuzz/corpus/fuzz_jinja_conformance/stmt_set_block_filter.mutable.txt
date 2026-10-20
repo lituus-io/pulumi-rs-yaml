@@ -1,0 +1,1 @@
+{% set body | upper | trim %}  shout  {% endset %}[{{ body }}]

@@ -1,0 +1,1 @@
+{% set d = {'b': 2, 'a': 1} %}{% for k, v in d.items() %}{{ k }}:{{ v }} {% endfor %}

@@ -1,0 +1,1 @@
+{% block title %}T{% endblock %}|{{ self.title() }}

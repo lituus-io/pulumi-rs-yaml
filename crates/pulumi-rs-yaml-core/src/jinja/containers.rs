@@ -8,6 +8,11 @@
 //! instead (see `prepass`). They are shared, as Python's are:
 //! `{% set b = a %}{% do a.append(1) %}` and `b` sees the 1.
 //!
+//! Only the mutating methods live here. Every read-only one (`index`,
+//! `count`, `get`, `items`, `copy`, ...) is answered by the same table in
+//! `methods` that answers it for any sequence or mapping, so a template
+//! that mutates nothing and one that does call one implementation.
+//!
 //! Values the host hands in (config, context) and values filters return
 //! stay read-only; mutating one is a typed error that says to copy it
 //! (`x.copy()` or `x | list`), matching the read-only intent of a
@@ -37,6 +42,13 @@ use super::methods::{type_error, value_error, Call};
 pub(super) const LIST_FN: &str = "__rsyaml_list";
 pub(super) const DICT_FN: &str = "__rsyaml_dict";
 pub(super) const OWN_FN: &str = "__rsyaml_own";
+/// The global the prepass routes a namespace attribute's new value through,
+/// in a template that changes containers.
+pub(super) const ATTR_FN: &str = "__rsyaml_attr";
+
+/// The words a refused self-holding value starts with, read back by the
+/// classifier.
+pub(super) const HOLDS_ITSELF_TAG: &str = "a value would hold itself";
 
 /// Every mutating method, list's and dict's.
 pub(super) const MUTATORS: &[&str] = &[
@@ -52,6 +64,149 @@ pub(super) const MUTATORS: &[&str] = &[
     "sort",
     "update",
 ];
+
+// ---------------------------------------------------------------------------
+// What a change may not do: make a value hold itself, or grow past the limit
+// ---------------------------------------------------------------------------
+
+/// Whether `value` holds `target` -- is it, or contains it at any depth.
+///
+/// A list that holds itself (`{% do xs.append(xs) %}`), directly or through
+/// another list, a dict or a namespace, can be built only by a change, and
+/// printing, serialising, hashing or comparing it then recurses without end
+/// -- a stack overflow, which no build of the host survives. So every change
+/// that puts a value into a container asks this first, and is refused.
+///
+/// Iterative, with an explicit stack: a deep value cannot overflow the walk
+/// either. Containers already seen are skipped, so a value that shares one
+/// container many times (`[xs] * 1000`) is read once per container, not per
+/// path. A value with nothing inside -- the common case, a string or a
+/// number -- returns at once, allocating nothing.
+fn holds(value: &Value, target: &Value) -> bool {
+    if !is_container(value) {
+        return false;
+    }
+    let mut stack: Vec<Value> = vec![value.clone()];
+    let mut seen: Vec<usize> = Vec::new();
+    let mut seen_other: Vec<Value> = Vec::new();
+    while let Some(v) = stack.pop() {
+        if minijinja::tests::is_sameas(&v, target) {
+            return true;
+        }
+        match identity(&v) {
+            Some(id) => match seen.binary_search(&id) {
+                Ok(_) => continue,
+                Err(at) => seen.insert(at, id),
+            },
+            None => {
+                if seen_other
+                    .iter()
+                    .any(|o| minijinja::tests::is_sameas(o, &v))
+                {
+                    continue;
+                }
+                seen_other.push(v.clone());
+            }
+        }
+        let Ok(items) = v.try_iter() else {
+            continue;
+        };
+        let map = v.kind() == ValueKind::Map;
+        for item in items {
+            if map {
+                if let Ok(val) = v.get_item(&item) {
+                    if is_container(&val) {
+                        stack.push(val);
+                    }
+                }
+            }
+            if is_container(&item) {
+                stack.push(item);
+            }
+        }
+    }
+    false
+}
+
+fn is_container(v: &Value) -> bool {
+    matches!(
+        v.kind(),
+        ValueKind::Seq | ValueKind::Map | ValueKind::Iterable
+    )
+}
+
+/// The address of a container whose type is known here, as its identity.
+/// Compared, never dereferenced.
+fn identity(v: &Value) -> Option<usize> {
+    if let Some(l) = v.downcast_object_ref::<PyList>() {
+        return Some(l as *const PyList as usize);
+    }
+    if let Some(d) = v.downcast_object_ref::<PyDict>() {
+        return Some(d as *const PyDict as usize);
+    }
+    if let Some(q) = v.downcast_object_ref::<Vec<Value>>() {
+        return Some(q as *const Vec<Value> as usize);
+    }
+    None
+}
+
+#[cold]
+#[inline(never)]
+fn holds_itself(kind: &str) -> Error {
+    Error::new(
+        ErrorKind::InvalidOperation,
+        format!(
+            "{HOLDS_ITSELF_TAG}: the {kind} would contain itself, and printing or comparing \
+             it would never end"
+        ),
+    )
+}
+
+/// Refuses `new`, the values a change puts into `target`, when one holds it.
+fn refuse_holding<'a>(
+    target: &Value,
+    kind: &str,
+    mut new: impl Iterator<Item = &'a Value>,
+) -> Result<(), Error> {
+    match new.any(|v| holds(v, target)) {
+        true => Err(holds_itself(kind)),
+        false => Ok(()),
+    }
+}
+
+/// Refuses growing a container to `len` entries past the range limit: a
+/// list doubled in a loop (`{% do xs.extend(xs) %}`) costs one instruction
+/// per doubling, so fuel alone would let it fill memory.
+fn refuse_growth(state: &State<'_, '_>, kind: &str, len: usize) -> Result<(), Error> {
+    let limit = super::limits::range_cap(state);
+    if len > limit {
+        return Err(Error::new(
+            ErrorKind::InvalidOperation,
+            format!(
+                "{} the {kind} would hold {len} elements, more than {limit}",
+                super::limits::LIST_TAG
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// `__rsyaml_attr(ns, value)`: `{% set ns.attr = value %}` in a template
+/// that changes containers, where the value may hold the namespace through
+/// a container changed since -- which no reading of the source can see.
+/// Returns the value, or refuses it.
+pub(super) fn guard_attribute(_: &State<'_, '_>, ns: Value, value: Value) -> Result<Value, Error> {
+    if holds(&value, &ns) {
+        return Err(Error::new(
+            ErrorKind::InvalidOperation,
+            format!(
+                "{}: the value assigned holds the namespace itself",
+                super::prepass::NAMESPACE_TAG
+            ),
+        ));
+    }
+    Ok(value)
+}
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
@@ -101,6 +256,14 @@ impl Iterator for ListIter {
         let v = lock(&self.list.items).get(self.at).cloned();
         self.at += 1;
         v
+    }
+
+    /// Exact: nothing changes a list while a loop holds it. A loop reads
+    /// its `length`, `revindex` and `last` from this, as it does a
+    /// sequence's.
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let left = lock(&self.list.items).len().saturating_sub(self.at);
+        (left, Some(left))
     }
 }
 
@@ -174,13 +337,17 @@ impl Object for PyList {
     ) -> Result<Value, Error> {
         let c = Call::new(state, args)?;
         let none = Value::from(());
+        let this = || Value::from_dyn_object(Arc::clone(self));
         match method {
             "append" => {
                 let x = c
                     .get(0, "object")?
                     .ok_or_else(|| missing("append", "object"))?;
                 c.done("append", 1)?;
-                self.mutate()?.push(x);
+                refuse_holding(&this(), "list", std::iter::once(&x))?;
+                let mut items = self.mutate()?;
+                refuse_growth(state, "list", items.len() + 1)?;
+                items.push(x);
                 Ok(none)
             }
             "extend" => {
@@ -189,7 +356,10 @@ impl Object for PyList {
                     .ok_or_else(|| missing("extend", "iterable"))?;
                 c.done("extend", 1)?;
                 let new: Vec<Value> = it.try_iter()?.collect();
-                self.mutate()?.extend(new);
+                refuse_holding(&this(), "list", new.iter())?;
+                let mut items = self.mutate()?;
+                refuse_growth(state, "list", items.len().saturating_add(new.len()))?;
+                items.extend(new);
                 Ok(none)
             }
             "insert" => {
@@ -202,7 +372,9 @@ impl Object for PyList {
                 c.done("insert", 2)?;
                 let i =
                     i64::try_from(i).map_err(|_| type_error("insert: index must be an integer"))?;
+                refuse_holding(&this(), "list", std::iter::once(&x))?;
                 let mut items = self.mutate()?;
+                refuse_growth(state, "list", items.len() + 1)?;
                 let len = items.len() as i64;
                 let at = if i < 0 { (i + len).max(0) } else { i.min(len) } as usize;
                 items.insert(at, x);
@@ -298,30 +470,9 @@ impl Object for PyList {
                 *self.mutate()? = sorted;
                 Ok(none)
             }
-            "index" => {
-                let x = c
-                    .get(0, "value")?
-                    .ok_or_else(|| missing("index", "value"))?;
-                c.done("index", 1)?;
-                lock(&self.items)
-                    .iter()
-                    .position(|v| *v == x)
-                    .map(|i| Value::from(i as i64))
-                    .ok_or_else(|| value_error(format!("{x} is not in list")))
-            }
-            "count" => {
-                let x = c
-                    .get(0, "value")?
-                    .ok_or_else(|| missing("count", "value"))?;
-                c.done("count", 1)?;
-                Ok(Value::from(
-                    lock(&self.items).iter().filter(|v| **v == x).count(),
-                ))
-            }
-            "copy" => {
-                c.done("copy", 0)?;
-                Ok(new_list(lock(&self.items).clone()))
-            }
+            // Read-only methods are answered by the shared tables in
+            // `methods`, through the unknown-method callback: one
+            // implementation, one arity, for this list and any other.
             _ => Err(Error::from(ErrorKind::UnknownMethod)),
         }
     }
@@ -374,6 +525,10 @@ impl Iterator for DictIter {
     type Item = Value;
     fn next(&mut self) -> Option<Value> {
         self.keys.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.keys.size_hint()
     }
 }
 
@@ -439,6 +594,7 @@ impl Object for PyDict {
     ) -> Result<Value, Error> {
         let c = Call::new(state, args)?;
         let none = Value::from(());
+        let this = || Value::from_dyn_object(Arc::clone(self));
         match method {
             "update" => {
                 let other = c.get(0, "other")?;
@@ -459,7 +615,10 @@ impl Object for PyDict {
                         new.push((Value::from(key), v));
                     }
                 }
+                refuse_holding(&this(), "dict", new.iter().flat_map(|(k, v)| [k, v]))?;
                 let mut items = self.mutate()?;
+                let added = new.iter().filter(|(k, _)| !items.contains_key(k)).count();
+                refuse_growth(state, "dict", items.len().saturating_add(added))?;
                 items.extend(new);
                 Ok(none)
             }
@@ -472,7 +631,10 @@ impl Object for PyDict {
                 if let Some(v) = lock(&self.items).get(&key) {
                     return Ok(v.clone());
                 }
-                self.mutate()?.insert(key, default.clone());
+                refuse_holding(&this(), "dict", [&key, &default].into_iter())?;
+                let mut items = self.mutate()?;
+                refuse_growth(state, "dict", items.len() + 1)?;
+                items.insert(key, default.clone());
                 Ok(default)
             }
             "pop" => {
@@ -505,44 +667,9 @@ impl Object for PyDict {
                 self.mutate()?.clear();
                 Ok(none)
             }
-            "get" => {
-                let key = c.get(0, "key")?.ok_or_else(|| missing("get", "key"))?;
-                let default = c.get(1, "default")?;
-                c.done("get", 2)?;
-                Ok(lock(&self.items)
-                    .get(&key)
-                    .cloned()
-                    .or(default)
-                    .unwrap_or(none))
-            }
-            "items" => {
-                c.done("items", 0)?;
-                Ok(Value::from(
-                    lock(&self.items)
-                        .iter()
-                        .map(|(k, v)| Value::from(vec![k.clone(), v.clone()]))
-                        .collect::<Vec<_>>(),
-                ))
-            }
-            "keys" => {
-                c.done("keys", 0)?;
-                Ok(Value::from(
-                    lock(&self.items).keys().cloned().collect::<Vec<_>>(),
-                ))
-            }
-            "values" => {
-                c.done("values", 0)?;
-                Ok(Value::from(
-                    lock(&self.items).values().cloned().collect::<Vec<_>>(),
-                ))
-            }
-            "copy" => {
-                c.done("copy", 0)?;
-                Ok(Value::from_object(PyDict {
-                    items: Mutex::new(lock(&self.items).clone()),
-                    iterating: AtomicUsize::new(0),
-                }))
-            }
+            // Read-only methods are answered by the shared tables in
+            // `methods`, through the unknown-method callback: one
+            // implementation, one arity, for this dict and any other mapping.
             _ => Err(Error::from(ErrorKind::UnknownMethod)),
         }
     }

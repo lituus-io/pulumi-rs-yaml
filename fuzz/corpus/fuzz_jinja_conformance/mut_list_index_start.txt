@@ -1,0 +1,1 @@
+{% set xs = ['a', 'b', 'a'] %}{% do xs.append('c') %}{{ xs.index('a', 1) }}|{{ xs.index('a', 1, 3) }}|{{ xs.index('a', -2) }}|{{ xs.count('a') }}

@@ -69,6 +69,42 @@ def test_case_renders_as_the_engine_pins(case):
         assert got == want, out["diagnostic"]
 
 
+# Turns on mutable-container mode: a template that calls a mutating method
+# has its list and dict literals built as containers it can change, through
+# a different path than the rest. Renders nothing; on the first line, so no
+# line moves.
+MUTABLE = "{% set _rsyaml_mode = [] %}{% do _rsyaml_mode.append(0) %}"
+
+
+@pytest.mark.parametrize("case", CASES, ids=[c.name for c in CASES])
+def test_case_renders_the_same_in_mutable_container_mode(case):
+    source = (case / "template.j2").read_bytes().decode("utf-8")
+    plain = preprocess_jinja_diag(source, "template.j2", context(case))
+    mutable = preprocess_jinja_diag(MUTABLE + source, "template.j2", context(case))
+    if not any(d in source for d in ("{{", "{%", "{#")):
+        # Plain text is returned as written; the preamble makes it a
+        # template, held to Jinja2 instead.
+        want = (case / "expected.txt").read_bytes().decode("utf-8")
+        assert mutable.get("rendered") == want, mutable
+        return
+    if "rendered" in plain:
+        assert mutable == plain
+    else:
+        assert "diagnostic" in mutable, mutable
+        assert mutable["diagnostic"]["kind"] == plain["diagnostic"]["kind"], mutable
+
+
+@pytest.mark.parametrize("case", METHODS, ids=[c.name for c in METHODS])
+def test_method_case_answers_the_same_in_mutable_container_mode(case):
+    expr = (case / "expr.txt").read_text().rstrip("\n")
+    plain = preprocess_jinja_diag("{{ " + expr + " }}", "m.j2", {})
+    mutable = preprocess_jinja_diag(MUTABLE + "{{ " + expr + " }}", "m.j2", {})
+    if "rendered" in plain:
+        assert mutable == plain
+    else:
+        assert mutable["diagnostic"]["kind"] == plain["diagnostic"]["kind"], mutable
+
+
 @pytest.mark.parametrize("case", METHODS, ids=[c.name for c in METHODS])
 def test_method_case_renders_as_the_engine_pins(case):
     expr = (case / "expr.txt").read_text().rstrip("\n")
@@ -91,6 +127,36 @@ class TestMutationAndDates:
     def test_a_context_value_is_read_only(self):
         out = preprocess_jinja_diag("{% do config.update(a='b') %}", "t.yaml", {"config.a": "1"})
         assert "read-only" in out["diagnostic"]["message"]
+
+    def test_the_reported_shapes_render_as_jinja2_does(self):
+        ctx = {"project_name": "p", "stack_name": "s"}
+        assert preprocess_jinja(
+            "{% set xs=['a','b','a'] %}{% do xs.append('c') %}{{ xs.index('a', 1) }}", "t.yaml", ctx
+        ) == "2"
+        assert preprocess_jinja(
+            "{% set xs=[] %}{% do xs.append(1) %}{% set a, b = 1, 2 %}{{ a }}{{ b }}", "t.yaml", ctx
+        ) == "12"
+        assert preprocess_jinja(
+            "{% set xs=[] %}{% do xs.append(1) %}{% set t = 1, %}{{ t | length }}", "t.yaml", ctx
+        ) == "1"
+
+    @pytest.mark.parametrize(
+        "source, kind",
+        [
+            ("{% set xs = [] %}{% do xs.append(xs) %}{{ xs }}", "jinja_type_error"),
+            ("{% set d = {} %}{% do d.update(a=d) %}{{ d | tojson }}", "jinja_type_error"),
+            (
+                "{% set ns = namespace(v=0) %}{% set xs = [] %}{% do xs.append(ns) %}"
+                "{% set ns.v = xs %}{{ xs }}",
+                "jinja_type_error",
+            ),
+            ("{% set xs = [1] %}{% for i in range(40) %}{% do xs.extend(xs) %}{% endfor %}", "range_too_large"),
+        ],
+    )
+    def test_a_hostile_change_is_refused_and_the_process_lives(self, source, kind):
+        # Each of these overflowed the stack, or filled memory, in 0.5.40.
+        out = preprocess_jinja_diag(source, "t.yaml", {"project_name": "p", "stack_name": "s"})
+        assert out["diagnostic"]["kind"] == kind, out
 
     def test_dates(self):
         out = preprocess_jinja(
@@ -122,6 +188,34 @@ class TestLimits:
         out = preprocess_jinja_diag(source, "t.yaml", self.CTX, limits=spec)
         assert out["diagnostic"]["kind"] == kind
         assert out["diagnostic"]["line"] == 1
+
+    @pytest.mark.parametrize(
+        "line, spec, kind, column",
+        [
+            ("x: {% for i in range(100) %}{{ i }}{% endfor %}", "fuel=50", "fuel_exhausted", None),
+            ("{% macro r() %}{{ r() }}{% endmacro %}x: {{ r() }}", "recursion=20", "recursion_limit", None),
+            ("x: {{ 'x' * 100 }}", "output=99", "output_too_large", 7),
+            ("x: {{ range(11) | length }}", "range=10", "range_too_large", 7),
+            # Text before the expression carries it over; the expression is
+            # the place.
+            ("x: {{ 'x' * 90 }}", "output=100", "output_too_large", 7),
+            # Literal text alone, in a loop.
+            ("{% for i in range(50) %}0123456789{% endfor %}", "output=100", "output_too_large", None),
+        ],
+    )
+    def test_each_limit_is_placed_at_its_line(self, line, spec, kind, column):
+        source = "name: app\nruntime: yaml\n" + line + "\nvariables:\n  v: 1\n"
+        out = preprocess_jinja_diag(source, "t.yaml", self.CTX, limits=spec)
+        assert out["diagnostic"]["kind"] == kind
+        assert out["diagnostic"]["line"] == 3, out
+        if column is not None:
+            assert out["diagnostic"]["column"] == column, out
+
+    def test_the_reported_output_crossing_is_placed(self):
+        source = "name: r\nruntime: yaml\n# {{ 'x' * 16777200 }}\n"
+        out = preprocess_jinja_diag(source, "t.yaml", self.CTX)
+        assert out["diagnostic"]["kind"] == "output_too_large"
+        assert (out["diagnostic"]["line"], out["diagnostic"]["column"]) == (3, 6), out
 
     def test_a_malformed_spec_is_a_value_error(self):
         with pytest.raises(ValueError, match="PULUMI_YAML_JINJA_LIMITS"):

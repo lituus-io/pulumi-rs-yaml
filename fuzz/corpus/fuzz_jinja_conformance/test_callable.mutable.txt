@@ -1,0 +1,1 @@
+{% macro m() %}{% endmacro %}{{ m is callable }} {{ 1 is callable }} {{ range is callable }}

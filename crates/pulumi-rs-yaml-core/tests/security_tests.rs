@@ -2516,12 +2516,15 @@ mod render_diagnostic_security {
         // the engine counts lines in sixteen bits, and a fault past line
         // 65535 is reported on a line the file does not have; that is a
         // separate limit, not the property under test here.
+        // The padding is a Jinja comment: written out, it would cross the
+        // output limit before the name was reached.
         let pad = format!("# {}\n", "p".repeat(4094));
         let mut source = String::with_capacity(64 * 1024 * 1024 + 64);
+        source.push_str("{#\n");
         while source.len() < 64 * 1024 * 1024 {
             source.push_str(&pad);
         }
-        source.push_str("name: {{ missing_name }}\n");
+        source.push_str("#}name: {{ missing_name }}\n");
         let project = tempfile::tempdir().expect("project");
         let dir = project.path().to_str().expect("utf-8 path");
         let Err(diag) = render(dir, &source) else {
@@ -2534,7 +2537,31 @@ mod render_diagnostic_security {
         assert!((start..end).contains(&line_at), "source_line was copied");
         assert!((start..end).contains(&expr_at), "expression was copied");
         assert_eq!(diag.expression, "missing_name");
-        assert_eq!(diag.column, 10);
+        assert_eq!(diag.column, 12);
+    }
+
+    #[test]
+    fn an_output_crossing_in_a_huge_source_is_placed_by_borrowing() {
+        // The same size of text written out: it crosses the output limit
+        // in the text itself, and the place is a slice of the input.
+        let pad = format!("# {}\n", "p".repeat(4094));
+        let mut source = String::with_capacity(64 * 1024 * 1024 + 64);
+        while source.len() < 64 * 1024 * 1024 {
+            source.push_str(&pad);
+        }
+        source.push_str("name: {{ x }}\n");
+        let project = tempfile::tempdir().expect("project");
+        let dir = project.path().to_str().expect("utf-8 path");
+        let Err(diag) = render(dir, &source) else {
+            panic!("must not render");
+        };
+        assert_eq!(diag.kind, RenderErrorKind::OutputTooLarge);
+        // Lines of 4097 bytes: 4095 of them fill 16 MiB less one byte, so
+        // the limit is crossed at the second byte of line 4096.
+        assert_eq!((diag.line, diag.column), (4096, 2), "{}", diag.message);
+        let start = source.as_ptr() as usize;
+        let line_at = diag.source_line.as_ptr() as usize;
+        assert!((start..start + source.len()).contains(&line_at));
     }
 
     #[test]
@@ -3654,13 +3681,14 @@ mod jinja_limits_security {
     #[test]
     fn readfile_in_a_loop_cannot_multiply_past_the_cap() {
         // One 1 MiB file, spliced 40 times: held once, and the expansion
-        // stops as it crosses 16 MiB rather than after.
+        // stops as it crosses 16 MiB rather than after -- at the call that
+        // would carry it over.
         let big = "y".repeat(1024 * 1024);
         refused(
             "{% for i in range(40) %}\n{{ readFile('big.txt') }}\n{% endfor %}\n",
             &[("big.txt", &big)],
             RenderErrorKind::OutputTooLarge,
-            0,
+            2,
         );
     }
 
@@ -4117,6 +4145,35 @@ mod jinja_method_security {
             .map_err(|d| (d.kind, d.message));
         assert!(start.elapsed() < Duration::from_secs(20), "{source}");
         out
+    }
+
+    #[test]
+    fn a_bare_tuple_in_a_template_that_mutates_never_aborts_the_process() {
+        // A one-tuple's span, as minijinja's parser gives it, runs
+        // backwards; the rewrite of it sliced the source with it and
+        // panicked -- an abort in a release build, taking the host down.
+        for src in [
+            "{% set xs = [] %}{% do xs.append(1) %}{% set t = 1, %}{{ t | length }}",
+            "{% set xs = [] %}{% do xs.append(1) %}{% set t = 'a', %}{{ t[0] }}",
+            "{% set xs = [] %}{% do xs.append(1) %}{% set ns = namespace() %}{% set ns.t = 1, %}{{ ns.t | length }}",
+        ] {
+            assert!(render(src).is_ok(), "{src}: {:?}", render(src));
+        }
+    }
+
+    #[test]
+    fn cycling_nothing_over_a_changed_list_is_an_error_not_an_abort() {
+        // A loop over a list the template changed did not know its length,
+        // so `loop.cycle()` was not recognised as a loop's and reached the
+        // engine's own, which divides by the number of items: a panic.
+        for src in [
+            "{% set xs = [] %}{% do xs.append(1) %}{% for x in xs %}{{ loop.cycle() }}{% endfor %}",
+            "{% set d = {} %}{% do d.update(a=1) %}{% for k in d %}{{ loop.cycle() }}{% endfor %}",
+        ] {
+            let (kind, msg) = render(src).unwrap_err();
+            assert_eq!(kind, RenderErrorKind::JinjaFilterError, "{src}: {msg}");
+            assert!(msg.contains("no items for cycling"), "{src}: {msg}");
+        }
     }
 
     #[test]
@@ -4788,5 +4845,241 @@ mod jinja_loop_control_security {
             render("{% for a in [1, 2, 3] %}{% for b in [] %}{% else %}{% if a == 2 %}{% continue %}{% endif %}{% endfor %}{{ a }}{% endfor %}").unwrap(),
             "13"
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Hostile templates in mutable-container mode. A template that calls a
+// mutating method builds its lists and dicts as containers it can change;
+// every limit still holds there, nothing panics or overflows the stack, and
+// neither a change nor an include reaches past the sandbox.
+// ---------------------------------------------------------------------------
+mod jinja_mutable_mode_security {
+    use pulumi_rs_yaml_core::jinja::{
+        JinjaContext, JinjaLimits, JinjaPreprocessor, RenderErrorKind, UndefinedMode,
+    };
+    use std::collections::HashMap;
+    use std::path::Path;
+    use std::time::{Duration, Instant};
+
+    const MODE: &str = "{% set _m = [] %}{% do _m.append(0) %}";
+
+    fn render_in(
+        dir: &Path,
+        source: &str,
+        limits: JinjaLimits,
+    ) -> Result<String, (RenderErrorKind, u32, String)> {
+        let config: HashMap<String, String> = [("app:region".to_string(), "north".to_string())]
+            .into_iter()
+            .collect();
+        let extra = HashMap::new();
+        let d = dir.to_str().expect("utf-8 dir");
+        let ctx = JinjaContext {
+            project_name: "app",
+            stack_name: "dev",
+            cwd: d,
+            organization: "org",
+            root_directory: d,
+            config: &config,
+            project_dir: d,
+            undefined: UndefinedMode::Strict,
+            provider_templated_packages: &[],
+            extra: &extra,
+            limits,
+        };
+        let start = Instant::now();
+        let out = JinjaPreprocessor::new(&ctx)
+            .render(&format!("{MODE}{source}"), "Pulumi.yaml")
+            .map(|c| c.into_owned())
+            .map_err(|d| (d.kind, d.line, d.message));
+        assert!(
+            start.elapsed() < Duration::from_secs(20),
+            "took {:?}: {source}",
+            start.elapsed()
+        );
+        out
+    }
+
+    fn render(source: &str) -> Result<String, (RenderErrorKind, u32, String)> {
+        let dir = tempfile::tempdir().unwrap();
+        render_in(dir.path(), source, JinjaLimits::default())
+    }
+
+    #[test]
+    fn a_container_that_would_hold_itself_is_refused_not_a_stack_overflow() {
+        // Each built a value that contains itself; printing, serialising,
+        // hashing or comparing it recursed until the stack overflowed and
+        // took the process down.
+        for src in [
+            "{% set xs = [] %}{% do xs.append(xs) %}{{ xs }}",
+            "{% set xs = [] %}{% do xs.insert(0, xs) %}{{ xs | tojson }}",
+            "{% set xs = [] %}{% do xs.extend([xs]) %}{{ xs | string }}",
+            "{% set a = [] %}{% set b = [a] %}{% do a.append(b) %}{{ a }}",
+            "{% set a = [] %}{% set b = {'k': [a]} %}{% do a.append(b) %}{{ a | unique | list }}",
+            "{% set d = {} %}{% do d.update(a=d) %}{{ d }}",
+            "{% set d = {} %}{% do d.update({'k': [d]}) %}{{ d | tojson }}",
+            "{% set d = {} %}{% do d.setdefault('k', [d]) %}{{ d }}",
+            "{% set d = {} %}{% do d.update([(1, d)]) %}{{ d == d }}",
+            "{% set d = {'a': 1} %}{% set xs = [d] %}{% do d.update(v=d.items() | list + [xs]) %}{{ d }}",
+            // Through a namespace, in either order.
+            "{% set ns = namespace(v=0) %}{% set xs = [] %}{% do xs.append(ns) %}{% set ns.v = xs %}{{ xs }}",
+            "{% set ns = namespace(v=0) %}{% set xs = [] %}{% set ns.v = xs %}{% do xs.append(ns) %}{{ ns.v }}",
+            "{% set ns = namespace(v=0) %}{% set xs = [[]] %}{% do xs[0].append(ns) %}{% set ns.v = {'k': xs} %}{{ ns.v }}",
+        ] {
+            let (kind, _, msg) = render(src).unwrap_err();
+            assert_eq!(kind, RenderErrorKind::JinjaTypeError, "{src}: {msg}");
+            assert!(msg.contains("would hold itself"), "{src}: {msg}");
+        }
+        // Holding another container, or a copy of itself, is fine.
+        assert_eq!(
+            render("{% set xs = [1] %}{% do xs.append(xs.copy()) %}{% do xs.extend(xs) %}{{ xs | length }}")
+                .unwrap(),
+            "4"
+        );
+        assert_eq!(
+            render("{% set a = [] %}{% set b = [a, a] %}{% do b.append(a) %}{% do a.append(1) %}{{ b | tojson }}")
+                .unwrap(),
+            "[[1],[1],[1]]"
+        );
+    }
+
+    #[test]
+    fn a_container_cannot_grow_past_the_range_limit() {
+        // One instruction per doubling: fuel alone let this fill memory.
+        for src in [
+            "{% set xs = [1] %}{% for i in range(40) %}{% do xs.extend(xs) %}{% endfor %}",
+            "{% set xs = [1] %}{% for i in range(40) %}{% do xs.extend(xs + xs) %}{% endfor %}",
+            "{% set d = {} %}{% for i in range(40) %}{% do d.update(d.items() | map('first') | map('string') | zip(d.values()) | list) %}{% do d.update({i ~ 'k': 1}) %}{% endfor %}{% do d.update(range(100001) | zip(range(100001)) | list) %}",
+        ] {
+            let (kind, _, msg) = render(src).unwrap_err();
+            assert_eq!(kind, RenderErrorKind::RangeTooLarge, "{src}: {msg}");
+        }
+        // At the limit is fine; the limit is the configured one.
+        let dir = tempfile::tempdir().unwrap();
+        let small = JinjaLimits {
+            range: 8,
+            ..JinjaLimits::default()
+        };
+        assert_eq!(
+            render_in(dir.path(), "{% set xs = [1] %}{% for i in range(3) %}{% do xs.extend(xs) %}{% endfor %}{{ xs | length }}", small).unwrap(),
+            "8"
+        );
+        assert_eq!(
+            render_in(
+                dir.path(),
+                "{% set xs = [1] %}{% for i in range(4) %}{% do xs.extend(xs) %}{% endfor %}",
+                small
+            )
+            .unwrap_err()
+            .0,
+            RenderErrorKind::RangeTooLarge
+        );
+    }
+
+    #[test]
+    fn every_limit_still_holds_and_is_placed() {
+        let dir = tempfile::tempdir().unwrap();
+        let tiny = JinjaLimits {
+            fuel: 500,
+            recursion: 40,
+            output_bytes: 64,
+            range: 10,
+        };
+        for (src, kind) in [
+            (
+                "a: 1\n{% set xs = [] %}{% for i in range(10) %}{% for j in range(10) %}{% do xs.append(j) %}{% do xs.pop() %}{% endfor %}{% endfor %}",
+                RenderErrorKind::FuelExhausted,
+            ),
+            (
+                "a: 1\n{% macro r(xs) %}{% do xs.append(1) %}{{ r(xs) }}{% endmacro %}{{ r([]) }}",
+                RenderErrorKind::RecursionLimit,
+            ),
+            (
+                "a: 1\n{% set xs = ['x' * 50] %}{% do xs.append(xs[0]) %}{{ xs | join }}",
+                RenderErrorKind::OutputTooLarge,
+            ),
+            (
+                "a: 1\n{% set xs = [] %}{% do xs.extend(range(11)) %}",
+                RenderErrorKind::RangeTooLarge,
+            ),
+        ] {
+            let (k, line, msg) = render_in(dir.path(), src, tiny).unwrap_err();
+            assert_eq!(k, kind, "{src}: {msg}");
+            assert_eq!(line, 2, "{src}: {msg}");
+        }
+    }
+
+    #[test]
+    fn a_change_cannot_reach_the_programs_inputs_or_past_the_sandbox() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("part.j2"),
+            "{% do xs.append(config.region) %}",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("mut.j2"),
+            "{% do config.update(region='south') %}",
+        )
+        .unwrap();
+        let d = dir.path();
+        let l = JinjaLimits::default();
+        // An include sees the caller's list and may change it, as Jinja2's
+        // does; it cannot change the program's inputs.
+        assert_eq!(
+            render_in(
+                d,
+                "{% set xs = [] %}{% include 'part.j2' %}{{ xs | join }}",
+                l
+            )
+            .unwrap(),
+            "north"
+        );
+        let (kind, _, msg) = render_in(d, "{% include 'mut.j2' %}", l).unwrap_err();
+        assert_eq!(kind, RenderErrorKind::JinjaFilterError, "{msg}");
+        assert!(msg.contains("read-only"), "{msg}");
+        // Without context, the caller's lists are not there to change.
+        assert_eq!(
+            render_in(
+                d,
+                "{% set xs = [] %}{% include 'part.j2' without context %}",
+                l
+            )
+            .unwrap_err()
+            .0,
+            RenderErrorKind::JinjaUndefinedVariable
+        );
+        // A path assembled by changing a list is held to the same root.
+        for src in [
+            "{% set p = ['..', '..', '..'] %}{% do p.append('etc') %}{% do p.append('passwd') %}{% include p | join('/') %}",
+            "{% set p = [] %}{% do p.append('/etc/passwd') %}{% include p %}",
+            "{% set p = [] %}{% do p.append('/etc/hosts') %}{{ readFile(p[0]) }}",
+        ] {
+            let got = render_in(d, src, l);
+            assert!(got.is_err(), "{src}: {got:?}");
+        }
+    }
+
+    #[test]
+    fn hostile_mutations_never_panic() {
+        for src in [
+            "{% set xs = [] %}{% do xs.pop() %}",
+            "{% set xs = [1] %}{% do xs.pop(10 ** 18) %}",
+            "{% set xs = [1] %}{% do xs.insert(10 ** 18, 2) %}{% do xs.insert(-10 ** 18, 0) %}{{ xs }}",
+            "{% set xs = [1, 'a', none] %}{% do xs.sort() %}",
+            "{% set xs = [[1], [0]] %}{% do xs.sort(key=none, reverse=true) %}{{ xs }}",
+            "{% set d = {} %}{% do d.popitem() %}",
+            "{% set d = {} %}{% do d.update(1) %}",
+            "{% set d = {} %}{% do d.update([1, 2]) %}",
+            "{% set xs = [] %}{% for x in xs %}{% endfor %}{% do xs.remove(1) %}",
+            "{% set xs = [3, 1, 2] %}{% for x in xs %}{% do xs.sort() %}{% endfor %}",
+            "{% set xs = [] %}{% set a, b = xs %}",
+            "{% set t = 1, %}{% set (a, b), = t %}",
+            "{% set xs = [] %}{% do xs.append(1) %}{{ xs.index(1, 10 ** 18, -10 ** 18) }}",
+            "{% set xs = [] %}{% do xs.append(1) %}{{ xs[::-1] }}{{ xs[10 ** 18:] }}",
+        ] {
+            // Refused or rendered, never a panic (the test binary would die).
+            let _ = render(src);
+        }
     }
 }

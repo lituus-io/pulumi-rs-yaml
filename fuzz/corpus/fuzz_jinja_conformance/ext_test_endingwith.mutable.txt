@@ -1,0 +1,1 @@
+{{ 'abc' is endingwith 'bc' }} {{ 'abc' is endingwith 'b' }}

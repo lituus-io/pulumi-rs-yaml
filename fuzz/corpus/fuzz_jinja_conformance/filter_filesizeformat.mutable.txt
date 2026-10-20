@@ -1,0 +1,1 @@
+{{ 1000|filesizeformat }} {{ 123456789|filesizeformat }} {{ 1024|filesizeformat(true) }} {{ 1|filesizeformat }}

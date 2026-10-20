@@ -25,7 +25,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use pulumi_rs_yaml_core::jinja::{JinjaContext, JinjaPreprocessor, RenderErrorKind, UndefinedMode};
+use pulumi_rs_yaml_core::jinja::{
+    has_jinja_syntax, JinjaContext, JinjaPreprocessor, RenderErrorKind, UndefinedMode,
+};
 
 fn corpus() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/jinja_conformance")
@@ -52,8 +54,19 @@ fn class_of(kind: RenderErrorKind) -> &'static str {
     }
 }
 
+/// A preamble that renders nothing and turns on mutable-container mode: a
+/// template that calls a mutating method has its list and dict literals
+/// built as containers it can change, through a different path than the
+/// rest. On the template's first line, so no line moves.
+const MUTABLE_PREAMBLE: &str = "{% set _rsyaml_mode = [] %}{% do _rsyaml_mode.append(0) %}";
+
 fn render_case(dir: &Path) -> Outcome {
-    let source = fs::read_to_string(dir.join("template.j2")).expect("template.j2");
+    render_case_with(dir, "")
+}
+
+fn render_case_with(dir: &Path, preamble: &str) -> Outcome {
+    let body = fs::read_to_string(dir.join("template.j2")).expect("template.j2");
+    let source = format!("{preamble}{body}");
     let extra: HashMap<String, String> =
         serde_json::from_str(&fs::read_to_string(dir.join("context.json")).expect("context.json"))
             .expect("context.json is a map of strings");
@@ -177,6 +190,33 @@ impl Run {
         let (got, want) = &self.outcomes[id];
         got == want
     }
+}
+
+/// Every case again, in mutable-container mode: it must render exactly as it
+/// does without the preamble -- the golden where the engine agrees with
+/// Jinja2, the pinned output where it is a listed divergence. A difference
+/// that shows in only one mode is a lowering bug, never a divergence, so
+/// there is no allowlist here.
+#[test]
+fn every_case_renders_the_same_in_mutable_container_mode() {
+    let mut failures = Vec::new();
+    for (id, dir) in cases() {
+        let template = fs::read_to_string(dir.join("template.j2")).expect("template.j2");
+        // A case with no Jinja at all is returned as it is written; the
+        // preamble makes it a template, so it is held to Jinja2 instead.
+        let plain = if has_jinja_syntax(&template) {
+            render_case(&dir)
+        } else {
+            read_outcome(&dir, "expected.txt", "expected_error.txt").expect("golden")
+        };
+        let mutable = render_case_with(&dir, MUTABLE_PREAMBLE);
+        if plain != mutable {
+            failures.push(format!(
+                "{id}: differs in mutable-container mode\n    plain:   {plain:?}\n    mutable: {mutable:?}"
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "\n{}\n", failures.join("\n"));
 }
 
 #[test]

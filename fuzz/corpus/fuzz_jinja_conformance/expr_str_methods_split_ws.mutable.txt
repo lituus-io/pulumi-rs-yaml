@@ -1,0 +1,1 @@
+{{ '  a  b '.split() }} {{ 'a,b,c'.split(',', 1) }} {{ 'xxaxx'.strip('x') }} {{ 'ab'.lstrip('a') }} {{ 'ab'.rstrip('b') }}

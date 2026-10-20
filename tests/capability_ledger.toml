@@ -11,6 +11,44 @@
 # Restricted format: `[[entry]]` tables, string / boolean values, string arrays.
 
 # ---------------------------------------------------------------------------
+# 0.5.41
+# ---------------------------------------------------------------------------
+
+[[entry]]
+version = "0.5.41"
+heading = "One method table and one lowering in mutable-container mode"
+tests = [
+    "crates/pulumi-rs-yaml-core/tests/jinja_conformance.rs::every_case_renders_the_same_in_mutable_container_mode",
+    "crates/pulumi-rs-yaml-core/tests/jinja_method_oracle.rs::every_method_answers_the_same_in_mutable_container_mode",
+    "crates/pulumi-rs-yaml-core/tests/jinja_tests.rs::list_index_takes_start_and_stop",
+    "crates/pulumi-rs-yaml-core/tests/jinja_tests.rs::tuple_unpacking_in_every_form",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_bare_tuple_in_a_template_that_mutates_never_aborts_the_process",
+    "crates/pulumi-rs-yaml-python/tests/test_jinja_conformance.py::test_case_renders_the_same_in_mutable_container_mode",
+]
+
+[[entry]]
+version = "0.5.41"
+heading = "A changed container cannot hold itself or outgrow the limits"
+tests = [
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_container_that_would_hold_itself_is_refused_not_a_stack_overflow",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_container_cannot_grow_past_the_range_limit",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::every_limit_still_holds_and_is_placed",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_change_cannot_reach_the_programs_inputs_or_past_the_sandbox",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::cycling_nothing_over_a_changed_list_is_an_error_not_an_abort",
+]
+
+[[entry]]
+version = "0.5.41"
+heading = "Output-limit crossings are placed"
+tests = [
+    "crates/pulumi-rs-yaml-core/tests/jinja_limits_tests.rs::output_crossed_by_text_before_an_expression_is_located_at_the_expression",
+    "crates/pulumi-rs-yaml-core/tests/jinja_limits_tests.rs::output_crossed_by_literal_text_alone_is_located_where_it_crossed",
+    "crates/pulumi-rs-yaml-core/tests/jinja_limits_tests.rs::output_crossed_by_a_read_file_is_located_at_the_call",
+    "crates/pulumi-rs-yaml-core/tests/jinja_limits_tests.rs::output_crossed_inside_an_include_or_a_parent_is_located_at_the_statement",
+    "crates/pulumi-rs-yaml-python/tests/test_jinja_conformance.py::test_each_limit_is_placed_at_its_line",
+]
+
+# ---------------------------------------------------------------------------
 # 0.5.40
 # ---------------------------------------------------------------------------
 

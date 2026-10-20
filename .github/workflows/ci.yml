@@ -308,7 +308,12 @@ jobs:
       - name: The benchmark gate still fails on regression (self-test)
         run: |
           g=.github/scripts/bench_gate.py
-          r=.github/bench-rebaseline.toml
+          # A fixture entry: the real file holds entries only while a
+          # release needs them, and the gate refuses one past its release.
+          r=bench-rebaseline.selftest.toml
+          printf '%s\n' '[[bench]]' 'name = "jinja_preprocessor_include_at_cap"' \
+            'valid_for = "1.0.0"' 'expected_ratio = 1.51' \
+            'measured = "fixture"' 'reason = "fixture"' > $r
           echo '{"jinja_preprocessor_include_at_cap": 1000000, "other": 1000000}' > tb.json
           echo '{"jinja_preprocessor_include_at_cap": 1500000, "other": 1000000}' > th.json
           python3 $g tb.json th.json --base-version 0.0.1 --rebaseline $r

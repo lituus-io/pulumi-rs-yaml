@@ -1,0 +1,1 @@
+{% set ns = namespace(a=1) %}{% set ns.a = 2 %}{{ ns.a }}

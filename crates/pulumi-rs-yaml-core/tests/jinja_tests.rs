@@ -2235,3 +2235,130 @@ hit:{{ v.get('a') }} miss:{{ v.get('zz', 'fallback') }}\n";
         assert!(!err.is_empty(), "expected a diagnostic for unknown kwarg");
     }
 }
+
+// ============================================================================
+// Mutable-container mode
+//
+// A template that calls a mutating method (`{% do xs.append(1) %}`) has its
+// list and dict literals built as containers it can change. Everything else
+// must render exactly as it does without one: the same method arities, the
+// same assignment forms.
+// ============================================================================
+
+mod mutable_container_mode {
+    use super::*;
+
+    const PREAMBLE: &str = "{% set _m = [] %}{% do _m.append(0) %}";
+
+    fn render(src: &str) -> Result<String, String> {
+        let config = HashMap::new();
+        let ctx = make_context(&config);
+        JinjaPreprocessor::new(&ctx)
+            .render(src, "t.yaml")
+            .map(|c| c.into_owned())
+            .map_err(|e| e.message)
+    }
+
+    /// Renders `body` with and without the preamble; both must give `want`.
+    fn both(body: &str, want: &str) {
+        assert_eq!(render(body).as_deref(), Ok(want), "plain: {body}");
+        let doubled = format!("{PREAMBLE}{body}");
+        assert_eq!(render(&doubled).as_deref(), Ok(want), "mutable: {body}");
+    }
+
+    #[test]
+    fn list_index_takes_start_and_stop() {
+        both("{% set xs = ['a', 'b', 'a'] %}{{ xs.index('a', 1) }}", "2");
+        both(
+            "{% set xs = ['a', 'b', 'a', 'c'] %}{{ xs.index('a', 1, 3) }}",
+            "2",
+        );
+        both("{% set xs = ['a', 'b', 'a'] %}{{ xs.index('a', -1) }}", "2");
+        // The report: an appended list, its index from a start.
+        assert_eq!(
+            render("{% set xs=['a','b','a'] %}{% do xs.append('c') %}{{ xs.index('a', 1) }}")
+                .as_deref(),
+            Ok("2")
+        );
+        let err = render(&format!(
+            "{PREAMBLE}{{% set xs = ['a', 'b'] %}}{{{{ xs.index('a', 1) }}}}"
+        ))
+        .unwrap_err();
+        assert!(err.contains("not in list"), "{err}");
+    }
+
+    #[test]
+    fn every_read_only_method_has_one_arity() {
+        both("{% set xs = [1, 2, 1] %}{{ xs.count(1) }}", "2");
+        both("{% set xs = [1, 2] %}{{ xs.copy() | length }}", "2");
+        both(
+            "{% set d = {'a': 1} %}{{ d.get('a') }}{{ d.get('b', 9) }}",
+            "19",
+        );
+        both(
+            "{% set d = {'b': 2, 'a': 1} %}{% for k, v in d.items() %}{{ k }}{{ v }}{% endfor %}",
+            "a1b2",
+        );
+        both(
+            "{% set d = {'a': 1} %}{{ d.keys() | list }}{{ d.values() | list }}",
+            "[\"a\"][1]",
+        );
+        both("{% set d = {'a': 1} %}{{ d.copy() | length }}", "1");
+        for (src, needle) in [
+            ("{% set xs = [1] %}{{ xs.count(1, 2) }}", "at most 1"),
+            ("{% set xs = [1] %}{{ xs.copy(1) }}", "no arguments"),
+            ("{% set d = {} %}{{ d.get(1, 2, 3) }}", "at most 2"),
+            ("{% set d = {} %}{{ d.items(1) }}", "no arguments"),
+        ] {
+            let plain = render(src).unwrap_err();
+            let mutable = render(&format!("{PREAMBLE}{src}")).unwrap_err();
+            assert!(plain.contains(needle), "{src}: {plain}");
+            assert_eq!(plain, mutable, "{src}");
+        }
+    }
+
+    #[test]
+    fn tuple_unpacking_in_every_form() {
+        both("{% set a, b = 1, 2 %}{{ a }}{{ b }}", "12");
+        both("{% set a, b = (1, 2) %}{{ a }}{{ b }}", "12");
+        both("{% set a, b = [1, 2] %}{{ a }}{{ b }}", "12");
+        both(
+            "{% set (a, b), c = (1, 2), 3 %}{{ a }}{{ b }}{{ c }}",
+            "123",
+        );
+        both(
+            "{% set a, (b, c) = 1, [2, 3] %}{{ a }}{{ b }}{{ c }}",
+            "123",
+        );
+        both("{% set t = 1, %}{{ t | length }}{{ t[0] }}", "11");
+        both("{% set t = 1, 2 %}{{ t | length }}{{ t[1] }}", "22");
+        both(
+            "{% for a, b in [(1, 2), (3, 4)] %}{{ a }}{{ b }}{% endfor %}",
+            "1234",
+        );
+        both(
+            "{% set ns = namespace(v=0) %}{% set ns.v = 1, 2 %}{{ ns.v | length }}",
+            "2",
+        );
+        both(
+            "{% set ns = namespace(v=0) %}{% set a, b = 1, 2 %}{% set ns.v = a + b %}{{ ns.v }}",
+            "3",
+        );
+        both(
+            "{% for a, b in [(1, 2)] %}{{ loop.index }}{{ a }}{{ b }}{% endfor %}",
+            "112",
+        );
+        // Inside the other rewrites: Python's arithmetic, a stepped slice.
+        both("{% set a, b = 7 // 2, 2 * 3 %}{{ a }}{{ b }}", "36");
+        both(
+            "{% set a, b = [1, 2][::-1], 3 %}{{ a | join }}{{ b }}",
+            "213",
+        );
+        // The report: unpacking once the template has appended to a list.
+        assert_eq!(
+            render("{% set xs=[] %}{% do xs.append(1) %}{% set a, b = 1, 2 %}{{ a }}{{ b }}")
+                .as_deref(),
+            Ok("12")
+        );
+    }
+}

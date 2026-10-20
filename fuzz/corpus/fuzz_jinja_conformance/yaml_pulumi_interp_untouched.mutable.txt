@@ -1,0 +1,3 @@
+outputs:
+  url: ${bucket.url}
+  name: "{{ name }}-${pulumi.stack}"

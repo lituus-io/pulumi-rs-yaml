@@ -204,18 +204,24 @@ pub(super) fn range(
 
 /// The output limit, shared by the writer and the formatter of one render.
 ///
-/// The writer sees every byte that reaches the output, literal template text
-/// included, but an error it returns reaches the caller stripped of where in
-/// the template it arose. The formatter runs at each `{{ ... }}` -- also when
-/// the text goes into a `{% set %}` block or a macro's return value rather
-/// than the output -- and an error it returns carries that expression's line.
-/// So the writer keeps memory bounded and records the overflow, and the
-/// formatter is where the render is stopped, with its location.
+/// The formatter runs at each `{{ ... }}` -- also when the text goes into a
+/// `{% set %}` block or a macro's return value rather than the output -- and
+/// an error it returns carries that expression's line. So every expression
+/// is charged here before it is written, against both what expressions have
+/// produced so far and what the output already holds, literal text
+/// included: whichever crosses the limit first, the expression that would
+/// carry it over is the one refused, at its own line.
+///
+/// Literal text alone can still cross it (a loop of plain text): the writer
+/// refuses that write and records where in the template the text lies, for
+/// the caller to place the refusal.
 #[derive(Debug)]
 pub(super) struct OutputBudget {
     cap: usize,
     /// Bytes every `{{ ... }}` has produced, wherever they went.
     emitted: AtomicUsize,
+    /// Bytes the output holds.
+    written: AtomicUsize,
     /// Set once the output itself would pass the cap.
     over: AtomicBool,
 }
@@ -225,8 +231,13 @@ impl OutputBudget {
         Self {
             cap,
             emitted: AtomicUsize::new(0),
+            written: AtomicUsize::new(0),
             over: AtomicBool::new(false),
         }
+    }
+
+    pub(super) fn cap(&self) -> usize {
+        self.cap
     }
 
     pub(super) fn is_over(&self) -> bool {
@@ -236,7 +247,8 @@ impl OutputBudget {
     /// Charges one expression's text; `false` once the budget is spent.
     pub(super) fn charge(&self, bytes: usize) -> bool {
         let before = self.emitted.fetch_add(bytes, Ordering::Relaxed);
-        if before.saturating_add(bytes) > self.cap {
+        let held = self.written.load(Ordering::Relaxed);
+        if before.saturating_add(bytes) > self.cap || held.saturating_add(bytes) > self.cap {
             self.over.store(true, Ordering::Relaxed);
         }
         !self.is_over()
@@ -286,30 +298,76 @@ impl io::Write for LimitedBuf {
     }
 }
 
-/// The render's output buffer. Past the cap it stops storing and records the
-/// overflow instead of failing the write, so the formatter -- which knows
-/// the line -- is the one that stops the render.
-pub(super) struct CappedWriter {
+/// The render's output buffer. A write that would pass the cap is refused
+/// and nothing past the cap is stored.
+///
+/// Expressions are refused earlier, by the formatter, so a write refused
+/// here is literal template text, and the engine reports a refused write
+/// with no location at all. The writer places it instead, by address: the
+/// compiled template borrows `template`, so the rendered file's own text
+/// arrives as slices of it, and the refusal is kept as the offset where the
+/// cap was crossed. Text from another file -- an include, a parent template
+/// -- is placed at the statement that brought it in: the first one after
+/// the last text of this file written before it.
+pub(super) struct CappedWriter<'t> {
     pub(super) buf: Vec<u8>,
     budget: Arc<OutputBudget>,
+    template: &'t str,
+    /// Where the last write of the template's own text ended.
+    own_end: usize,
+    crossed: Option<usize>,
 }
 
-impl CappedWriter {
-    pub(super) fn new(budget: Arc<OutputBudget>, hint: usize) -> Self {
+impl<'t> CappedWriter<'t> {
+    pub(super) fn new(budget: Arc<OutputBudget>, hint: usize, template: &'t str) -> Self {
         Self {
             buf: Vec::with_capacity(hint.min(budget.cap)),
             budget,
+            template,
+            own_end: 0,
+            crossed: None,
         }
+    }
+
+    /// Where in the template text the cap was crossed.
+    pub(super) fn crossed(&self) -> Option<usize> {
+        self.crossed
+    }
+
+    /// The offset of `data` in the template text, when it is a slice of it.
+    /// Addresses are compared, never dereferenced.
+    fn offset_in_template(&self, data: &[u8]) -> Option<usize> {
+        let base = self.template.as_ptr() as usize;
+        let at = (data.as_ptr() as usize).checked_sub(base)?;
+        (at.checked_add(data.len())? <= self.template.len()).then_some(at)
+    }
+
+    /// The statement after the template's last text written.
+    fn next_statement(&self) -> Option<usize> {
+        let rest = self.template.get(self.own_end..)?;
+        rest.find("{%").map(|i| self.own_end + i)
     }
 }
 
-impl io::Write for CappedWriter {
+impl io::Write for CappedWriter<'_> {
     fn write(&mut self, data: &[u8]) -> io::Result<usize> {
-        if self.buf.len().saturating_add(data.len()) > self.budget.cap {
+        let room = self.budget.cap.saturating_sub(self.buf.len());
+        let own = self.offset_in_template(data);
+        if data.len() > room || self.budget.is_over() {
             self.budget.over.store(true, Ordering::Relaxed);
-        } else if !self.budget.is_over() {
-            self.buf.extend_from_slice(data);
+            if self.crossed.is_none() {
+                self.crossed = match own {
+                    Some(at) => Some(at + room),
+                    None => self.next_statement(),
+                };
+            }
+            return Err(io::Error::other("output limit"));
         }
+        if let Some(at) = own {
+            self.own_end = at + data.len();
+        }
+        self.buf.extend_from_slice(data);
+        self.budget.written.store(self.buf.len(), Ordering::Relaxed);
         Ok(data.len())
     }
 
@@ -375,15 +433,55 @@ mod tests {
     }
 
     #[test]
-    fn capped_writer_stops_storing_at_the_cap_and_says_so() {
+    fn capped_writer_refuses_past_the_cap_and_says_where() {
+        let template = "abcdefgh";
         let budget = Arc::new(OutputBudget::new(4));
-        let mut w = CappedWriter::new(Arc::clone(&budget), 0);
-        w.write_all(b"abcd").unwrap();
+        let mut w = CappedWriter::new(Arc::clone(&budget), 0, template);
+        w.write_all(&template.as_bytes()[..3]).unwrap();
         assert!(!budget.is_over());
-        w.write_all(b"e").unwrap();
+        // Bytes 3..6 of the template: the cap is crossed at its byte 4.
+        assert!(w.write_all(&template.as_bytes()[3..6]).is_err());
         assert!(budget.is_over());
-        w.write_all(b"f").unwrap();
-        assert_eq!(w.buf, b"abcd", "nothing is stored past the cap");
+        assert_eq!(w.crossed(), Some(4));
+        assert!(
+            w.write_all(b"z").is_err(),
+            "once over, every write is refused"
+        );
+        assert_eq!(w.buf, b"abc", "nothing is stored past the cap");
+        assert_eq!(w.crossed(), Some(4), "the first crossing is the one kept");
+    }
+
+    #[test]
+    fn text_from_another_file_is_placed_at_the_statement_that_brought_it() {
+        let template = "a: {% include 'x' %}\nb: {% include 'y' %}";
+        let other = String::from("0123456789");
+        let budget = Arc::new(OutputBudget::new(8));
+        let mut w = CappedWriter::new(Arc::clone(&budget), 0, template);
+        w.write_all(&template.as_bytes()[..3]).unwrap();
+        assert!(w.write_all(other.as_bytes()).is_err());
+        assert_eq!(w.crossed(), Some(3), "the include after `a: `");
+        // Nothing of the file written yet: its first statement.
+        let budget = Arc::new(OutputBudget::new(2));
+        let mut w = CappedWriter::new(Arc::clone(&budget), 0, template);
+        assert!(w.write_all(other.as_bytes()).is_err());
+        assert_eq!(w.crossed(), Some(3));
+        // With no statement left to name, unplaced.
+        let budget = Arc::new(OutputBudget::new(2));
+        let mut w = CappedWriter::new(Arc::clone(&budget), 0, "plain");
+        assert!(w.write_all(other.as_bytes()).is_err());
+        assert_eq!(w.crossed(), None);
+    }
+
+    #[test]
+    fn an_expression_is_charged_against_the_text_already_written() {
+        let budget = Arc::new(OutputBudget::new(10));
+        let mut w = CappedWriter::new(Arc::clone(&budget), 0, "");
+        w.write_all(b"12345678").unwrap();
+        assert!(budget.charge(2), "8 written + 2 fits");
+        let budget = Arc::new(OutputBudget::new(10));
+        let mut w = CappedWriter::new(Arc::clone(&budget), 0, "");
+        w.write_all(b"12345678").unwrap();
+        assert!(!budget.charge(3), "8 written + 3 does not");
     }
 
     #[test]

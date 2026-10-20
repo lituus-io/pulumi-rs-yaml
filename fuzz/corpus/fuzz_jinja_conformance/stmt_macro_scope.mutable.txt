@@ -1,0 +1,1 @@
+{% set g = 'G' %}{% macro m() %}{{ g }}{% endmacro %}{% set g = 'H' %}{{ m() }}

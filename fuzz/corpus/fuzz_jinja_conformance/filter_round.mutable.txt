@@ -1,0 +1,1 @@
+{{ 2.5|round }} {{ 3.5|round }} {{ 0.125|round(2) }} {{ -2.5|round }} {{ 2.567|round(2) }} {{ 2.1|round(0, 'ceil') }} {{ 2.9|round(0, 'floor') }} {{ 42|round }}

@@ -11,10 +11,10 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 
 ## Totals
 
-- cases: 345 (286 byte-identical to Jinja2, 59 listed divergences)
+- cases: 352 (293 byte-identical to Jinja2, 59 listed divergences)
 - rows extension: 24
 - rows partial: 40
-- rows supported: 314
+- rows supported: 321
 - rows unit-tested: 1
 - rows unsupported: 6
 
@@ -140,7 +140,7 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | name | status | cases | divergence |
 |---|---|---|---|
 | `cycler` | supported | global_cycler | - |
-| `date` | extension | date_arith, date_arith_with_numbers_unchanged, date_compare, date_construct, date_diff, date_from_strings, date_invalid_error, date_isoformat, date_replace, date_weekday, mut_dict_alias, mut_dict_methods | - |
+| `date` | extension | date_arith, date_arith_with_numbers_unchanged, date_compare, date_construct, date_diff, date_from_strings, date_invalid_error, date_isoformat, date_replace, date_weekday, mut_dict_alias, mut_dict_methods, mut_loop_over_updated_dict | - |
 | `datetime` | extension | date_arith, date_attributes, date_construct, date_diff, date_isoformat, date_replace, date_strftime | - |
 | `dict` | partial | global_dict | intended (global_dict) |
 | `joiner` | supported | global_joiner | - |
@@ -255,9 +255,12 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `mut_dict_methods` | supported | - |
 | `mut_dict_pop_missing_error` | supported | - |
 | `mut_filter_result_is_a_new_list` | supported | - |
+| `mut_filter_sections` | supported | - |
 | `mut_list_append_alias` | supported | - |
 | `mut_list_clear_copy` | supported | - |
 | `mut_list_in_loop_collect` | supported | - |
+| `mut_list_index_start` | supported | - |
+| `mut_list_index_start_missing_error` | supported | - |
 | `mut_list_methods` | supported | - |
 | `mut_list_pop_empty_error` | supported | - |
 | `mut_list_remove_missing_error` | supported | - |
@@ -265,7 +268,11 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `mut_list_sort_key_reverse` | supported | - |
 | `mut_list_sort_mixed_error` | supported | - |
 | `mut_list_sort_stable_ties` | supported | - |
+| `mut_loop_over_appended_list` | supported | - |
+| `mut_loop_over_updated_dict` | supported | - |
 | `mut_nested_append` | supported | - |
+| `mut_set_namespace_tuple` | supported | - |
+| `mut_set_tuple_unpack` | supported | - |
 | `stmt_autoescape_block` | supported | - |
 | `stmt_block_scoped` | supported | - |
 | `stmt_call_with_args` | supported | - |
@@ -386,7 +393,7 @@ Each row's cases are held to reference Jinja2 and to the embedded Starlark (`met
 | number | `is_integer` | supported | num_is_integer | starlark (num_is_integer) |
 | seq | `copy` | supported | seq_copy | starlark (seq_copy) |
 | seq | `count` | supported | seq_count | starlark (seq_count) |
-| seq | `index` | supported | seq_index, seq_index_missing | - |
+| seq | `index` | supported | seq_index, seq_index_missing, seq_index_negative_start, seq_index_start, seq_index_start_missing, seq_index_start_stop | - |
 | str | `capitalize` | supported | str_capitalize | - |
 | str | `casefold` | supported | str_casefold | starlark (str_casefold) |
 | str | `center` | supported | str_center | starlark (str_center) |

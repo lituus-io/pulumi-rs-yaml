@@ -1,0 +1,1 @@
+{% macro m(a) %}{{ a }}{% for k in kwargs|sort %},{{ k }}={{ kwargs[k] }}{% endfor %}{% endmacro %}{{ m(1, z=2, y=3) }}

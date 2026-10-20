@@ -1,0 +1,1 @@
+{% set x = 1 %}{% for i in [1,2] %}{% set x = i * 10 %}{{ x }} {% endfor %}{{ x }}
