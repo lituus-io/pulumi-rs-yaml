@@ -3,7 +3,7 @@
 
 [package]
 name = "pulumi-rs-yaml-core"
-version = "0.5.41"
+version = "0.5.42"
 edition = "2021"
 description = "Core library for pulumi-rs-yaml: parser, AST, evaluator"
 license.workspace = true

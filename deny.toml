@@ -2,19 +2,22 @@
 # Copyright: lituus-io, all rights reserved
 
 [advisories]
-# Transitive dependencies of the starlark crate (by Meta) that are
-# flagged as unmaintained. These are upstream issues in starlark v0.13;
-# ignore until starlark migrates to alternatives.
-ignore = [
-    "RUSTSEC-2024-0388", # derivative - unmaintained
-    "RUSTSEC-2025-0057", # fxhash - unmaintained
-    "RUSTSEC-2024-0436", # paste - unmaintained
-    # unsafe-libyaml is the libyaml port under serde_yaml 0.9, which is itself
-    # deprecated. Unmaintained, not vulnerable: no advisory against its code.
-    # It is every YAML read the engine makes, so replacing it is a parser
-    # migration of its own, tracked separately -- not a lockfile bump.
-    "RUSTSEC-2024-0449", # unsafe-libyaml - unmaintained
-]
+# Only a real vulnerability fails the gate. Informational advisories
+# (unmaintained, unsound) and yanked crates are not CVEs: they are reported as
+# warnings by the `Security Audit` job in security.yml, which annotates the run
+# without failing it. Long-standing ones seen so far:
+#   - derivative, fxhash, paste: transitive through the starlark crate (by
+#     Meta) v0.13; upstream issues, until starlark migrates to alternatives.
+#   - unsafe-libyaml: the libyaml port under serde_yaml 0.9, itself deprecated.
+#     Unmaintained, not vulnerable. It is every YAML read the engine makes, so
+#     replacing it is a parser migration of its own, not a lockfile bump.
+unmaintained = "none"
+unsound = "none"
+yanked = "warn"
+# A vulnerability deliberately accepted must be listed here WITH a reason, never
+# silently suppressed by loosening the gate above. The fix for a vulnerability
+# is normally `cargo update -p <crate>` in each lockfile (root and fuzz).
+ignore = []
 
 [licenses]
 allow = [

@@ -6,6 +6,27 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.42
+
+Security patch release: both lockfiles (root and fuzz) refreshed to patched
+releases, and the security gate fails on vulnerabilities only. No API or
+behaviour change.
+
+- tokio 1.54.1 (RUSTSEC-2026-0386): `AsyncFd`'s safe constructors accepted
+  any raw file descriptor, which could end in a use-after-free in the I/O
+  driver. tokio is the runtime under the gRPC server (tonic, hyper). Reaching
+  it moves libc to 0.2.191, nix to 0.31.3 and mio to 1.2.4 with it (nix 0.31.1
+  pinned libc to an exact older version).
+- crossbeam-epoch 0.9.21 in the fuzz lockfile (RUSTSEC-2026-0204, an invalid
+  pointer dereference in `fmt::Pointer`). The Security workflow audited only
+  the root lockfile, so the fuzz one was never checked; it now audits both.
+- anyhow 1.0.104 (RUSTSEC-2026-0190, unsound `Error::downcast_mut`) and
+  clipboard-win 5.4.3 (5.4.1 is yanked).
+- cargo-deny reports unmaintained and unsound advisories and yanked crates as
+  warnings instead of failing; the Security Audit job annotates them on the
+  run. The four unmaintained notices (derivative, fxhash, paste,
+  unsafe-libyaml) were ignores before and are unchanged.
+
 ## 0.5.41
 
 Three defects found by a consumer's functionality matrix on macOS, Linux and
