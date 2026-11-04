@@ -11,10 +11,10 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 
 ## Totals
 
-- cases: 354 (294 byte-identical to Jinja2, 60 listed divergences)
+- cases: 355 (295 byte-identical to Jinja2, 60 listed divergences)
 - rows extension: 24
 - rows partial: 40
-- rows supported: 322
+- rows supported: 323
 - rows unit-tested: 1
 - rows unsupported: 7
 
@@ -316,6 +316,7 @@ Status: **supported** = every case renders byte-identical to Jinja2;
 | `stmt_if_elif_else` | supported | - |
 | `stmt_if_nested` | supported | - |
 | `stmt_if_truthiness` | supported | - |
+| `stmt_import_alias_expression_error` | supported | - |
 | `stmt_import_as` | supported | - |
 | `stmt_import_variable` | supported | - |
 | `stmt_import_with_context` | supported | - |

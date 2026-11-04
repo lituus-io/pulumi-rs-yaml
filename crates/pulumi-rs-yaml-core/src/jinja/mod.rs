@@ -1377,15 +1377,12 @@ impl JinjaPreprocessor<'_> {
 
 /// The diagnostic for a template the pre-pass refused before it compiled.
 fn prepass_refusal<'src>(source: &'src str, refusal: prepass::Refusal) -> RenderDiagnostic<'src> {
-    let (kind, suggestion) = if refusal.syntax {
-        (
-            RenderErrorKind::JinjaSyntax,
-            "`break` and `continue` act on the loop whose body holds them; a loop's \
-             `else` and a macro's body are outside it",
-        )
+    let kind = if refusal.syntax {
+        RenderErrorKind::JinjaSyntax
     } else {
-        (RenderErrorKind::JinjaTypeError, NAMESPACE_SUGGESTION)
+        RenderErrorKind::JinjaTypeError
     };
+    let suggestion = refusal.suggestion;
     RenderDiagnostic {
         kind,
         line: refusal.line,
@@ -1611,7 +1608,11 @@ pub fn validate_jinja_syntax<'src>(
     // Compiled, never rendered: nothing is evaluated, so there is no
     // undefined behaviour to choose -- a name that will not resolve is the
     // render's to report, with the context in hand.
-    // Compiling needs no filter, test or global.
+    // Compiling needs no filter, test or global. A shape that would crash
+    // the compiler is refused first, as the render refuses it.
+    if let Some(refusal) = prepass::uncompilable(source, filename) {
+        return Err(prepass_refusal(source, refusal));
+    }
     let mut env = minijinja::Environment::empty();
     env.add_template(filename, source)
         .map_err(|e| build_render_diagnostic(source, Compiled::plain(source), filename, &e))?;
