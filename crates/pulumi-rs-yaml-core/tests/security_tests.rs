@@ -4861,6 +4861,35 @@ mod jinja_loop_control_security {
     }
 
     #[test]
+    fn an_import_alias_that_is_not_a_name_is_a_syntax_error_not_a_panic() {
+        // minijinja parses the alias as any expression and its code
+        // generator reaches `unreachable!()` on one it cannot assign to: a
+        // panic at compile time, found by fuzz_jinja in CI. The syntax check
+        // compiles without rendering, so it is guarded too.
+        let fuzz = include_str!("../../../fuzz/corpus/fuzz_jinja/seed-import-alias-expression.txt");
+        for src in [
+            fuzz,
+            "{% import 'lib.j2' as a-b %}",
+            "{% import 'lib.j2' as 1 %}",
+            "{% import 'lib.j2' as f() %}",
+            "x: 1\n{% import 'lib.j2' as a.b %}",
+        ] {
+            let (kind, msg) = render(src).expect_err(src);
+            assert_eq!(kind, RenderErrorKind::JinjaSyntax, "{src}: {msg}");
+            assert!(msg.contains("alias must be a name"), "{src}: {msg}");
+            let d = pulumi_rs_yaml_core::jinja::validate_jinja_syntax(src, "Pulumi.yaml")
+                .expect_err(src);
+            assert_eq!(d.kind, RenderErrorKind::JinjaSyntax, "{src}");
+            assert_eq!(d.line, src.lines().count() as u32, "{src}");
+        }
+        assert!(pulumi_rs_yaml_core::jinja::validate_jinja_syntax(
+            "{% import 'lib.j2' as lib %}{{ lib.up('x') }}",
+            "Pulumi.yaml"
+        )
+        .is_ok());
+    }
+
+    #[test]
     fn chaining_a_value_that_cannot_be_iterated_is_refused_not_a_panic() {
         // minijinja's `chain` carried such a value lazily as an invalid
         // value, and comparing one unwrapped an object that was not there

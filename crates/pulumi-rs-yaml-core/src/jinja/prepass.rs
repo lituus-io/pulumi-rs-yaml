@@ -22,6 +22,10 @@
 //! with the line of the assignment. Reading an attribute (`ns.total + 1`)
 //! holds nothing and is untouched.
 //!
+//! **An import alias that is not a name.** `{% import 'lib.j2' as a-b %}`
+//! panics in minijinja's code generator (still so in 3.0.5); it is refused as
+//! the syntax error Jinja2 reports.
+//!
 //! Both are found with minijinja's own parser. A byte scan rules out
 //! templates with neither shape before anything is parsed, so the common
 //! case costs nothing.
@@ -749,6 +753,55 @@ pub(super) struct Refusal {
     /// A misplaced `break`/`continue` is a syntax error, as Jinja2's
     /// compiler reports it; a namespace cycle is a type error.
     pub(super) syntax: bool,
+    /// What to do instead, for the diagnostic.
+    pub(super) suggestion: &'static str,
+}
+
+/// A refusal of a template that would crash minijinja's compiler, for a
+/// caller that compiles without the rest of the pass
+/// ([`super::validate_jinja_syntax`]). `None` when it is safe to compile,
+/// including when it does not parse: the compiler reports that itself.
+pub(super) fn uncompilable(source: &str, name: &str) -> Option<Refusal> {
+    if !source.contains("import") {
+        return None;
+    }
+    let ast = parse(
+        source,
+        name,
+        minijinja::syntax::SyntaxConfig,
+        WhitespaceConfig::default(),
+    )
+    .ok()?;
+    import_alias(std::slice::from_ref(&ast))
+}
+
+/// An `import` whose alias is not a plain name. minijinja parses the alias
+/// as any expression and its code generator handles only a name, a list or
+/// an attribute there: `{% import 'lib.j2' as a-b %}` reached an
+/// `unreachable!()` -- a panic at compile time, found by `fuzz_jinja`.
+/// Jinja2 accepts a name only and reports anything else as a syntax error;
+/// so is this, before the template compiles.
+fn import_alias<'a>(stmts: &'a [Stmt<'a>]) -> Option<Refusal> {
+    let mut refusal = None;
+    each_stmt(stmts, &mut |s| {
+        if refusal.is_some() {
+            return;
+        }
+        if let Stmt::Import(i) = s {
+            if !matches!(i.name, Expr::Var(_)) {
+                refusal = Some(Refusal {
+                    line: u32::from(i.span().start_line),
+                    message: "an import's alias must be a name: \
+                              `{% import 'file' as name %}`"
+                        .to_string(),
+                    syntax: true,
+                    suggestion: "name the imported module with a plain identifier, \
+                                 then read its macros as `name.macro()`",
+                });
+            }
+        }
+    });
+    refusal
 }
 
 /// `source` ready to compile: every slice that could take a negative step
@@ -783,7 +836,8 @@ pub(super) fn prepare_mapped<'s>(
     };
     let attributes = may_set_attribute(source);
     let controls = source.contains("continue") || source.contains("break");
-    if !want.any() && !attributes && !controls {
+    let imports = source.contains("import");
+    if !want.any() && !attributes && !controls && !imports {
         return Ok(Cow::Borrowed(source));
     }
     let Ok(ast) = parse(
@@ -801,6 +855,11 @@ pub(super) fn prepare_mapped<'s>(
     }
     if controls {
         if let Some(refusal) = stray_loop_control(std::slice::from_ref(&ast), LoopCtx::Outside) {
+            return Err(refusal);
+        }
+    }
+    if imports {
+        if let Some(refusal) = import_alias(std::slice::from_ref(&ast)) {
             return Err(refusal);
         }
     }
@@ -877,6 +936,8 @@ fn stray_loop_control(stmts: &[Stmt<'_>], ctx: LoopCtx) -> Option<Refusal> {
             _ => format!("'{what}' not properly in loop"),
         },
         syntax: true,
+        suggestion: "`break` and `continue` act on the loop whose body holds them; a loop's \
+             `else` and a macro's body are outside it",
     };
     let held = |block| match ctx {
         LoopCtx::Outside => LoopCtx::Outside,
@@ -1054,6 +1115,7 @@ fn namespace_cycle<'a>(ast: &'a Stmt<'a>) -> Option<Refusal> {
                     root.id, target.name
                 ),
                 syntax: false,
+                suggestion: super::NAMESPACE_SUGGESTION,
             });
         }
     });
@@ -1241,6 +1303,33 @@ mod tests {
 
     fn refused(src: &str) -> bool {
         prepare(src, "t").is_err()
+    }
+
+    #[test]
+    fn an_import_alias_must_be_a_name() {
+        for src in [
+            "{% import 'lib.j2' as a-b %}",
+            "{% import 'lib.j2' as a+b %}",
+            "{% import 'lib.j2' as 1 %}",
+            "{% import 'lib.j2' as f() %}",
+            "{% import 'lib.j2' as a|upper %}",
+            "{% import 'lib.j2' as a.b %}",
+            "{% import 'lib.j2' as [a, b] %}",
+            "{% macro m() %}{% import 'lib.j2' as a-b %}{% endmacro %}",
+            "{% if x %}{% for i in y %}{% import 'lib.j2' as a-b %}{% endfor %}{% endif %}",
+        ] {
+            assert!(refused(src), "{src}");
+            assert!(uncompilable(src, "t").is_some(), "{src}");
+        }
+        for src in [
+            "{% import 'lib.j2' as lib %}{{ lib.up('x') }}",
+            "{% from 'lib.j2' import up as u %}{{ u('x') }}",
+            "{% import 'lib.j2' as lib with context %}",
+            "important: {{ 1 }}",
+        ] {
+            assert!(!refused(src), "{src}");
+            assert!(uncompilable(src, "t").is_none(), "{src}");
+        }
     }
 
     #[test]

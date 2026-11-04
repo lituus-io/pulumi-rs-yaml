@@ -6,6 +6,22 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.43
+
+### An import alias that is not a name is a syntax error, not an abort
+
+minijinja parses the alias of `{% import 'file' as name %}` as any
+expression, and its code generator handles only a name there: an alias such
+as `a-b`, `1` or `f()` reached an `unreachable!()` while the template
+compiled, a panic that aborts the process in release builds. Found by the
+scheduled `fuzz_jinja` run on 0.5.42; the bug is still present in minijinja
+3.0.5. The alias must now be a plain name, as Jinja2 requires: anything else
+is refused as a syntax error on the line of the import, both when a file
+renders (including an imported or included file) and in
+`validate_jinja_syntax`, which compiles without rendering. The conformance
+corpus has the case (355 cases) and the crashing input is a `fuzz_jinja`
+seed.
+
 ## 0.5.42
 
 Security patch release: both lockfiles (root and fuzz) refreshed to patched
