@@ -14,6 +14,17 @@
 # Restricted format: `[[entry]]` tables, string / boolean values, string arrays.
 
 # ---------------------------------------------------------------------------
+# 0.5.43
+# ---------------------------------------------------------------------------
+
+[[entry]]
+version = "0.5.43"
+heading = "An import target that cannot be bound is refused, not an abort"
+tests = [
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::an_import_target_that_cannot_be_bound_is_refused_at_compile",
+]
+
+# ---------------------------------------------------------------------------
 # 0.5.41
 # ---------------------------------------------------------------------------
 

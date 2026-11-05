@@ -6,6 +6,108 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.43
+
+Every Rust dependency moved to its latest release where that leaves the
+engine's behaviour and the release gates unchanged, and both lockfiles (root
+and fuzz) refreshed so every transitive dependency is the newest compatible
+one. Two majors are held back because adopting them would change what
+existing programs render or whether they load, and one because it does not
+fit the binary-size gate without slowing a benchmarked path; one process
+abort found by the weekly fuzz run is closed.
+
+Upgraded:
+
+| dependency | from | to | change it needed |
+|---|---|---|---|
+| tonic | 0.12.3 | 0.14.9 | stubs regenerated (below) |
+| prost, prost-types | 0.13.5 | 0.14.4 | stubs regenerated |
+| tonic-prost | -- | 0.14.9 | new: tonic 0.14 moved the prost codec out of tonic |
+| pyo3 | 0.29.0 | 0.30.1 | none |
+| rand | 0.8.6 | 0.10.3 | `rand::rng()` / `RngExt::random_range` |
+| base64 | 0.22.1 | 0.23.1 | decode-error wording kept (below) |
+| hcl-rs | 0.19.5 | 0.20.0 | none |
+| criterion | 0.5.1 | 0.8.2 | `black_box` from `std::hint` |
+| memchr, rayon, regex, serde, serde_json, tempfile, thiserror, tokio-stream, uuid | | latest 1.x/0.x | lockfile only |
+
+ctrlc, flate2, heck, pretty_assertions, serde_yaml and tokio were already on
+their latest releases. The unused `tonic-build` workspace entry is removed.
+
+- **gRPC stubs.** Regenerated with `tonic-prost-build` 0.14.9 from the same
+  vendored protos (v3.228.0); `proto/README.md` shows the new invocation.
+  The checked-in 0.12 stubs had dropped two fields the vendored protos
+  declare, `RegisterResourceRequest.env_var_mappings` and
+  `ConvertProgramRequest.loader_target`; both are now present, the first
+  sent empty (an empty map is not on the wire, as before) and the second
+  read and unused, as it was ignored before. Every RPC, message and field
+  the hosts use is unchanged.
+- **base64 0.23** rewrote one decode error (`Invalid last symbol 82, offset
+  1.` became `Invalid last symbol 0x52 ('R') at offset 1, decoded as
+  0b00010001.`). A `base64_decode` render error and the schema loader's
+  parameterization warning quote that text, so it is spelled as before.
+- **hcl-rs 0.20** refuses `\b`, `\f` and `\/` in a quoted string, escapes
+  HCL does not define. It parses only PCL handed to `GenerateProgram`/
+  `GenerateProject` (`pulumi convert`), which Pulumi's PCL printer never
+  writes with those escapes.
+
+Binary size: tonic 0.14's transport is larger than 0.12's and put the
+converter, which is little else, past the +2% size gate (+3.8%). The gRPC
+transport (tonic, hyper, h2 and the tower stack beneath them) is now built
+at `opt-level = "s"`: it carries a handful of RPCs per resource between local
+processes, its time is the engine's and the provider's, and no benchmark
+runs it. Every artefact is inside the gate again.
+
+Held back:
+
+- **minijinja stays at =2.24.0** (latest 3.0.5). minijinja 3 prints a value
+  inside a list or map with Python quoting, renders tuples as tuples and
+  makes them unequal to lists, and spaces `tojson`; the spelling is fixed in
+  minijinja's own `Value` formatting with no setting to keep the old one, and
+  it is the text every `intended` row of `DIVERGENCES.md` pins (stacks
+  already deploy `["a"]`, `{"k": 1}`, `[1, 2]`). On the same template,
+  2.24.0 and 3.0.5 render `{{ ["a", 1] }}` as `["a", 1]` / `['a', 1]`,
+  `{{ (1, 2) }}` as `[1, 2]` / `(1, 2)`, `{{ ["a"] ~ "" }}` and
+  `{{ ["a"]|string }}` as `["a"]` / `['a']`, `{{ (1, 2) == [1, 2] }}` as
+  `True` / `False`; `true is number`, `"FOO 1" is upper`, a private macro
+  imported from another template, `-x.y` and the undefined-value error text
+  change too.
+- **polyglot-sql stays at =0.13.1** (latest 0.14.0). 0.14 adds about
+  200 KiB of parser and generator code (polyglot_sql's `.text` 2.5 to 2.7
+  MiB): the Python extension grows 4.7% and the language host 2.5% against
+  0.5.42, past the +2% gate, with the crate already built at
+  `opt-level = "z"`. The only other code large enough to win that
+  back is the regex engine, and building it for size made the
+  `native_str_regexp_*` benchmarks 1.8x to 4x slower. Held at the exact
+  version 0.5.42 ships (with its derive crate), so the SQL parser is the one
+  the `fuzz_sql_lineage` hang fix was proven on.
+- **starlark stays at 0.13.0** (latest 0.14.2). 0.14 refuses an
+  unparenthesized tuple with a trailing comma, so a function 0.13 loads --
+  `y = 1,` or `return x,` -- no longer compiles ("unparenthesized tuple with
+  trailing comma"); its new parser also rewords syntax errors. allocative
+  stays at 0.3.4 with it: 0.3.6 no longer implements `Allocative` for the
+  hashbrown tables starlark_map 0.13 holds, so starlark 0.13 does not build
+  against it. allocative 0.3.6 still declares `impl Allocative for !`, so
+  the fuzz workflow keeps its pinned nightly.
+
+### An import target that cannot be bound is refused, not an abort
+
+`{% import 'lib.j2' as a-b %}` (found by the weekly fuzz_jinja run) reached
+an `unreachable!()` in the engine's compiler: the parser reads the target as
+any expression and the compiler binds only a name, an attribute or a list of
+those. It aborted the process, on a render and on a syntax check
+(`validate_jinja_syntax`, which compiles without rendering) alike. Both now
+refuse such a target before compiling, as a syntax error ("an import target
+must be a name"), at any depth, the way a stray `break` is refused; Jinja2
+reports a syntax error there too. Every target that compiled before still
+compiles.
+
+### Tests
+
+- `security_tests.rs::an_import_target_that_cannot_be_bound_is_refused_at_compile`
+  (the fuzz input among its cases), and the input as a `fuzz_jinja` seed.
+- `jinja_changelog_regression.rs::v0_5_43_dependency_wording`: every base64
+  decode failure a render reports keeps its 0.5.42 wording.
+
 ## 0.5.42
 
 Security patch release: both lockfiles (root and fuzz) refreshed to patched
