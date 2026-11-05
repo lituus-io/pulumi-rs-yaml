@@ -253,7 +253,7 @@ mod v0_4_0_extra_vars {
 }
 
 // ---------------------------------------------------------------------------
-// import / include (the bilayer layout)
+// import / include (a shared macro library beside the program)
 // ---------------------------------------------------------------------------
 
 mod import_and_include {

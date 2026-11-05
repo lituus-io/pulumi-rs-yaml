@@ -19,12 +19,13 @@ fn needles() -> Vec<String> {
     let corp = format!("{}{}", "TEL", "US");
     vec![
         corp.to_lowercase(),
-        format!("{}{}", "@telus", ".com"),
+        format!("@{}.com", corp.to_lowercase()),
         format!("{}{}", "Cla", "ude"),
         format!("{}{}", "Anthro", "pic"),
         format!("{}{}", "Co-Authored", "-By"),
         format!("{}{}", "mock", "-lab"),
         format!("{}{}", "bi-water", "melon"),
+        format!("{}{}", "bi", "layer"),
     ]
 }
 
