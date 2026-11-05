@@ -861,3 +861,36 @@ mod v0_5_33_readfile_marker {
         assert!(!v.contains('\u{0}'), "marker NULs leaked: {v:?}");
     }
 }
+
+// ---------------------------------------------------------------------------
+// 0.5.43 -- a dependency upgrade does not reword a render error
+// ---------------------------------------------------------------------------
+
+mod v0_5_43_dependency_wording {
+    use super::*;
+
+    #[test]
+    fn a_non_canonical_last_symbol_keeps_its_wording() {
+        // `R` carries bits past the one decoded byte: base64 0.23 reports it
+        // as `Invalid last symbol 0x52 ('R') at offset 1, decoded as ...`.
+        let err = render_str("{{ 'QR==' | base64_decode }}", Path::new(".")).unwrap_err();
+        assert!(
+            err.contains("base64 decode failed: Invalid last symbol 82, offset 1."),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn every_other_decode_failure_keeps_its_wording() {
+        let err = render_str("{{ 'a!==' | base64_decode }}", Path::new(".")).unwrap_err();
+        assert!(
+            err.contains("base64 decode failed: Invalid symbol 33, offset 1."),
+            "{err}"
+        );
+        let err = render_str("{{ 'abcde' | base64_decode }}", Path::new(".")).unwrap_err();
+        assert!(
+            err.contains("base64 decode failed: Invalid input length: 5"),
+            "{err}"
+        );
+    }
+}

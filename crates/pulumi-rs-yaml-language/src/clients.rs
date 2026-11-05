@@ -208,6 +208,8 @@ impl ResourceCallback for GrpcCallback {
             replace_on_changes: options.replace_on_changes.clone(),
             plugin_download_url: options.plugin_download_url.clone(),
             plugin_checksums: HashMap::new(),
+            // Provider env-var remapping is not a YAML resource option.
+            env_var_mappings: HashMap::new(),
             retain_on_delete: Some(options.retain_on_delete),
             aliases: options
                 .aliases

@@ -1,3 +1,6 @@
+<!-- Author: spicyzhug@gmail.com -->
+<!-- Copyright: lituus-io, all rights reserved -->
+
 # Proto definitions
 
 Protobuf/gRPC definitions for the Pulumi RPC interfaces consumed and implemented
@@ -25,12 +28,13 @@ surface matches the files here exactly:
 ## Regenerating
 
 Regeneration is a deliberate, manual step (do not add a `build.rs`). Use
-`tonic-build`/`prost-build` matching the versions in the workspace
-`Cargo.toml` (`tonic-build = "0.12"`, `prost = "0.13"`), e.g. from a small
-throwaway build script or `protoc` invocation:
+`tonic-prost-build` matching the versions in the workspace `Cargo.toml`
+(`tonic`/`tonic-prost = "0.14"`, `prost = "0.14"`; since tonic 0.14 the prost
+code generator and codec live in `tonic-prost-build` and `tonic-prost`), e.g.
+from a small throwaway binary with `protoc` on the `PATH`:
 
 ```rust
-tonic_build::configure()
+tonic_prost_build::configure()
     .build_server(true)
     .build_client(true)
     .out_dir("crates/pulumi-rs-yaml-proto/src/generated")

@@ -2428,7 +2428,10 @@ fn register_custom_filters(env: &mut minijinja::Environment<'_>) {
                 .map_err(|e| {
                     minijinja::Error::new(
                         minijinja::ErrorKind::InvalidOperation,
-                        format!("base64 decode failed: {}", e),
+                        format!(
+                            "base64 decode failed: {}",
+                            crate::eval::builtins::base64_decode_error_text(&e)
+                        ),
                     )
                 })
                 .and_then(|bytes| {

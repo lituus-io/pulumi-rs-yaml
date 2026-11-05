@@ -281,6 +281,19 @@ pub fn eval_to_base64<'src>(value: &Value<'src>, diags: &mut Diagnostics) -> Opt
     Some(Value::String(Cow::Owned(encoded)))
 }
 
+/// The text of a base64 decode failure, worded as base64 0.22 worded it.
+/// 0.23 rewrote one variant (`Invalid last symbol 0x57 ('W') at offset 3,
+/// decoded as 0b00010110.`); a render error or warning that quotes the
+/// failure keeps the text it has always had.
+pub(crate) fn base64_decode_error_text(e: &base64::DecodeError) -> String {
+    match *e {
+        base64::DecodeError::InvalidLastSymbol { offset, symbol, .. } => {
+            format!("Invalid last symbol {symbol}, offset {offset}.")
+        }
+        ref other => other.to_string(),
+    }
+}
+
 /// Evaluates `fn::fromBase64` - decodes a base64 string.
 pub fn eval_from_base64<'src>(value: &Value<'src>, diags: &mut Diagnostics) -> Option<Value<'src>> {
     if has_unknown(value) {
@@ -868,12 +881,12 @@ pub fn eval_random_string<'src>(
         return None;
     }
 
-    use rand::Rng;
+    use rand::RngExt;
     const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let result: String = (0..length)
         .map(|_| {
-            let idx = rng.gen_range(0..CHARSET.len());
+            let idx = rng.random_range(0..CHARSET.len());
             CHARSET[idx] as char
         })
         .collect();

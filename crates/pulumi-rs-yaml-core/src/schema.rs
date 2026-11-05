@@ -641,7 +641,8 @@ pub fn build_schema_request(
             Err(e) => {
                 eprintln!(
                     "warning: invalid base64 parameterization for {}: {}",
-                    p.name, e
+                    p.name,
+                    crate::eval::builtins::base64_decode_error_text(&e)
                 );
                 Vec::new()
             }
