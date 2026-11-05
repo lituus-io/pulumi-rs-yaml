@@ -83,6 +83,43 @@ opt-level = "z"
 [profile.release.package.hcl-rs]
 opt-level = "z"
 
+# The gRPC transport (tonic over hyper/h2) carries a handful of RPCs per
+# resource between local processes; its time is the engine's and the
+# provider's, never the codec's. Size-tuned: tonic 0.14's transport is
+# larger than 0.12's, and the converter is little else.
+[profile.release.package.tonic]
+opt-level = "s"
+
+[profile.release.package.tonic-prost]
+opt-level = "s"
+
+[profile.release.package.h2]
+opt-level = "s"
+
+[profile.release.package.hyper]
+opt-level = "s"
+
+[profile.release.package.hyper-util]
+opt-level = "s"
+
+[profile.release.package.http]
+opt-level = "s"
+
+[profile.release.package.http-body-util]
+opt-level = "s"
+
+[profile.release.package.tower]
+opt-level = "s"
+
+[profile.release.package.axum]
+opt-level = "s"
+
+[profile.release.package.matchit]
+opt-level = "s"
+
+[profile.release.package.tokio-util]
+opt-level = "s"
+
 
 
 # Mirrored onto the bench profile so the benchmark regression gate measures the
