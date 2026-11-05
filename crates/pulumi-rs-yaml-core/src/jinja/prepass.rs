@@ -746,9 +746,17 @@ pub(super) const NAMESPACE_TAG: &str = "a namespace would hold itself";
 pub(super) struct Refusal {
     pub(super) line: u32,
     pub(super) message: String,
-    /// A misplaced `break`/`continue` is a syntax error, as Jinja2's
-    /// compiler reports it; a namespace cycle is a type error.
-    pub(super) syntax: bool,
+    pub(super) cause: RefusalCause,
+}
+
+/// What a [`Refusal`] refuses. A misplaced `break`/`continue` and an import
+/// target that cannot be bound are syntax errors, as Jinja2's compiler
+/// reports them; a namespace cycle is a type error.
+#[derive(Clone, Copy)]
+pub(super) enum RefusalCause {
+    LoopControl,
+    ImportTarget,
+    NamespaceCycle,
 }
 
 /// `source` ready to compile: every slice that could take a negative step
@@ -783,7 +791,8 @@ pub(super) fn prepare_mapped<'s>(
     };
     let attributes = may_set_attribute(source);
     let controls = source.contains("continue") || source.contains("break");
-    if !want.any() && !attributes && !controls {
+    let imports = source.contains("import");
+    if !want.any() && !attributes && !controls && !imports {
         return Ok(Cow::Borrowed(source));
     }
     let Ok(ast) = parse(
@@ -803,6 +812,9 @@ pub(super) fn prepare_mapped<'s>(
         if let Some(refusal) = stray_loop_control(std::slice::from_ref(&ast), LoopCtx::Outside) {
             return Err(refusal);
         }
+    }
+    if imports {
+        unbindable_import(&ast)?;
     }
     let mut walker = Walker {
         source,
@@ -876,7 +888,7 @@ fn stray_loop_control(stmts: &[Stmt<'_>], ctx: LoopCtx) -> Option<Refusal> {
             ),
             _ => format!("'{what}' not properly in loop"),
         },
-        syntax: true,
+        cause: RefusalCause::LoopControl,
     };
     let held = |block| match ctx {
         LoopCtx::Outside => LoopCtx::Outside,
@@ -901,6 +913,53 @@ fn stray_loop_control(stmts: &[Stmt<'_>], ctx: LoopCtx) -> Option<Refusal> {
         Stmt::CallBlock(c) => stray_loop_control(&c.macro_decl.body, LoopCtx::Outside),
         _ => None,
     })
+}
+
+/// An `{% import ... as <target> %}` whose target cannot be bound. The
+/// engine's parser reads the target as any expression, and its compiler
+/// binds only a name, an attribute or a list of those: anything else
+/// (`as a-b`) reached an `unreachable!()` -- a process abort, found by
+/// fuzz_jinja. Jinja2 reads a single name there and reports a syntax error.
+fn unbindable_import<'a>(ast: &'a Stmt<'a>) -> Result<(), Refusal> {
+    fn bindable(e: &Expr<'_>) -> bool {
+        match e {
+            Expr::Var(_) | Expr::GetAttr(_) => true,
+            Expr::List(l) => l.items.iter().all(bindable),
+            _ => false,
+        }
+    }
+    let mut refusal = None;
+    each_stmt(std::slice::from_ref(ast), &mut |s| {
+        if let (None, Stmt::Import(i)) = (&refusal, s) {
+            if !bindable(&i.name) {
+                refusal = Some(Refusal {
+                    line: u32::from(i.name.span().start_line),
+                    message: "an import target must be a name".to_string(),
+                    cause: RefusalCause::ImportTarget,
+                });
+            }
+        }
+    });
+    refusal.map_or(Ok(()), Err)
+}
+
+/// [`unbindable_import`] for a template that is compiled without being
+/// rendered (`validate_jinja_syntax`): the compiler aborts on such a target
+/// whether or not anything renders. Parses only a template naming `import`;
+/// one that does not parse is left for the compiler to report.
+pub(super) fn refuse_unbindable_import(source: &str, name: &str) -> Result<(), Refusal> {
+    if !source.contains("import") {
+        return Ok(());
+    }
+    match parse(
+        source,
+        name,
+        minijinja::syntax::SyntaxConfig,
+        WhitespaceConfig::default(),
+    ) {
+        Ok(ast) => unbindable_import(&ast),
+        Err(_) => Ok(()),
+    }
 }
 
 /// Every statement of a template, depth first, with a callback.
@@ -1053,7 +1112,7 @@ fn namespace_cycle<'a>(ast: &'a Stmt<'a>) -> Option<Refusal> {
                      without end",
                     root.id, target.name
                 ),
-                syntax: false,
+                cause: RefusalCause::NamespaceCycle,
             });
         }
     });

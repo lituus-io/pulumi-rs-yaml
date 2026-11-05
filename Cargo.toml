@@ -15,10 +15,12 @@ members = [
 ]
 
 [workspace.dependencies]
-tonic = "0.12"
-prost = "0.13"
-prost-types = "0.13"
-tonic-build = "0.12"
+tonic = "0.14.9"
+# tonic 0.14 moved the prost codec out of tonic: the generated stubs call
+# `tonic_prost::ProstCodec`.
+tonic-prost = "0.14.9"
+prost = "0.14.4"
+prost-types = "0.14.4"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
 serde = { version = "1", features = ["derive"] }
 # `raw_value`: the checkpoint reader captures a resource's `inputs` as a borrowed
@@ -27,23 +29,23 @@ serde_json = { version = "1", features = ["raw_value"] }
 serde_yaml = "0.9"
 thiserror = "2"
 semver = "1"
-base64 = "0.22"
+base64 = "0.23.1"
 # Exact: `unstable_machinery` (the parser, for the slice rewrite in
 # jinja/slice.rs) carries no semver guarantee. `fuel` and `loop_controls`
 # are minijinja features, not crates.
 minijinja = { version = "=2.24.0", default-features = false, features = ["builtins", "debug", "macros", "multi_template", "adjacent_loop_items", "serde", "loader", "loop_controls", "fuel", "unstable_machinery"] }
 uuid = { version = "1", features = ["v4"] }
-rand = "0.8.6" # >=0.8.6 fixes RUSTSEC-2026-0097 (thread_rng unsoundness), API-compatible
-pyo3 = { version = "0.29", features = ["extension-module"] }
+rand = "0.10.3"
+pyo3 = { version = "0.30.1", features = ["extension-module"] }
 heck = "0.5"
 # RE2-lineage, like Go's regexp: linear time, no backreferences, no lookaround.
 regex = "1"
-hcl-rs = "0.19"
+hcl-rs = "0.20.0"
 rayon = "1"
 starlark = "0.13"
 pretty_assertions = "1"
 tempfile = "3"
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8.2", features = ["html_reports"] }
 
 [profile.release]
 opt-level = 3
@@ -80,6 +82,43 @@ opt-level = "z"
 
 [profile.release.package.hcl-rs]
 opt-level = "z"
+
+# The gRPC transport (tonic over hyper/h2) carries a handful of RPCs per
+# resource between local processes; its time is the engine's and the
+# provider's, never the codec's. Size-tuned: tonic 0.14's transport is
+# larger than 0.12's, and the converter is little else.
+[profile.release.package.tonic]
+opt-level = "s"
+
+[profile.release.package.tonic-prost]
+opt-level = "s"
+
+[profile.release.package.h2]
+opt-level = "s"
+
+[profile.release.package.hyper]
+opt-level = "s"
+
+[profile.release.package.hyper-util]
+opt-level = "s"
+
+[profile.release.package.http]
+opt-level = "s"
+
+[profile.release.package.http-body-util]
+opt-level = "s"
+
+[profile.release.package.tower]
+opt-level = "s"
+
+[profile.release.package.axum]
+opt-level = "s"
+
+[profile.release.package.matchit]
+opt-level = "s"
+
+[profile.release.package.tokio-util]
+opt-level = "s"
 
 
 

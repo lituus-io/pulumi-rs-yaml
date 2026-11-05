@@ -1,8 +1,9 @@
 // Author: spicyzhug@gmail.com
 // Copyright: lituus-io, all rights reserved
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use std::collections::HashMap;
+use std::hint::black_box;
 
 use pulumi_rs_yaml_core::ast::parse::parse_template;
 use pulumi_rs_yaml_core::eval::evaluator::Evaluator;

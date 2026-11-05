@@ -4905,6 +4905,44 @@ mod jinja_loop_control_security {
             "13"
         );
     }
+
+    #[test]
+    fn an_import_target_that_cannot_be_bound_is_refused_at_compile() {
+        // The engine's parser reads `as <target>` as any expression and its
+        // compiler reached `unreachable!()` on one it cannot bind: a process
+        // abort (found by fuzz_jinja in CI), on a render and on a syntax
+        // check alike. Refused like the loop controls above, before anything
+        // compiles -- at any depth.
+        for src in [
+            "{% import 'includes/lib.j2' as ljjjj-jjjjjjjjjjjjjjjjjjib %}{{ lib.SYSTEMD_EXup('x') }}",
+            "{% import 'lib.j2' as 1 %}",
+            "{% import 'lib.j2' as f() %}",
+            "{% import 'lib.j2' as [a, b ~ c] %}",
+            "{% for i in [1] %}{% macro m() %}{% import 'lib.j2' as a + b %}{% endmacro %}{% endfor %}",
+        ] {
+            let (kind, msg) = render(src).expect_err(src);
+            assert_eq!(kind, RenderErrorKind::JinjaSyntax, "{src}: {msg}");
+            assert!(msg.contains("import target must be a name"), "{src}: {msg}");
+            // Compiling without rendering reached the same abort.
+            let d = pulumi_rs_yaml_core::jinja::validate_jinja_syntax(src, "Pulumi.yaml")
+                .expect_err(src);
+            assert_eq!(d.kind, RenderErrorKind::JinjaSyntax, "{src}: {}", d.message);
+            assert!(d.message.contains("import target must be a name"), "{src}");
+        }
+        // A target the compiler can bind compiles: it fails only because the
+        // template it names does not exist.
+        for src in [
+            "{% import 'lib.j2' as lib %}",
+            "{% set ns = namespace() %}{% import 'lib.j2' as ns.lib %}",
+        ] {
+            let (kind, msg) = render(src).expect_err(src);
+            assert_ne!(kind, RenderErrorKind::JinjaSyntax, "{src}: {msg}");
+            assert!(
+                pulumi_rs_yaml_core::jinja::validate_jinja_syntax(src, "Pulumi.yaml").is_ok(),
+                "{src}"
+            );
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
