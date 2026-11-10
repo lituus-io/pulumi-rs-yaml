@@ -140,11 +140,65 @@
       {
         "organization": "org",
         "project": "gcp-readfile-bigquery-test",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://spacy-muffin-lab-5a292e/readfile_test_dataset",
+        "stack": "golden",
+        "target_id": "bq://spacy-muffin-lab-5a292e/readfile_test_dataset/users"
+      },
+      {
+        "organization": "org",
+        "project": "gcp-readfile-bigquery-test",
         "relationship": "defined_by",
         "resolution": "structural",
         "source_id": "bq://spacy-muffin-lab-5a292e/readfile_test_dataset",
         "stack": "golden",
         "target_id": "urn:pulumi:golden::gcp-readfile-bigquery-test::gcp:bigquery/dataset:Dataset::dataset"
+      },
+      {
+        "organization": "org",
+        "project": "gcp-readfile-bigquery-test",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://spacy-muffin-lab-5a292e/readfile_test_dataset/users",
+        "stack": "golden",
+        "target_id": "bq://spacy-muffin-lab-5a292e/readfile_test_dataset/users#created_at"
+      },
+      {
+        "organization": "org",
+        "project": "gcp-readfile-bigquery-test",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://spacy-muffin-lab-5a292e/readfile_test_dataset/users",
+        "stack": "golden",
+        "target_id": "bq://spacy-muffin-lab-5a292e/readfile_test_dataset/users#email"
+      },
+      {
+        "organization": "org",
+        "project": "gcp-readfile-bigquery-test",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://spacy-muffin-lab-5a292e/readfile_test_dataset/users",
+        "stack": "golden",
+        "target_id": "bq://spacy-muffin-lab-5a292e/readfile_test_dataset/users#id"
+      },
+      {
+        "organization": "org",
+        "project": "gcp-readfile-bigquery-test",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://spacy-muffin-lab-5a292e/readfile_test_dataset/users",
+        "stack": "golden",
+        "target_id": "bq://spacy-muffin-lab-5a292e/readfile_test_dataset/users#name"
+      },
+      {
+        "organization": "org",
+        "project": "gcp-readfile-bigquery-test",
+        "relationship": "defined_by",
+        "resolution": "structural",
+        "source_id": "bq://spacy-muffin-lab-5a292e/readfile_test_dataset/users",
+        "stack": "golden",
+        "target_id": "urn:pulumi:golden::gcp-readfile-bigquery-test::gcp:bigquery/table:Table::usersTable"
       }
     ],
     "nodes": [
@@ -168,6 +222,79 @@
         "project": "gcp-readfile-bigquery-test",
         "source_file": "Pulumi.yaml",
         "stack": "golden"
+      },
+      {
+        "bq_project": "spacy-muffin-lab-5a292e",
+        "dataset": "readfile_test_dataset",
+        "defined_by_urn": "urn:pulumi:golden::gcp-readfile-bigquery-test::gcp:bigquery/table:Table::usersTable",
+        "id": "bq://spacy-muffin-lab-5a292e/readfile_test_dataset/users",
+        "kind": "table",
+        "name": "users",
+        "organization": "org",
+        "project": "gcp-readfile-bigquery-test",
+        "source_file": "Pulumi.yaml",
+        "stack": "golden",
+        "table": "users"
+      },
+      {
+        "bq_project": "spacy-muffin-lab-5a292e",
+        "column": "created_at",
+        "data_type": "TIMESTAMP",
+        "dataset": "readfile_test_dataset",
+        "description": "Creation timestamp",
+        "id": "bq://spacy-muffin-lab-5a292e/readfile_test_dataset/users#created_at",
+        "kind": "column",
+        "mode": "REQUIRED",
+        "name": "created_at",
+        "organization": "org",
+        "project": "gcp-readfile-bigquery-test",
+        "stack": "golden",
+        "table": "users"
+      },
+      {
+        "bq_project": "spacy-muffin-lab-5a292e",
+        "column": "email",
+        "data_type": "STRING",
+        "dataset": "readfile_test_dataset",
+        "description": "Email address",
+        "id": "bq://spacy-muffin-lab-5a292e/readfile_test_dataset/users#email",
+        "kind": "column",
+        "mode": "NULLABLE",
+        "name": "email",
+        "organization": "org",
+        "project": "gcp-readfile-bigquery-test",
+        "stack": "golden",
+        "table": "users"
+      },
+      {
+        "bq_project": "spacy-muffin-lab-5a292e",
+        "column": "id",
+        "data_type": "INTEGER",
+        "dataset": "readfile_test_dataset",
+        "description": "Unique identifier",
+        "id": "bq://spacy-muffin-lab-5a292e/readfile_test_dataset/users#id",
+        "kind": "column",
+        "mode": "REQUIRED",
+        "name": "id",
+        "organization": "org",
+        "project": "gcp-readfile-bigquery-test",
+        "stack": "golden",
+        "table": "users"
+      },
+      {
+        "bq_project": "spacy-muffin-lab-5a292e",
+        "column": "name",
+        "data_type": "STRING",
+        "dataset": "readfile_test_dataset",
+        "description": "Display name",
+        "id": "bq://spacy-muffin-lab-5a292e/readfile_test_dataset/users#name",
+        "kind": "column",
+        "mode": "REQUIRED",
+        "name": "name",
+        "organization": "org",
+        "project": "gcp-readfile-bigquery-test",
+        "stack": "golden",
+        "table": "users"
       }
     ],
     "organization": "org",

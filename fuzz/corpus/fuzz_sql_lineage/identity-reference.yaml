@@ -1,0 +1,36 @@
+name: seed
+runtime: yaml
+variables:
+  dataset_id: d
+resources:
+  ds:
+    type: gcp:bigquery:Dataset
+    properties:
+      datasetId: ${dataset_id}
+      project: p
+  mirror:
+    type: gcp:bigquery:Dataset
+    properties:
+      datasetId: ${ds.datasetId}${ds.datasetId}
+      project: ${ds.project}
+  t:
+    type: gcp:bigquery:Table
+    properties:
+      datasetId: ${mirror.datasetId}
+      project: ${ds.project}
+      tableId: t
+      schema: '[{"name":"id","type":"STRING"}]'
+  v:
+    type: gcp:bigquery:Table
+    properties:
+      datasetId: ${ds.datasetId}
+      project: ${ds.location}
+      tableId: v
+      view:
+        query: "SELECT id FROM `${t.project}.${t.datasetId}.${t.tableId}`"
+  r:
+    type: gcp:bigquery:Routine
+    properties:
+      datasetId: ${t.datasetId}
+      routineId: ${v.tableId}_r
+      definitionBody: "SELECT 1"

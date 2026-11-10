@@ -432,6 +432,53 @@ resources:
 }
 
 #[test]
+fn schema_read_into_a_variable_gives_the_tables_columns() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(
+        dir.path().join("events.json"),
+        r#"[{"name":"id","type":"STRING","description":"key"},{"name":"at","type":"TIMESTAMP","description":"when"}]"#,
+    )
+    .expect("write");
+    let yaml = r#"name: vars
+runtime: yaml
+variables:
+  events_schema:
+    fn::readFile: ./events.json
+resources:
+  ds:
+    type: gcp:bigquery:Dataset
+    properties:
+      project: data-proj
+      datasetId: analytics
+  events:
+    type: gcp:bigquery:Table
+    properties:
+      project: data-proj
+      datasetId: ${ds.datasetId}
+      tableId: events
+      schema: ${events_schema}
+"#;
+    let dir_path: &'static std::path::Path = Box::leak(Box::new(dir.path().to_path_buf()));
+    let e = export_with_dir(yaml, "vars", "dev", Some(dir_path));
+    for column in ["id", "at"] {
+        let id = format!("bq://data-proj/analytics/events#{column}");
+        assert!(
+            e.lineage
+                .nodes
+                .iter()
+                .any(|n| n.id == id && n.kind == DataNodeKind::Column),
+            "{id}"
+        );
+    }
+    assert!(
+        !e.diags.has_warnings(),
+        "a schema read into a variable resolves without a warning: {}",
+        e.diags
+    );
+    drop(dir);
+}
+
+#[test]
 fn deterministic_and_json_serializable() {
     let e1 = export(PRODUCER, "data-platform", "prod");
     let e2 = export(PRODUCER, "data-platform", "prod");
@@ -599,6 +646,171 @@ fn dataset_and_table_ids_derived_from_str_invokes() {
         node(&e.lineage, "bq://data-proj/sales-eu/orders").kind,
         DataNodeKind::Table
     );
+}
+
+// ---------------------------------------------------------------------------
+// A table, view or routine whose identity references its dataset's identity
+// (`datasetId: ${ds.datasetId}`) is placed under that dataset.
+// ---------------------------------------------------------------------------
+
+const IDENTITY_BY_REFERENCE: &str = r#"name: refs
+runtime: yaml
+variables:
+  dataset_id: analytics
+resources:
+  ds:
+    type: gcp:bigquery:Dataset
+    properties:
+      datasetId: ${dataset_id}
+      project: data-proj
+  events:
+    type: gcp:bigquery:Table
+    properties:
+      datasetId: ${ds.datasetId}
+      project: ${ds.project}
+      tableId: events
+      schema: '[{"name":"id","type":"STRING"}]'
+  recent:
+    type: gcp:bigquery:Table
+    properties:
+      datasetId: ${ds.datasetId}
+      project: ${ds.project}
+      tableId: recent_events
+      view:
+        query: "SELECT id FROM `${events.project}.${events.datasetId}.${events.tableId}`"
+        useLegacySql: false
+  refresh:
+    type: gcp:bigquery:Routine
+    properties:
+      datasetId: ${ds.datasetId}
+      project: ${ds.project}
+      routineId: refresh_${events.tableId}
+      routineType: PROCEDURE
+      language: SQL
+      definitionBody: "INSERT INTO `data-proj.analytics.events` SELECT id FROM `data-proj.analytics.recent_events`"
+"#;
+
+fn not_resolvable(e: &Export) -> Vec<String> {
+    e.diags
+        .iter()
+        .map(|d| d.to_string())
+        .filter(|m| m.contains("not statically resolvable"))
+        .collect()
+}
+
+#[test]
+fn identity_by_reference_places_tables_views_and_routines_under_the_dataset() {
+    let e = export(IDENTITY_BY_REFERENCE, "refs", "dev");
+    assert_eq!(not_resolvable(&e), Vec::<String>::new());
+    for (id, kind) in [
+        ("bq://data-proj/analytics", DataNodeKind::Dataset),
+        ("bq://data-proj/analytics/events", DataNodeKind::Table),
+        ("bq://data-proj/analytics/recent_events", DataNodeKind::View),
+        ("bq://data-proj/analytics/events#id", DataNodeKind::Column),
+    ] {
+        assert_eq!(node(&e.lineage, id).kind, kind, "{id}");
+    }
+    for child in [
+        "bq://data-proj/analytics/events",
+        "bq://data-proj/analytics/recent_events",
+    ] {
+        assert!(has_edge(
+            &e.lineage,
+            "bq://data-proj/analytics",
+            child,
+            DataEdgeKind::Contains
+        ));
+    }
+    // The view's SQL names its source through the same references.
+    assert!(has_edge(
+        &e.lineage,
+        "bq://data-proj/analytics/recent_events",
+        "bq://data-proj/analytics/events",
+        DataEdgeKind::DerivesFrom
+    ));
+    assert!(e
+        .lineage
+        .nodes
+        .iter()
+        .any(|n| n.kind == DataNodeKind::Routine && n.name == "refresh_events"));
+}
+
+#[test]
+fn a_reference_to_a_computed_output_still_limits_lineage() {
+    let yaml = r#"name: refs
+runtime: yaml
+resources:
+  ds:
+    type: gcp:bigquery:Dataset
+    properties:
+      datasetId: analytics
+      project: data-proj
+      location: US
+  byLocation:
+    type: gcp:bigquery:Table
+    properties:
+      datasetId: ${ds.location}
+      project: data-proj
+      tableId: t
+  bucket:
+    type: gcp:storage:Bucket
+    properties:
+      name: b
+  byBucket:
+    type: gcp:bigquery:Table
+    properties:
+      datasetId: ${bucket.name}
+      project: data-proj
+      tableId: u
+"#;
+    let e = export(yaml, "refs", "dev");
+    let warned = not_resolvable(&e);
+    assert_eq!(warned.len(), 2, "{warned:?}");
+    assert!(warned.iter().any(|m| m.contains("'byLocation'")));
+    assert!(warned.iter().any(|m| m.contains("'byBucket'")));
+    assert!(e.lineage.nodes.iter().all(|n| n.table.is_none()));
+}
+
+#[test]
+fn a_reference_inside_a_component_reads_the_component_resource() {
+    let yaml = r#"name: comp-refs
+runtime: yaml
+components:
+  Mart:
+    inputs:
+      name:
+        type: string
+    resources:
+      ds:
+        type: gcp:bigquery:Dataset
+        properties:
+          datasetId: marts
+          project: data-proj
+      t:
+        type: gcp:bigquery:Table
+        properties:
+          datasetId: ${ds.datasetId}
+          project: ${ds.project}
+          tableId: daily
+resources:
+  ds:
+    type: gcp:bigquery:Dataset
+    properties:
+      datasetId: outer
+      project: data-proj
+  m:
+    type: comp-refs:index:Mart
+    properties:
+      name: x
+"#;
+    let e = export(yaml, "comp-refs", "dev");
+    assert_eq!(not_resolvable(&e), Vec::<String>::new());
+    node(&e.lineage, "bq://data-proj/marts/daily");
+    assert!(e
+        .lineage
+        .nodes
+        .iter()
+        .all(|n| n.id != "bq://data-proj/outer/daily"));
 }
 
 // ---------------------------------------------------------------------------

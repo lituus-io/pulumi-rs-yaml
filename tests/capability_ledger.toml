@@ -14,6 +14,35 @@
 # Restricted format: `[[entry]]` tables, string / boolean values, string arrays.
 
 # ---------------------------------------------------------------------------
+# 0.5.44
+# ---------------------------------------------------------------------------
+
+[[entry]]
+version = "0.5.44"
+heading = "Lineage follows a reference to a BigQuery resource's identity"
+tests = [
+    "crates/pulumi-rs-yaml-core/tests/sql_lineage_tests.rs::identity_by_reference_places_tables_views_and_routines_under_the_dataset",
+    "crates/pulumi-rs-yaml-core/tests/sql_lineage_tests.rs::a_reference_to_a_computed_output_still_limits_lineage",
+    "crates/pulumi-rs-yaml-core/tests/sql_lineage_tests.rs::a_reference_inside_a_component_reads_the_component_resource",
+    "crates/pulumi-rs-yaml-core/src/literal_resolve.rs::a_chain_of_echoed_inputs_resolves",
+    "crates/pulumi-rs-yaml-core/src/literal_resolve.rs::an_input_the_program_does_not_set_stays_unresolved",
+    "crates/pulumi-rs-yaml-core/src/literal_resolve.rs::a_reference_cycle_terminates_unresolved",
+    "crates/pulumi-rs-yaml-core/src/literal_resolve.rs::a_chain_is_followed_up_to_its_bound_and_no_further",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_ten_thousand_link_identity_chain_is_bounded",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_doubling_identity_chain_is_refused_in_linear_time",
+]
+
+[[entry]]
+version = "0.5.44"
+heading = "A SQL or schema file read into a variable is read"
+tests = [
+    "crates/pulumi-rs-yaml-core/tests/sql_lineage_tests.rs::schema_read_into_a_variable_gives_the_tables_columns",
+    "crates/pulumi-rs-yaml-core/src/sql_lineage/resolve.rs::sql_text_readfile_through_a_variable",
+    "crates/pulumi-rs-yaml-core/src/sql_lineage/resolve.rs::sql_text_variable_cycle_is_unresolved_not_a_loop",
+    "crates/pulumi-rs-yaml-core/src/sql_lineage/resolve.rs::sql_text_variable_readfile_escape_still_rejected",
+]
+
+# ---------------------------------------------------------------------------
 # 0.5.43
 # ---------------------------------------------------------------------------
 

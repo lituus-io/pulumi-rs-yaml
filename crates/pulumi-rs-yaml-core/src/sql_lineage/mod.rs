@@ -779,7 +779,9 @@ fn process_scope<'src>(
     config: Option<&ConfigLookup<'src>>,
     stack_guard: &mut Vec<&'src str>,
 ) {
-    let var_map = Vars::from_entries(variables).with_config(config);
+    let var_map = Vars::from_entries(variables)
+        .with_config(config)
+        .with_echoed_inputs(resources, registry::echoed_identity_inputs);
 
     let dbt_env = dbt::DbtEnv::build_scope(resources, &var_map, &mut ctx.diags);
 
