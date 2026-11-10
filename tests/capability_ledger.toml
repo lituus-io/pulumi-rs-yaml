@@ -32,6 +32,16 @@ tests = [
     "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_doubling_identity_chain_is_refused_in_linear_time",
 ]
 
+[[entry]]
+version = "0.5.44"
+heading = "A SQL or schema file read into a variable is read"
+tests = [
+    "crates/pulumi-rs-yaml-core/tests/sql_lineage_tests.rs::schema_read_into_a_variable_gives_the_tables_columns",
+    "crates/pulumi-rs-yaml-core/src/sql_lineage/resolve.rs::sql_text_readfile_through_a_variable",
+    "crates/pulumi-rs-yaml-core/src/sql_lineage/resolve.rs::sql_text_variable_cycle_is_unresolved_not_a_loop",
+    "crates/pulumi-rs-yaml-core/src/sql_lineage/resolve.rs::sql_text_variable_readfile_escape_still_rejected",
+]
+
 # ---------------------------------------------------------------------------
 # 0.5.43
 # ---------------------------------------------------------------------------

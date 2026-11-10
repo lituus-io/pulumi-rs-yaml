@@ -432,6 +432,53 @@ resources:
 }
 
 #[test]
+fn schema_read_into_a_variable_gives_the_tables_columns() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(
+        dir.path().join("events.json"),
+        r#"[{"name":"id","type":"STRING","description":"key"},{"name":"at","type":"TIMESTAMP","description":"when"}]"#,
+    )
+    .expect("write");
+    let yaml = r#"name: vars
+runtime: yaml
+variables:
+  events_schema:
+    fn::readFile: ./events.json
+resources:
+  ds:
+    type: gcp:bigquery:Dataset
+    properties:
+      project: data-proj
+      datasetId: analytics
+  events:
+    type: gcp:bigquery:Table
+    properties:
+      project: data-proj
+      datasetId: ${ds.datasetId}
+      tableId: events
+      schema: ${events_schema}
+"#;
+    let dir_path: &'static std::path::Path = Box::leak(Box::new(dir.path().to_path_buf()));
+    let e = export_with_dir(yaml, "vars", "dev", Some(dir_path));
+    for column in ["id", "at"] {
+        let id = format!("bq://data-proj/analytics/events#{column}");
+        assert!(
+            e.lineage
+                .nodes
+                .iter()
+                .any(|n| n.id == id && n.kind == DataNodeKind::Column),
+            "{id}"
+        );
+    }
+    assert!(
+        !e.diags.has_warnings(),
+        "a schema read into a variable resolves without a warning: {}",
+        e.diags
+    );
+    drop(dir);
+}
+
+#[test]
 fn deterministic_and_json_serializable() {
     let e1 = export(PRODUCER, "data-platform", "prod");
     let e2 = export(PRODUCER, "data-platform", "prod");

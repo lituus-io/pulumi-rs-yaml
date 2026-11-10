@@ -9,7 +9,8 @@ GitHub releases; this file starts here.
 ## 0.5.44
 
 SQL lineage now places a table, dataset or routine whose identity references
-another BigQuery resource's identity property. No other output changes.
+another BigQuery resource's identity property, and reads a SQL or schema file
+that the program reads into a variable. No other output changes.
 
 ### Lineage follows a reference to a BigQuery resource's identity
 
@@ -62,6 +63,28 @@ better -- the `gcp-readfile-bigquery` stack's `usersTable`
 (`datasetId: ${dataset.datasetId}`) is now placed with its four columns, and
 its warning is gone.
 
+### A SQL or schema file read into a variable is read
+
+A query or a table schema is usually read into a variable and used by name:
+
+```yaml
+variables:
+  events_schema:
+    fn::readFile: ./schema/events.json
+resources:
+  events:
+    type: gcp:bigquery:Table
+    properties:
+      schema: ${events_schema}
+```
+
+Lineage read an inline `fn::readFile` but not one behind a name, so the table
+was placed without its columns and the log said `events.schema: SQL is not
+statically resolvable`, once per table. A name whose variable holds the read
+(or another such name, up to 16) is now the same contained read: the same
+path rules, the same refusal of a path outside the project, and a cycle
+between names ends unresolved.
+
 ### Tests
 
 - Unit: references through a variable, config, an interpolation and a chain;
@@ -74,6 +97,9 @@ its warning is gone.
   `lineage-bq-table-ref` with its goldens.
 - Security (+3): a 10,000-link reference chain, reference cycles, and a
   doubling chain. A fuzz seed for the lineage target.
+- A file read through a variable and through a chain of two, a cycle between
+  names, a path outside the project still refused, and a table whose schema is
+  read into a variable getting its columns with no warning.
 
 ## 0.5.43
 

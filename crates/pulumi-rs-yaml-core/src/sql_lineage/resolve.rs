@@ -77,6 +77,22 @@ pub(crate) fn resolve_sql_text<'src>(
     context: &str,
     diags: &mut Diagnostics,
 ) -> Option<SqlText<'src>> {
+    resolve_sql_text_at(expr, variables, project_dir, store, context, diags, 0)
+}
+
+/// How many variable names a SQL text is followed through to its
+/// `fn::readFile`. A cycle (`a: ${b}`, `b: ${a}`) ends here, as unresolved.
+const MAX_TEXT_VARIABLE_HOPS: u8 = 16;
+
+fn resolve_sql_text_at<'src>(
+    expr: &'src Expr<'src>,
+    variables: &Vars<'src, '_>,
+    project_dir: Option<&Path>,
+    store: Option<&'src super::SqlSourceStore>,
+    context: &str,
+    diags: &mut Diagnostics,
+    hops: u8,
+) -> Option<SqlText<'src>> {
     let mut memo = HashMap::new();
     let mut visiting = HashSet::new();
     if let Some(lit) = resolve_literal(expr, variables, &mut memo, &mut visiting) {
@@ -85,6 +101,26 @@ pub(crate) fn resolve_sql_text<'src>(
             provenance: SqlProvenance::Inline,
             file: None,
         });
+    }
+    // `schema: ${s}` with `s: {fn::readFile: s.json}` is the same contained
+    // read, one name away: a SQL or schema file is usually read into a
+    // variable. Followed through variables only, and bounded.
+    if let Expr::Symbol(_, access) = expr {
+        let target = crate::literal_resolve::single_name_access(access)
+            .and_then(|name| variables.get(name).copied());
+        if let Some(target @ (Expr::ReadFile(..) | Expr::Symbol(..))) = target {
+            if hops < MAX_TEXT_VARIABLE_HOPS {
+                return resolve_sql_text_at(
+                    target,
+                    variables,
+                    project_dir,
+                    store,
+                    context,
+                    diags,
+                    hops + 1,
+                );
+            }
+        }
     }
     if let Expr::ReadFile(_, inner) = expr {
         let path_lit = resolve_literal(inner, variables, &mut memo, &mut visiting)?;
@@ -314,6 +350,59 @@ mod tests {
                 .expect("resolved");
         assert_eq!(text, "SELECT 2");
         assert_eq!(prov, SqlProvenance::File);
+    }
+
+    #[test]
+    fn sql_text_readfile_through_a_variable() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("s.json"), "[]").expect("write");
+        let t: &'static TemplateDecl<'static> = Box::leak(Box::new(parsed(
+            "name: p\nruntime: yaml\nvariables:\n  inner:\n    fn::readFile: s.json\n  outer: ${inner}\nresources:\n  r:\n    type: t:m:X\n    properties:\n      direct: ${inner}\n      chained: ${outer}\n",
+        )));
+        let vars = crate::literal_resolve::Vars::from_entries(&t.variables);
+        for prop in ["direct", "chained"] {
+            let mut diags = Diagnostics::new();
+            let expr = get_property_by_path(&t.resources[0].resource.properties, prop).expect(prop);
+            let got = resolve_sql_text(expr, &vars, Some(dir.path()), None, "r.sql", &mut diags)
+                .map(|t| (t.text, t.provenance, t.file));
+            assert_eq!(
+                got,
+                Some((
+                    Cow::Borrowed("[]"),
+                    SqlProvenance::File,
+                    Some(Cow::Borrowed("s.json"))
+                )),
+                "{prop}"
+            );
+            assert!(!diags.has_warnings(), "{prop}: {diags}");
+        }
+    }
+
+    #[test]
+    fn sql_text_variable_cycle_is_unresolved_not_a_loop() {
+        let t: &'static TemplateDecl<'static> = Box::leak(Box::new(parsed(
+            "name: p\nruntime: yaml\nvariables:\n  a: ${b}\n  b: ${a}\nresources:\n  r:\n    type: t:m:X\n    properties:\n      sql: ${a}\n",
+        )));
+        let vars = crate::literal_resolve::Vars::from_entries(&t.variables);
+        let mut diags = Diagnostics::new();
+        let expr = get_property_by_path(&t.resources[0].resource.properties, "sql").expect("sql");
+        assert!(resolve_sql_text(expr, &vars, None, None, "r.sql", &mut diags).is_none());
+        assert!(diags.has_warnings());
+    }
+
+    #[test]
+    fn sql_text_variable_readfile_escape_still_rejected() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let t: &'static TemplateDecl<'static> = Box::leak(Box::new(parsed(
+            "name: p\nruntime: yaml\nvariables:\n  q:\n    fn::readFile: ../../etc/passwd\nresources:\n  r:\n    type: t:m:X\n    properties:\n      sql: ${q}\n",
+        )));
+        let vars = crate::literal_resolve::Vars::from_entries(&t.variables);
+        let mut diags = Diagnostics::new();
+        let expr = get_property_by_path(&t.resources[0].resource.properties, "sql").expect("sql");
+        assert!(
+            resolve_sql_text(expr, &vars, Some(dir.path()), None, "r.sql", &mut diags).is_none()
+        );
+        assert!(diags.has_warnings());
     }
 
     #[test]
