@@ -3,11 +3,11 @@
 
 # pulumi-rs-yaml
 
-[![CI](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/ci.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/ci.yml)
-[![Security](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/security.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/security.yml)
-[![Fuzz](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/fuzz.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/fuzz.yml)
-[![Benchmark](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/benchmark.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/benchmark.yml)
-[![Release](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/release.yml/badge.svg)](https://github.com/lituus-io/pulumi-rs-yaml/releases/latest)
+[![CI](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/ci.yml)
+[![Security](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/security.yml)
+[![Fuzz](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/fuzz.yml/badge.svg?branch=main)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/fuzz.yml)
+[![Benchmark](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/benchmark.yml/badge.svg?branch=main)](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/benchmark.yml)
+[![Release](https://github.com/lituus-io/pulumi-rs-yaml/actions/workflows/release.yml/badge.svg?event=push)](https://github.com/lituus-io/pulumi-rs-yaml/releases/latest)
 [![PyPI](https://img.shields.io/pypi/v/pulumi-rs-yaml?label=PyPI)](https://pypi.org/project/pulumi-rs-yaml/)
 [![Python](https://img.shields.io/badge/python-%E2%89%A53.9-blue)](https://pypi.org/project/pulumi-rs-yaml/)
 [![fuzz targets](https://img.shields.io/badge/fuzz%20targets-29-blue)](fuzz/fuzz_targets)
