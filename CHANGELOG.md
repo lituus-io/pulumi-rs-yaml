@@ -6,6 +6,75 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.44
+
+SQL lineage now places a table, dataset or routine whose identity references
+another BigQuery resource's identity property. No other output changes.
+
+### Lineage follows a reference to a BigQuery resource's identity
+
+The usual way to write a table is to name its dataset by reference:
+
+```yaml
+resources:
+  ds:
+    type: gcp:bigquery:Dataset
+    properties:
+      datasetId: ${dataset_id}
+      project: ${project}
+  events:
+    type: gcp:bigquery:Table
+    properties:
+      datasetId: ${ds.datasetId}
+      tableId: events
+```
+
+Static resolution treated every `${resource.property}` as a resource output,
+dynamic by definition, so the table was dropped from the lineage graph with
+`table 'events' identity not statically resolvable`, and its columns and
+every view reading it went with it.
+
+A few outputs are not dynamic: a name input the provider fixes at creation
+(changing it replaces the resource) and echoes back unchanged. Lineage now
+follows a reference to exactly those -- `datasetId` and `project` of a
+`gcp:bigquery:Dataset`, `datasetId`, `tableId` and `project` of a
+`gcp:bigquery:Table` (and the `gcpx:bigquery` forms of both), `datasetId`,
+`routineId` and `project` of a `gcp:bigquery:Routine` -- to the referenced
+resource's own input, resolved the same way: a literal, a variable, config,
+an interpolation, a `str` invoke, or another such reference. The same
+references inside SQL text (`FROM \`${events.datasetId}.${events.tableId}\``)
+and `fn::readFile` paths resolve too.
+
+Nothing is guessed. The reference stays unresolved, as before, when the
+referenced resource does not set the property (a `project` the provider
+defaults), lists it under `ignoreChanges`, or is read with `get:`; for any
+other property (`location`, `selfLink`, `id`) or resource type; for a name
+that is not a resource in the same scope; and for a reference cycle. A chain
+of references is followed for at most 64 hops and a followed value is at most
+1,024 bytes (no BigQuery identifier is longer), so a generated chain of
+thousands of resources, or one that doubles its name at every link, is
+refused in linear time instead of recursing the stack away. Each resolution
+starts from nothing, so the answer never depends on resource order.
+
+The resource graph, the IAM graph and the deploy-time evaluator are
+unchanged: they never opt in. One existing lineage golden moves for the
+better -- the `gcp-readfile-bigquery` stack's `usersTable`
+(`datasetId: ${dataset.datasetId}`) is now placed with its four columns, and
+its warning is gone.
+
+### Tests
+
+- Unit: references through a variable, config, an interpolation and a chain;
+  computed properties, other types, unset, ignored and `get:` inputs, unknown
+  names, cycles (direct and through a variable), the hop bound in both
+  resolution orders, the length cap, and a variable named like a resource.
+- Integration: a table, view and routine placed under the dataset with no
+  identity warning; computed-output references still warn; a reference in a
+  component body reads the component's resource. New acceptance stack
+  `lineage-bq-table-ref` with its goldens.
+- Security (+3): a 10,000-link reference chain, reference cycles, and a
+  doubling chain. A fuzz seed for the lineage target.
+
 ## 0.5.43
 
 Every Rust dependency moved to its latest release where that leaves the
