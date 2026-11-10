@@ -1166,6 +1166,117 @@ mod sql_lineage_security {
             let (_, _, _) = export_dir(&yaml, None);
         }
     }
+
+    // -- identity references: `datasetId: ${ds.datasetId}` is followed ---
+
+    /// Node ids and diagnostic lines of a template's lineage export.
+    fn lineage_of(yaml: &str) -> (Vec<String>, Vec<String>) {
+        let (template, _) = parse_template(yaml, None);
+        let graph_opts = GraphExportOptions {
+            organization: "org",
+            project: "p",
+            stack: "s",
+            ..Default::default()
+        };
+        let (infra, _) = export_resource_graph(&template, &graph_opts);
+        let opts = SqlLineageOptions {
+            organization: "org",
+            project: "p",
+            stack: "s",
+            default_bq_project: Some("proj"),
+            ..Default::default()
+        };
+        let (lineage, diags) = export_sql_lineage(&template, &infra, &opts);
+        lineage.to_json().expect("serializes");
+        (
+            lineage.nodes.iter().map(|n| n.id.to_string()).collect(),
+            diags.iter().map(|d| d.to_string()).collect(),
+        )
+    }
+
+    fn dataset(name: &str, dataset_id: &str) -> String {
+        format!(
+            "  {name}:\n    type: gcp:bigquery:Dataset\n    properties:\n      datasetId: {dataset_id}\n"
+        )
+    }
+
+    /// Ten thousand datasets, each named after the previous one: resolution
+    /// follows a bounded number of hops, so nothing recurses ten thousand
+    /// frames deep, and a dataset past the bound is reported, not guessed.
+    #[test]
+    fn a_ten_thousand_link_identity_chain_is_bounded() {
+        let mut yaml = String::from("name: p\nruntime: yaml\nresources:\n");
+        yaml.push_str(&dataset("d0", "root"));
+        for i in 1..=10_000 {
+            yaml.push_str(&dataset(
+                &format!("d{i}"),
+                &format!("${{d{}.datasetId}}", i - 1),
+            ));
+        }
+        yaml.push_str("  t:\n    type: gcp:bigquery:Table\n    properties:\n      datasetId: ${d10000.datasetId}\n      tableId: t\n");
+        let start = std::time::Instant::now();
+        let (nodes, diags) = lineage_of(&yaml);
+        assert!(start.elapsed().as_secs() < 30, "took {:?}", start.elapsed());
+        // Every dataset resolves to `root` or not at all.
+        assert!(nodes
+            .iter()
+            .all(|n| n == "bq://proj" || n == "bq://proj/root"));
+        assert!(nodes.iter().any(|n| n == "bq://proj/root"));
+        assert!(diags
+            .iter()
+            .any(|d| d.contains("table 't' identity not statically resolvable")));
+        assert!(diags
+            .iter()
+            .any(|d| d.contains("dataset 'd10000' identity not statically resolvable")));
+        assert!(!diags.iter().any(|d| d.contains("dataset 'd1' ")));
+    }
+
+    /// `a -> b -> a`, and a resource naming itself: the program's own
+    /// dependency check refuses it before anything is resolved, with no loop.
+    /// (The resolver's own cycle guard is unit-tested where it lives.)
+    #[test]
+    fn an_identity_reference_cycle_terminates_unresolved() {
+        let mut yaml = String::from("name: p\nruntime: yaml\nresources:\n");
+        yaml.push_str(&dataset("a", "${b.datasetId}"));
+        yaml.push_str(&dataset("b", "${a.datasetId}"));
+        yaml.push_str(&dataset("c", "${c.datasetId}"));
+        yaml.push_str("  t:\n    type: gcp:bigquery:Table\n    properties:\n      datasetId: ${a.datasetId}\n      tableId: t\n");
+        let (nodes, diags) = lineage_of(&yaml);
+        assert!(nodes.is_empty(), "{nodes:?}");
+        for cycle in ["a -> b -> a", "c -> c"] {
+            assert!(
+                diags
+                    .iter()
+                    .any(|d| d.contains("circular dependency") && d.contains(cycle)),
+                "{cycle} not reported: {diags:?}"
+            );
+        }
+    }
+
+    /// Each link interpolates the previous one twice. Unbounded, the 60th
+    /// name is 2^61 bytes; capped at an identifier's length, it is refused
+    /// in linear time.
+    #[test]
+    fn a_doubling_identity_chain_is_refused_in_linear_time() {
+        let mut yaml = String::from("name: p\nruntime: yaml\nresources:\n");
+        yaml.push_str(&dataset("d0", "ab"));
+        for i in 1..=60 {
+            yaml.push_str(&dataset(
+                &format!("d{i}"),
+                &format!("${{d{p}.datasetId}}${{d{p}.datasetId}}", p = i - 1),
+            ));
+        }
+        let start = std::time::Instant::now();
+        let (nodes, diags) = lineage_of(&yaml);
+        assert!(start.elapsed().as_secs() < 30, "took {:?}", start.elapsed());
+        // d9 is 1,024 bytes, the most a reference echoes: d10 joins two of
+        // them in its own property and is placed; d11 would follow d10's
+        // 2,048 bytes, and is reported instead.
+        assert!(nodes.iter().any(|n| n.len() > 2048));
+        assert!(diags.iter().any(|d| d.contains("dataset 'd60'")));
+        assert!(diags.iter().any(|d| d.contains("dataset 'd11'")));
+        assert!(!diags.iter().any(|d| d.contains("dataset 'd10'")));
+    }
 }
 
 // =========================================================================

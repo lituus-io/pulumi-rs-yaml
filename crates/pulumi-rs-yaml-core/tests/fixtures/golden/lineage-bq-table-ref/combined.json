@@ -1,0 +1,617 @@
+{
+  "edges": [
+    {
+      "organization": "org",
+      "project": "lineage-bq-table-ref",
+      "property_paths": [
+        "datasetId"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/lineage-bq-table-ref/golden::datasetId",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/dataset:Dataset::dataset"
+    },
+    {
+      "organization": "org",
+      "project": "lineage-bq-table-ref",
+      "property_paths": [
+        "eventsTable"
+      ],
+      "relationship": "exports",
+      "source_id": "stackoutput::org/lineage-bq-table-ref/golden::eventsTable",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/table:Table::events"
+    },
+    {
+      "organization": "org",
+      "project": "lineage-bq-table-ref",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/routine:Routine::refreshRollup",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/dataset:Dataset::dataset"
+    },
+    {
+      "organization": "org",
+      "project": "lineage-bq-table-ref",
+      "property_paths": [
+        "definitionBody"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/routine:Routine::refreshRollup",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/table:Table::recentEvents"
+    },
+    {
+      "organization": "org",
+      "project": "lineage-bq-table-ref",
+      "property_paths": [
+        "definitionBody"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/routine:Routine::refreshRollup",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/table:Table::rollup"
+    },
+    {
+      "organization": "org",
+      "project": "lineage-bq-table-ref",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/table:Table::events",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/dataset:Dataset::dataset"
+    },
+    {
+      "organization": "org",
+      "project": "lineage-bq-table-ref",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/table:Table::recentEvents",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/dataset:Dataset::dataset"
+    },
+    {
+      "organization": "org",
+      "project": "lineage-bq-table-ref",
+      "property_paths": [
+        "view"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/table:Table::recentEvents",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/table:Table::events"
+    },
+    {
+      "organization": "org",
+      "project": "lineage-bq-table-ref",
+      "property_paths": [
+        "datasetId",
+        "project"
+      ],
+      "relationship": "references",
+      "source_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/table:Table::rollup",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/dataset:Dataset::dataset"
+    },
+    {
+      "organization": "org",
+      "project": "lineage-bq-table-ref",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::lineage-bq-table-ref::pulumi:pulumi:Stack::lineage-bq-table-ref-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/dataset:Dataset::dataset"
+    },
+    {
+      "organization": "org",
+      "project": "lineage-bq-table-ref",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::lineage-bq-table-ref::pulumi:pulumi:Stack::lineage-bq-table-ref-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/routine:Routine::refreshRollup"
+    },
+    {
+      "organization": "org",
+      "project": "lineage-bq-table-ref",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::lineage-bq-table-ref::pulumi:pulumi:Stack::lineage-bq-table-ref-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/table:Table::events"
+    },
+    {
+      "organization": "org",
+      "project": "lineage-bq-table-ref",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::lineage-bq-table-ref::pulumi:pulumi:Stack::lineage-bq-table-ref-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/table:Table::recentEvents"
+    },
+    {
+      "organization": "org",
+      "project": "lineage-bq-table-ref",
+      "property_paths": [],
+      "relationship": "contains",
+      "source_id": "urn:pulumi:golden::lineage-bq-table-ref::pulumi:pulumi:Stack::lineage-bq-table-ref-golden",
+      "stack": "golden",
+      "target_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/table:Table::rollup"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "stackoutput::org/lineage-bq-table-ref/golden::datasetId",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "datasetId",
+      "name": "datasetId",
+      "organization": "org",
+      "project": "lineage-bq-table-ref",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "stackoutput::org/lineage-bq-table-ref/golden::eventsTable",
+      "kind": "output",
+      "literal_properties": {},
+      "logical_name": "eventsTable",
+      "name": "eventsTable",
+      "organization": "org",
+      "project": "lineage-bq-table-ref",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden"
+    },
+    {
+      "id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/dataset:Dataset::dataset",
+      "kind": "resource",
+      "literal_properties": {
+        "datasetId": "pulumi_rs_lineage_ref_test",
+        "deleteContentsOnDestroy": "true",
+        "location": "US",
+        "project": "golden-gcp"
+      },
+      "logical_name": "dataset",
+      "name": "dataset",
+      "organization": "org",
+      "package": "gcp",
+      "project": "lineage-bq-table-ref",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/dataset:Dataset"
+    },
+    {
+      "id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/routine:Routine::refreshRollup",
+      "kind": "resource",
+      "literal_properties": {
+        "language": "SQL",
+        "routineId": "refresh_rollup",
+        "routineType": "PROCEDURE"
+      },
+      "logical_name": "refreshRollup",
+      "name": "refreshRollup",
+      "organization": "org",
+      "package": "gcp",
+      "project": "lineage-bq-table-ref",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/routine:Routine"
+    },
+    {
+      "id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/table:Table::events",
+      "kind": "resource",
+      "literal_properties": {
+        "deletionProtection": "false",
+        "schema": "[{\"name\":\"event_id\",\"type\":\"STRING\",\"description\":\"Event key\"},{\"name\":\"kind\",\"type\":\"STRING\"}]",
+        "tableId": "events"
+      },
+      "logical_name": "events",
+      "name": "events",
+      "organization": "org",
+      "package": "gcp",
+      "project": "lineage-bq-table-ref",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/table:Table"
+    },
+    {
+      "id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/table:Table::recentEvents",
+      "kind": "resource",
+      "literal_properties": {
+        "deletionProtection": "false",
+        "tableId": "recent_events",
+        "view.useLegacySql": "false"
+      },
+      "logical_name": "recentEvents",
+      "name": "recentEvents",
+      "organization": "org",
+      "package": "gcp",
+      "project": "lineage-bq-table-ref",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/table:Table"
+    },
+    {
+      "id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/table:Table::rollup",
+      "kind": "resource",
+      "literal_properties": {
+        "deletionProtection": "false",
+        "schema": "[{\"name\":\"kind\",\"type\":\"STRING\"}]",
+        "tableId": "rollup"
+      },
+      "logical_name": "rollup",
+      "name": "rollup",
+      "organization": "org",
+      "package": "gcp",
+      "project": "lineage-bq-table-ref",
+      "source_file": "Pulumi.yaml",
+      "stack": "golden",
+      "type_token": "gcp:bigquery/table:Table"
+    },
+    {
+      "id": "urn:pulumi:golden::lineage-bq-table-ref::pulumi:pulumi:Stack::lineage-bq-table-ref-golden",
+      "kind": "stack",
+      "literal_properties": {},
+      "logical_name": "stack",
+      "name": "lineage-bq-table-ref-golden",
+      "organization": "org",
+      "package": "pulumi",
+      "project": "lineage-bq-table-ref",
+      "stack": "golden",
+      "type_token": "pulumi:pulumi:Stack"
+    }
+  ],
+  "organization": "org",
+  "project": "lineage-bq-table-ref",
+  "schema_version": 1,
+  "sql_lineage": {
+    "edges": [
+      {
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "relationship": "derives_from",
+        "resolution": "parsed",
+        "source_id": "bq-routine://golden-gcp/pulumi_rs_lineage_ref_test/refresh_rollup",
+        "sql_provenance": "inline",
+        "sql_role": "routine_body",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/recent_events"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "relationship": "writes_to",
+        "resolution": "parsed",
+        "source_id": "bq-routine://golden-gcp/pulumi_rs_lineage_ref_test/refresh_rollup",
+        "sql_provenance": "inline",
+        "sql_role": "routine_body",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/rollup"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "relationship": "defined_by",
+        "resolution": "structural",
+        "source_id": "bq-routine://golden-gcp/pulumi_rs_lineage_ref_test/refresh_rollup",
+        "stack": "golden",
+        "target_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/routine:Routine::refreshRollup"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/events"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/recent_events"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/rollup"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "relationship": "defined_by",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test",
+        "stack": "golden",
+        "target_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/dataset:Dataset::dataset"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/events",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/events#event_id"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/events",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/events#kind"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "relationship": "defined_by",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/events",
+        "stack": "golden",
+        "target_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/table:Table::events"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "relationship": "derives_from",
+        "resolution": "parsed",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/recent_events",
+        "sql_provenance": "inline",
+        "sql_role": "view",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/events"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/recent_events",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/recent_events#event_id"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/recent_events",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/recent_events#kind"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "relationship": "defined_by",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/recent_events",
+        "stack": "golden",
+        "target_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/table:Table::recentEvents"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "relationship": "column_derives_from",
+        "resolution": "parsed",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/recent_events#event_id",
+        "sql_provenance": "inline",
+        "sql_role": "view",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/events#event_id"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "relationship": "column_derives_from",
+        "resolution": "parsed",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/recent_events#kind",
+        "sql_provenance": "inline",
+        "sql_role": "view",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/events#kind"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "relationship": "derives_from",
+        "resolution": "parsed",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/rollup",
+        "sql_provenance": "inline",
+        "sql_role": "routine_body",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/recent_events",
+        "via": "bq-routine://golden-gcp/pulumi_rs_lineage_ref_test/refresh_rollup"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "relationship": "contains",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/rollup",
+        "stack": "golden",
+        "target_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/rollup#kind"
+      },
+      {
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "relationship": "defined_by",
+        "resolution": "structural",
+        "source_id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/rollup",
+        "stack": "golden",
+        "target_id": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/table:Table::rollup"
+      }
+    ],
+    "nodes": [
+      {
+        "bq_project": "golden-gcp",
+        "dataset": "pulumi_rs_lineage_ref_test",
+        "defined_by_urn": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/routine:Routine::refreshRollup",
+        "id": "bq-routine://golden-gcp/pulumi_rs_lineage_ref_test/refresh_rollup",
+        "kind": "routine",
+        "name": "refresh_rollup",
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "source_file": "Pulumi.yaml",
+        "stack": "golden"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "id": "bq://golden-gcp",
+        "kind": "project",
+        "name": "golden-gcp",
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "stack": "golden"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "dataset": "pulumi_rs_lineage_ref_test",
+        "defined_by_urn": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/dataset:Dataset::dataset",
+        "id": "bq://golden-gcp/pulumi_rs_lineage_ref_test",
+        "kind": "dataset",
+        "name": "pulumi_rs_lineage_ref_test",
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "source_file": "Pulumi.yaml",
+        "stack": "golden"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "dataset": "pulumi_rs_lineage_ref_test",
+        "defined_by_urn": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/table:Table::events",
+        "id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/events",
+        "kind": "table",
+        "name": "events",
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "source_file": "Pulumi.yaml",
+        "stack": "golden",
+        "table": "events"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "column": "event_id",
+        "data_type": "STRING",
+        "dataset": "pulumi_rs_lineage_ref_test",
+        "description": "Event key",
+        "id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/events#event_id",
+        "kind": "column",
+        "name": "event_id",
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "stack": "golden",
+        "table": "events"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "column": "kind",
+        "data_type": "STRING",
+        "dataset": "pulumi_rs_lineage_ref_test",
+        "id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/events#kind",
+        "kind": "column",
+        "name": "kind",
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "stack": "golden",
+        "table": "events"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "dataset": "pulumi_rs_lineage_ref_test",
+        "defined_by_urn": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/table:Table::recentEvents",
+        "id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/recent_events",
+        "kind": "view",
+        "name": "recent_events",
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "source_file": "Pulumi.yaml",
+        "stack": "golden",
+        "table": "recent_events"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "column": "event_id",
+        "dataset": "pulumi_rs_lineage_ref_test",
+        "id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/recent_events#event_id",
+        "kind": "column",
+        "name": "event_id",
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "stack": "golden",
+        "table": "recent_events"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "column": "kind",
+        "dataset": "pulumi_rs_lineage_ref_test",
+        "id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/recent_events#kind",
+        "kind": "column",
+        "name": "kind",
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "stack": "golden",
+        "table": "recent_events"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "dataset": "pulumi_rs_lineage_ref_test",
+        "defined_by_urn": "urn:pulumi:golden::lineage-bq-table-ref::gcp:bigquery/table:Table::rollup",
+        "id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/rollup",
+        "kind": "table",
+        "name": "rollup",
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "source_file": "Pulumi.yaml",
+        "stack": "golden",
+        "table": "rollup"
+      },
+      {
+        "bq_project": "golden-gcp",
+        "column": "kind",
+        "data_type": "STRING",
+        "dataset": "pulumi_rs_lineage_ref_test",
+        "id": "bq://golden-gcp/pulumi_rs_lineage_ref_test/rollup#kind",
+        "kind": "column",
+        "name": "kind",
+        "organization": "org",
+        "project": "lineage-bq-table-ref",
+        "stack": "golden",
+        "table": "rollup"
+      }
+    ],
+    "organization": "org",
+    "project": "lineage-bq-table-ref",
+    "schema_version": 1,
+    "stack": "golden"
+  },
+  "stack": "golden"
+}

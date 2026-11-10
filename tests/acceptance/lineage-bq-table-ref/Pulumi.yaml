@@ -1,0 +1,51 @@
+name: lineage-bq-table-ref
+runtime: yaml
+description: Lineage acceptance — tables, a view and a routine whose project and dataset reference the dataset resource instead of repeating its name.
+variables:
+  dataset_id: pulumi_rs_lineage_ref_test
+resources:
+  dataset:
+    type: gcp:bigquery:Dataset
+    properties:
+      datasetId: ${dataset_id}
+      project: "{{ env.gcp_project }}"
+      location: US
+      deleteContentsOnDestroy: true
+  events:
+    type: gcp:bigquery:Table
+    properties:
+      project: ${dataset.project}
+      datasetId: ${dataset.datasetId}
+      tableId: events
+      deletionProtection: false
+      schema: '[{"name":"event_id","type":"STRING","description":"Event key"},{"name":"kind","type":"STRING"}]'
+  recentEvents:
+    type: gcp:bigquery:Table
+    properties:
+      project: ${dataset.project}
+      datasetId: ${dataset.datasetId}
+      tableId: recent_events
+      deletionProtection: false
+      view:
+        query: "SELECT e.event_id, e.kind FROM `${events.project}.${events.datasetId}.${events.tableId}` e"
+        useLegacySql: false
+  rollup:
+    type: gcp:bigquery:Table
+    properties:
+      project: ${dataset.project}
+      datasetId: ${dataset.datasetId}
+      tableId: rollup
+      deletionProtection: false
+      schema: '[{"name":"kind","type":"STRING"}]'
+  refreshRollup:
+    type: gcp:bigquery:Routine
+    properties:
+      project: ${dataset.project}
+      datasetId: ${dataset.datasetId}
+      routineId: refresh_rollup
+      routineType: PROCEDURE
+      language: SQL
+      definitionBody: "INSERT INTO `${rollup.project}.${rollup.datasetId}.${rollup.tableId}` SELECT kind FROM `${recentEvents.project}.${recentEvents.datasetId}.${recentEvents.tableId}`"
+outputs:
+  datasetId: ${dataset.datasetId}
+  eventsTable: ${events.tableId}

@@ -332,6 +332,26 @@ mod tests {
     }
 
     #[test]
+    fn literal_prop_follows_an_echoed_identity_reference() {
+        let t: &'static TemplateDecl<'static> = Box::leak(Box::new(parsed(
+            "name: p\nruntime: yaml\nresources:\n  ds:\n    type: gcp:bigquery:Dataset\n    properties:\n      datasetId: analytics\n      location: US\n  t:\n    type: gcp:bigquery:Table\n    properties:\n      dataset: ${ds.location}\n      datasetId: ${ds.datasetId}\n      project: ${ds.project}\n",
+        )));
+        let vars = crate::literal_resolve::Vars::from_entries(&t.variables)
+            .with_echoed_inputs(&t.resources, super::super::registry::echoed_identity_inputs);
+        let table = &t.resources[1];
+        // The first spelling is a computed output; the second an echoed input.
+        assert_eq!(
+            literal_prop(table, &vars, &["dataset", "datasetId"]).as_deref(),
+            Some("analytics")
+        );
+        // The dataset leaves `project` to the provider: not guessed.
+        assert_eq!(literal_prop(table, &vars, &["project"]), None);
+        // Without the opt-in the reference is dynamic, as before.
+        let plain = crate::literal_resolve::Vars::from_entries(&t.variables);
+        assert_eq!(literal_prop(table, &plain, &["datasetId"]), None);
+    }
+
+    #[test]
     fn schema_json_nested_records() {
         let cols = parse_schema_json(
             r#"[{"name":"id","type":"STRING","description":"pk"},

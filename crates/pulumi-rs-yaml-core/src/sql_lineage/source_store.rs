@@ -73,7 +73,10 @@ impl SqlSourceStore {
         dir: &str,
         by_path: &mut HashMap<PathBuf, usize>,
     ) {
-        let variables = Vars::from_entries(variables);
+        // Resolved exactly as the exporter resolves them, so a path built from
+        // a dataset's identity is read here, once, like any other.
+        let variables = Vars::from_entries(variables)
+            .with_echoed_inputs(resources, super::registry::echoed_identity_inputs);
         let mut literals: Vec<std::borrow::Cow<'src, str>> = Vec::new();
         for entry in resources {
             match &entry.resource.properties {

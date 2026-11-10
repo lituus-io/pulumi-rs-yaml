@@ -27,6 +27,19 @@
 //! Moved verbatim from `resource_graph.rs` so sibling exporters (e.g.
 //! SQL lineage) share one deterministic stringification.
 //!
+//! # Echoed identity inputs
+//!
+//! A `${resource.property}` access is a resource output, dynamic in general,
+//! and stays `None` by default. A caller that knows a (type, property) pair
+//! is a name input the provider fixes at creation -- changing it replaces the
+//! resource -- and echoes back unchanged may name those pairs with
+//! [`Vars::with_echoed_inputs`]. Such an access then resolves to the
+//! referenced resource's own INPUT expression, with this same resolver. A
+//! property the referenced resource does not set (one the provider defaults),
+//! one it lists under `ignoreChanges`, and every resource read with `get:`
+//! stay `None`: the output there is not the input written here. Without the
+//! call nothing changes.
+//!
 //! # Host-supplied config
 //!
 //! A config value is dynamic to a program read on its own, so by default it
@@ -149,6 +162,80 @@ pub(crate) struct Vars<'src, 'c> {
     /// Variables whose value was built from config: a memo hit on one of
     /// them reads config too. Touched only when a lookup is present.
     from_config: RefCell<HashSet<&'src str>>,
+    /// Resources whose echoed identity inputs a reference may follow; empty
+    /// unless a caller opted in.
+    echoed: EchoedInputs<'src>,
+}
+
+/// The most resource-to-resource hops one resolution follows. A real identity
+/// chain is one or two hops (a table to its dataset, a dataset to the variable
+/// naming it); the bound exists so a generated chain of thousands cannot
+/// recurse the stack away. A resolution that reaches it is `None` as a whole.
+const MAX_ECHO_DEPTH: usize = 64;
+
+/// The longest literal an echoed identity input resolves to. No BigQuery
+/// project, dataset, table or routine identifier is longer, and the cap keeps
+/// a chain of references that each interpolate the previous one twice from
+/// doubling its way to an unbounded string.
+const MAX_ECHOED_LEN: usize = 1024;
+
+/// `(resource, property)` -> the literal its echoed input resolved to.
+type EchoMemo<'src> = HashMap<(&'src str, &'src str), Option<Cow<'src, str>>>;
+
+/// Which properties of which resources are echoed identity inputs, and the
+/// state of the resolution following them.
+///
+/// The memo and the cycle guard live here, not in the caller's per-variable
+/// memo: they are keyed by resource, a namespace the variable memo does not
+/// share, and they last for exactly one outermost hop -- cleared when it
+/// returns -- so an answer never depends on which resource was resolved
+/// first.
+struct EchoedInputs<'src> {
+    /// Logical name -> (resource, the input names its provider echoes).
+    by_name: HashMap<&'src str, (&'src ResourceEntry<'src>, &'static [&'static str])>,
+    memo: RefCell<EchoMemo<'src>>,
+    visiting: RefCell<HashSet<&'src str>>,
+    depth: Cell<usize>,
+    /// Set when a hop met [`MAX_ECHO_DEPTH`]: the outermost hop then answers
+    /// `None`, and nothing computed under it is memoised.
+    exhausted: Cell<bool>,
+}
+
+impl<'src> EchoedInputs<'src> {
+    fn new() -> Self {
+        Self {
+            by_name: HashMap::new(),
+            memo: RefCell::new(HashMap::new()),
+            visiting: RefCell::new(HashSet::new()),
+            depth: Cell::new(0),
+            exhausted: Cell::new(false),
+        }
+    }
+
+    /// The input expression behind `${name.field}`, when `field` is an echoed
+    /// identity input of `name` that the program sets and does not ignore.
+    fn input(&self, name: &str, field: &str) -> Option<&'src Expr<'src>> {
+        let (entry, echoed) = *self.by_name.get(name)?;
+        if !echoed.contains(&field) {
+            return None;
+        }
+        let decl = &entry.resource;
+        if decl.get.is_some() {
+            return None;
+        }
+        if decl
+            .options
+            .ignore_changes
+            .as_deref()
+            .is_some_and(|ignored| ignored.iter().any(|p| p == field || p == "*"))
+        {
+            return None;
+        }
+        let ResourceProperties::Map(props) = &decl.properties else {
+            return None;
+        };
+        props.iter().find(|p| p.key == field).map(|p| &p.value)
+    }
 }
 
 impl<'src, 'c> Vars<'src, 'c> {
@@ -158,6 +245,7 @@ impl<'src, 'c> Vars<'src, 'c> {
             config: None,
             config_reads: Cell::new(0),
             from_config: RefCell::new(HashSet::new()),
+            echoed: EchoedInputs::new(),
         }
     }
 
@@ -173,6 +261,26 @@ impl<'src, 'c> Vars<'src, 'c> {
 
     pub(crate) fn with_config(mut self, config: Option<&'c ConfigLookup<'src>>) -> Self {
         self.config = config;
+        self
+    }
+
+    /// Lets `${resource.property}` resolve where `echoed(type)` names
+    /// `property` as an identity input that resource type's provider echoes
+    /// unchanged. `resources` is the scope the variables belong to; a type
+    /// for which `echoed` answers an empty list is never followed.
+    #[cfg(any(test, feature = "sql-lineage"))]
+    pub(crate) fn with_echoed_inputs(
+        mut self,
+        resources: &'src [ResourceEntry<'src>],
+        echoed: fn(&str) -> &'static [&'static str],
+    ) -> Self {
+        self.echoed.by_name = resources
+            .iter()
+            .filter_map(|entry| {
+                let props = echoed(entry.resource.type_.as_ref());
+                (!props.is_empty()).then_some((entry.logical_name.as_ref(), (entry, props)))
+            })
+            .collect();
         self
     }
 
@@ -368,9 +476,9 @@ fn resolve_derive_literal<'src>(
 /// Exactly two accessors are accepted for the invoke form — `[var, output]`,
 /// each a name or a string subscript. Anything longer reaches into a
 /// structure this module does not model, and an integer subscript indexes a
-/// list, which is never a scalar literal here; both stay `None`, as does
-/// every access whose root is not a declared variable (a resource output, for
-/// one, which is dynamic by definition).
+/// list, which is never a scalar literal here; both stay `None`. An access
+/// whose root is not a declared variable is a resource output: dynamic, so
+/// `None`, unless it names an echoed identity input (see the module docs).
 fn resolve_access_literal<'src>(
     access: &'src PropertyAccess<'src>,
     variables: &Vars<'src, '_>,
@@ -385,7 +493,63 @@ fn resolve_access_literal<'src>(
     }
     let root = accessor_name(access.accessors.first()?)?;
     let field = accessor_name(access.accessors.get(1)?)?;
-    resolve_invoke_variable_output(root, field, variables, memo, visiting)
+    match variables.get(root).copied() {
+        Some(value) => {
+            resolve_invoke_variable_output(root, value, field, variables, memo, visiting)
+        }
+        None => resolve_echoed_input(root, field, variables, memo, visiting),
+    }
+}
+
+/// Resolves `${name.field}` where `field` is an echoed identity input of the
+/// resource `name`: the literal its input expression resolves to.
+///
+/// Guards, in order: a memo hit answers at once; a hop past
+/// [`MAX_ECHO_DEPTH`] marks the resolution exhausted; a resource already
+/// being resolved is a cycle (`a -> b -> a`) and answers `None`. A value
+/// longer than [`MAX_ECHOED_LEN`] is not an identifier and answers `None`.
+fn resolve_echoed_input<'src>(
+    name: &'src str,
+    field: &'src str,
+    variables: &Vars<'src, '_>,
+    memo: &mut HashMap<&'src str, Option<Cow<'src, str>>>,
+    visiting: &mut HashSet<&'src str>,
+) -> Option<Cow<'src, str>> {
+    let echoed = &variables.echoed;
+    let expr = echoed.input(name, field)?;
+    if let Some(hit) = echoed.memo.borrow().get(&(name, field)) {
+        return hit.clone();
+    }
+    if echoed.exhausted.get() {
+        return None;
+    }
+    let depth = echoed.depth.get();
+    if depth >= MAX_ECHO_DEPTH {
+        echoed.exhausted.set(true);
+        return None;
+    }
+    if !echoed.visiting.borrow_mut().insert(name) {
+        return None;
+    }
+    echoed.depth.set(depth + 1);
+    let result = resolve_literal(expr, variables, memo, visiting)
+        .filter(|value| value.len() <= MAX_ECHOED_LEN);
+    echoed.depth.set(depth);
+    echoed.visiting.borrow_mut().remove(name);
+    if depth == 0 {
+        // The outermost hop: forget everything, so the next resolution starts
+        // from nothing and no answer depends on resolution order.
+        echoed.memo.borrow_mut().clear();
+        if echoed.exhausted.replace(false) {
+            return None;
+        }
+    } else if !echoed.exhausted.get() {
+        echoed
+            .memo
+            .borrow_mut()
+            .insert((name, field), result.clone());
+    }
+    result
 }
 
 /// The text of a name or string-subscript accessor; an integer index has none.
@@ -396,7 +560,8 @@ fn accessor_name<'src>(accessor: &'src PropertyAccessor<'src>) -> Option<&'src s
     }
 }
 
-/// Resolves `${name.field}` where `name` is a variable holding a `str` invoke.
+/// Resolves `${name.field}` where `name` is a variable, `value` its
+/// expression, holding a `str` invoke.
 ///
 /// The invoke output is deliberately NOT memoised: the memo is keyed by
 /// variable name and holds one scalar per name, while an invoke has a whole
@@ -405,12 +570,13 @@ fn accessor_name<'src>(accessor: &'src PropertyAccessor<'src>) -> Option<&'src s
 /// argument length, with no I/O to repeat.
 fn resolve_invoke_variable_output<'src>(
     name: &'src str,
+    value: &'src Expr<'src>,
     field: &str,
     variables: &Vars<'src, '_>,
     memo: &mut HashMap<&'src str, Option<Cow<'src, str>>>,
     visiting: &mut HashSet<&'src str>,
 ) -> Option<Cow<'src, str>> {
-    let Some(Expr::Invoke(_, invoke)) = variables.get(name).copied() else {
+    let Expr::Invoke(_, invoke) = value else {
         return None;
     };
     // Guard the cycle a.result -> b.result -> a.result, which the per-variable
@@ -1083,5 +1249,243 @@ mod tests {
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
         assert_eq!(literals(yaml), expected);
+    }
+
+    // ---------------------------------------------------------------
+    // Echoed identity inputs: `${resource.property}` followed statically
+    // ---------------------------------------------------------------
+
+    /// A caller's echo table, shaped like a cloud provider's: two resource
+    /// types whose name inputs come back unchanged as outputs.
+    fn echo(token: &str) -> &'static [&'static str] {
+        match token {
+            "gcp:bigquery:Dataset" => &["datasetId", "project"],
+            "gcp:bigquery:Table" => &["datasetId", "tableId", "project"],
+            _ => &[],
+        }
+    }
+
+    fn leak(yaml: &str) -> &'static TemplateDecl<'static> {
+        let (template, diags) = parse_template(yaml, None);
+        assert!(!diags.has_errors(), "parse failed: {}", diags);
+        Box::leak(Box::new(template))
+    }
+
+    /// Resolves `resource.prop` as written in the program, through the
+    /// program's variables, with the echo table opted in.
+    fn echoed_with(
+        template: &'static TemplateDecl<'static>,
+        config: Option<&ConfigLookup<'static>>,
+        resource: &str,
+        prop: &str,
+    ) -> Option<String> {
+        let vars = Vars::from_entries(&template.variables)
+            .with_config(config)
+            .with_echoed_inputs(&template.resources, echo);
+        resolve_in(template, &vars, resource, prop)
+    }
+
+    fn resolve_in(
+        template: &'static TemplateDecl<'static>,
+        vars: &Vars<'static, '_>,
+        resource: &str,
+        prop: &str,
+    ) -> Option<String> {
+        let entry = template
+            .resources
+            .iter()
+            .find(|r| r.logical_name == resource)
+            .expect("resource");
+        let ResourceProperties::Map(props) = &entry.resource.properties else {
+            panic!("map properties");
+        };
+        let expr = &props
+            .iter()
+            .find(|p| p.key == prop)
+            .expect("property")
+            .value;
+        resolve_literal(expr, vars, &mut HashMap::new(), &mut HashSet::new()).map(Cow::into_owned)
+    }
+
+    fn echoed(yaml: &str, resource: &str, prop: &str) -> Option<String> {
+        echoed_with(leak(yaml), None, resource, prop)
+    }
+
+    const DATASET_AND_TABLE: &str = "name: proj\nruntime: yaml\nvariables:\n  dataset_id: analytics\nresources:\n  ds:\n    type: gcp:bigquery:Dataset\n    properties:\n      datasetId: ${dataset_id}\n      project: acme\n      location: US\n  events:\n    type: gcp:bigquery:Table\n    properties:\n      datasetId: ${ds.datasetId}\n      project: ${ds.project}\n      tableId: events\n";
+
+    #[test]
+    fn an_echoed_input_resolves_through_a_variable() {
+        assert_eq!(
+            echoed(DATASET_AND_TABLE, "events", "datasetId").as_deref(),
+            Some("analytics")
+        );
+        assert_eq!(
+            echoed(DATASET_AND_TABLE, "events", "project").as_deref(),
+            Some("acme")
+        );
+    }
+
+    #[test]
+    fn an_echoed_input_resolves_inside_an_interpolation() {
+        let yaml = "name: proj\nruntime: yaml\nresources:\n  ds:\n    type: gcp:bigquery:Dataset\n    properties:\n      datasetId: analytics\n  t:\n    type: gcp:bigquery:Table\n    properties:\n      tableId: ${ds.datasetId}_events\n";
+        assert_eq!(
+            echoed(yaml, "t", "tableId").as_deref(),
+            Some("analytics_events")
+        );
+    }
+
+    #[test]
+    fn an_echoed_input_resolves_through_config() {
+        let yaml = "name: proj\nruntime: yaml\nconfig:\n  bq_project:\n    type: string\nresources:\n  ds:\n    type: gcp:bigquery:Dataset\n    properties:\n      datasetId: analytics\n      project: ${bq_project}\n  t:\n    type: gcp:bigquery:Table\n    properties:\n      project: ${ds.project}\n";
+        let template = leak(yaml);
+        let host: &'static HostConfig = Box::leak(Box::new(
+            [("proj:bq_project".to_string(), "acme-data".to_string())]
+                .into_iter()
+                .collect(),
+        ));
+        let lookup = ConfigLookup::new("proj", &template.config, host);
+        assert_eq!(
+            echoed_with(template, Some(&lookup), "t", "project").as_deref(),
+            Some("acme-data")
+        );
+        // Without the host's config the same reference is not a literal.
+        assert_eq!(echoed_with(template, None, "t", "project"), None);
+    }
+
+    #[test]
+    fn a_chain_of_echoed_inputs_resolves() {
+        let yaml = "name: proj\nruntime: yaml\nresources:\n  base:\n    type: gcp:bigquery:Dataset\n    properties:\n      datasetId: raw\n  mirror:\n    type: gcp:bigquery:Dataset\n    properties:\n      datasetId: ${base.datasetId}\n  t:\n    type: gcp:bigquery:Table\n    properties:\n      datasetId: ${mirror.datasetId}\n";
+        assert_eq!(echoed(yaml, "t", "datasetId").as_deref(), Some("raw"));
+    }
+
+    #[test]
+    fn a_property_the_provider_computes_stays_unresolved() {
+        let yaml = "name: proj\nruntime: yaml\nresources:\n  ds:\n    type: gcp:bigquery:Dataset\n    properties:\n      datasetId: analytics\n      location: US\n      selfLink: written-but-computed\n  t:\n    type: gcp:bigquery:Table\n    properties:\n      a: ${ds.location}\n      b: ${ds.selfLink}\n      c: ${ds.id}\n      d: ${ds[\"datasetId\"]}\n";
+        assert_eq!(echoed(yaml, "t", "a"), None);
+        assert_eq!(echoed(yaml, "t", "b"), None);
+        assert_eq!(echoed(yaml, "t", "c"), None);
+        // The string-subscript spelling of an echoed input is the same access.
+        assert_eq!(echoed(yaml, "t", "d").as_deref(), Some("analytics"));
+    }
+
+    #[test]
+    fn a_resource_of_another_type_stays_unresolved() {
+        let yaml = "name: proj\nruntime: yaml\nresources:\n  b:\n    type: gcp:storage:Bucket\n    properties:\n      datasetId: looks-like-one\n      name: bucket\n  t:\n    type: gcp:bigquery:Table\n    properties:\n      datasetId: ${b.datasetId}\n      tableId: ${b.name}\n";
+        assert_eq!(echoed(yaml, "t", "datasetId"), None);
+        assert_eq!(echoed(yaml, "t", "tableId"), None);
+    }
+
+    #[test]
+    fn an_input_the_program_does_not_set_stays_unresolved() {
+        // `project` defaulted by the provider is not guessed.
+        assert_eq!(
+            echoed(
+                "name: proj\nruntime: yaml\nresources:\n  ds:\n    type: gcp:bigquery:Dataset\n    properties:\n      datasetId: analytics\n  t:\n    type: gcp:bigquery:Table\n    properties:\n      project: ${ds.project}\n",
+                "t",
+                "project"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn an_unknown_resource_stays_unresolved() {
+        assert_eq!(
+            echoed(
+                "name: proj\nruntime: yaml\nresources:\n  t:\n    type: gcp:bigquery:Table\n    properties:\n      datasetId: ${nowhere.datasetId}\n",
+                "t",
+                "datasetId"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn a_read_or_ignored_input_stays_unresolved() {
+        // A `get:` resource's outputs come from the cloud; an ignored input
+        // may differ from what the deployed resource holds.
+        let yaml = "name: proj\nruntime: yaml\nresources:\n  read:\n    type: gcp:bigquery:Dataset\n    get:\n      id: projects/acme/datasets/raw\n  ignored:\n    type: gcp:bigquery:Dataset\n    properties:\n      datasetId: renamed\n    options:\n      ignoreChanges:\n        - datasetId\n  t:\n    type: gcp:bigquery:Table\n    properties:\n      a: ${read.datasetId}\n      b: ${ignored.datasetId}\n";
+        assert_eq!(echoed(yaml, "t", "a"), None);
+        assert_eq!(echoed(yaml, "t", "b"), None);
+    }
+
+    #[test]
+    fn a_reference_cycle_terminates_unresolved() {
+        let yaml = "name: proj\nruntime: yaml\nresources:\n  a:\n    type: gcp:bigquery:Dataset\n    properties:\n      datasetId: ${b.datasetId}\n  b:\n    type: gcp:bigquery:Dataset\n    properties:\n      datasetId: ${a.datasetId}\n  c:\n    type: gcp:bigquery:Dataset\n    properties:\n      datasetId: x-${c.project}\n      project: ${c.datasetId}\n";
+        assert_eq!(echoed(yaml, "a", "datasetId"), None);
+        assert_eq!(echoed(yaml, "b", "datasetId"), None);
+        assert_eq!(echoed(yaml, "c", "datasetId"), None);
+        assert_eq!(echoed(yaml, "c", "project"), None);
+    }
+
+    #[test]
+    fn a_cycle_through_a_variable_terminates_unresolved() {
+        let yaml = "name: proj\nruntime: yaml\nvariables:\n  v: ${ds.datasetId}\nresources:\n  ds:\n    type: gcp:bigquery:Dataset\n    properties:\n      datasetId: ${v}\n";
+        assert_eq!(echoed(yaml, "ds", "datasetId"), None);
+    }
+
+    /// One resource per link, each naming its dataset after the previous one.
+    fn chain(links: usize) -> String {
+        let mut yaml =
+            String::from("name: proj\nruntime: yaml\nresources:\n  d0:\n    type: gcp:bigquery:Dataset\n    properties:\n      datasetId: root\n");
+        for i in 1..=links {
+            yaml.push_str(&format!(
+                "  d{i}:\n    type: gcp:bigquery:Dataset\n    properties:\n      datasetId: ${{d{}.datasetId}}\n",
+                i - 1
+            ));
+        }
+        yaml
+    }
+
+    #[test]
+    fn a_chain_is_followed_up_to_its_bound_and_no_further() {
+        let template = leak(&chain(MAX_ECHO_DEPTH + 1));
+        let vars =
+            Vars::from_entries(&template.variables).with_echoed_inputs(&template.resources, echo);
+        let at = |i: usize| resolve_in(template, &vars, &format!("d{i}"), "datasetId");
+        // Deepest first, then shallowest: the answer is the same either way,
+        // because nothing one resolution learns outlives it.
+        assert_eq!(at(MAX_ECHO_DEPTH + 1), None);
+        assert_eq!(at(MAX_ECHO_DEPTH).as_deref(), Some("root"));
+        assert_eq!(at(1).as_deref(), Some("root"));
+        assert_eq!(at(MAX_ECHO_DEPTH + 1), None);
+        assert!(vars.echoed.memo.borrow().is_empty());
+        assert!(vars.echoed.visiting.borrow().is_empty());
+        assert_eq!(vars.echoed.depth.get(), 0);
+        assert!(!vars.echoed.exhausted.get());
+    }
+
+    #[test]
+    fn a_doubling_chain_is_capped_by_length_not_time() {
+        // Each link interpolates the previous one twice: 2^60 bytes unbounded.
+        let mut yaml = String::from("name: proj\nruntime: yaml\nresources:\n  d0:\n    type: gcp:bigquery:Dataset\n    properties:\n      datasetId: ab\n");
+        for i in 1..=60 {
+            yaml.push_str(&format!(
+                "  d{i}:\n    type: gcp:bigquery:Dataset\n    properties:\n      datasetId: ${{d{p}.datasetId}}${{d{p}.datasetId}}\n",
+                p = i - 1
+            ));
+        }
+        let template = leak(&yaml);
+        assert_eq!(echoed_with(template, None, "d60", "datasetId"), None);
+        // 2 * 2^8 = 512 bytes: within the cap, resolved exactly.
+        assert_eq!(
+            echoed_with(template, None, "d8", "datasetId").map(|v| v.len()),
+            Some(512)
+        );
+    }
+
+    #[test]
+    fn without_the_opt_in_a_reference_stays_unresolved() {
+        let template = leak(DATASET_AND_TABLE);
+        let vars = Vars::from_entries(&template.variables);
+        assert_eq!(resolve_in(template, &vars, "events", "datasetId"), None);
+    }
+
+    #[test]
+    fn a_variable_named_like_a_resource_is_still_the_variable() {
+        // `${ds.datasetId}` with a variable `ds` reads the variable (an invoke
+        // output), never the resource.
+        let yaml = "name: proj\nruntime: yaml\nvariables:\n  ds: plain\nresources:\n  t:\n    type: gcp:bigquery:Table\n    properties:\n      datasetId: ${ds.datasetId}\n";
+        assert_eq!(echoed(yaml, "t", "datasetId"), None);
     }
 }
