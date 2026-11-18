@@ -6,6 +6,68 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.45
+
+The checkpoint index reads a version 4 checkpoint whose features it knows,
+starting with resource hooks. Every other output is unchanged.
+
+### A version 4 checkpoint is read when its features are known
+
+The Pulumi CLI writes a stack's checkpoint at version 4 whenever the stack
+uses a feature it records in a top-level `features` list. A stack whose
+program registers resource hooks is written like this:
+
+```json
+{"version": 4, "features": ["hooks"],
+ "checkpoint": {"latest": {"resources": [
+   {"urn": "...", "id": "...", "type": "...",
+    "resourceHooks": {"AfterCreate": ["notify"], "BeforeDelete": ["drain"]}}]}}}
+```
+
+The body is the version 3 body. `index_checkpoint` accepted version 3 only,
+so it refused the file with `unsupported checkpoint version 4; expected 3`,
+and a caller that reads every stack in a shared backend to decide who owns a
+resource had to fail closed for the whole backend: one stack using hooks
+blocked an unrelated stack's ownership check.
+
+Version 4 is now read when every listed feature is in `READABLE_FEATURES`,
+the features known not to change anything the index reads. The list starts
+with `hooks`, which only adds a per-resource `resourceHooks` object the index
+never reads, so a version 4 `["hooks"]` file indexes exactly as the same body
+at version 3. Nothing else is guessed:
+
+- any other feature, alone or beside `hooks`, refuses the document and is
+  named: `unsupported checkpoint feature "views"; version 4 is read only
+  with: hooks` (with several, each unknown name once, in document order);
+- a `features` that is not a list of strings is refused with
+  ``checkpoint `features` is not a list of strings``;
+- an absent, `null` or empty `features` lists nothing unknown and is read as
+  version 3 (the CLI writes version 4 only when it has a feature to list);
+- any version other than 3 and 4 is refused as before, now worded
+  `unsupported checkpoint version 5; expected 3 or 4`;
+- version 3 is read exactly as before; a `features` key in it is not
+  interpreted.
+
+`features` is captured as a slice of the document in the same single parse
+and walked in place only for version 4; a feature name is copied only to
+report it. `index_checkpoints` reads each document of a batch the same way.
+In Python every refusal is still a `ValueError` prefixed `Not a Pulumi
+checkpoint:`, or that string in a batch slot's `error`.
+
+### Tests
+
+- Unit: a version 4 `["hooks"]` checkpoint with hooked resources indexes
+  exactly as its version 3 body, in both encodings, with `features` before or
+  after the body, with elements, and with ids still borrowed; an unknown
+  feature alone and beside `hooks` refused and named, once each and escaped;
+  absent, `null` and empty lists read; six malformed lists refused; version 3
+  not interpreting `features`; versions 0, 2, 5 and 40 refused; a batch
+  agreeing with one-at-a-time reads.
+- Security (+1): unknown and malformed feature lists refused, a nesting
+  spiral inside `features`, and a 100,000-entry list walked in linear time.
+- Python: a version 4 hooks checkpoint reads as version 3, singly and in a
+  batch; an unknown feature raises naming it.
+
 ## 0.5.44
 
 SQL lineage now places a table, dataset or routine whose identity references

@@ -14,6 +14,27 @@
 # Restricted format: `[[entry]]` tables, string / boolean values, string arrays.
 
 # ---------------------------------------------------------------------------
+# 0.5.45
+# ---------------------------------------------------------------------------
+
+[[entry]]
+version = "0.5.45"
+heading = "A version 4 checkpoint is read when its features are known"
+tests = [
+    "crates/pulumi-rs-yaml-core/src/checkpoint.rs::version_4_with_hooks_reads_exactly_as_version_3",
+    "crates/pulumi-rs-yaml-core/src/checkpoint.rs::version_4_with_an_unknown_feature_is_refused_naming_it",
+    "crates/pulumi-rs-yaml-core/src/checkpoint.rs::one_unknown_feature_beside_hooks_refuses_the_whole_document",
+    "crates/pulumi-rs-yaml-core/src/checkpoint.rs::version_4_listing_no_feature_reads_as_version_3",
+    "crates/pulumi-rs-yaml-core/src/checkpoint.rs::a_features_list_that_is_not_strings_is_refused",
+    "crates/pulumi-rs-yaml-core/src/checkpoint.rs::version_3_does_not_interpret_features",
+    "crates/pulumi-rs-yaml-core/src/checkpoint.rs::versions_other_than_3_and_4_are_still_refused",
+    "crates/pulumi-rs-yaml-core/src/checkpoint.rs::batch_reads_version_4_as_one_document_at_a_time_does",
+    "crates/pulumi-rs-yaml-core/tests/security_tests.rs::a_version_4_feature_list_is_read_strictly",
+    "crates/pulumi-rs-yaml-python/tests/test_checkpoint.py::test_version_4_with_hooks_reads_as_version_3",
+    "crates/pulumi-rs-yaml-python/tests/test_checkpoint.py::test_version_4_with_an_unknown_feature_raises_naming_it",
+]
+
+# ---------------------------------------------------------------------------
 # 0.5.44
 # ---------------------------------------------------------------------------
 

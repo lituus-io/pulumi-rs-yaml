@@ -1,0 +1,1 @@
+{"version":4,"features":["hooks"],"checkpoint":{"latest":{"resources":[{"urn":"urn:pulumi:dev::app::gcp:storage/bucket:Bucket::bucket","id":"bucket","type":"gcp:storage/bucket:Bucket","custom":true,"resourceHooks":{"AfterCreate":["notify"],"BeforeDelete":["drain","notify"]}}]}}}
