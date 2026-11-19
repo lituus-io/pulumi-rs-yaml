@@ -364,6 +364,13 @@ impl io::Write for CappedWriter<'_> {
             }
             return Err(io::Error::other("output limit"));
         }
+        if data.len() > self.buf.capacity() - self.buf.len() {
+            // A write the buffer cannot take is most often an included file.
+            // Room for the rest of this file's own text after it spares the
+            // next write a copy of everything written so far.
+            let after = self.template.len().saturating_sub(self.own_end);
+            self.buf.reserve(data.len().saturating_add(after).min(room));
+        }
         if let Some(at) = own {
             self.own_end = at + data.len();
         }
