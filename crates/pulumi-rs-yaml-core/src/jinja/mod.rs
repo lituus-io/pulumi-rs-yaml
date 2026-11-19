@@ -1351,14 +1351,27 @@ impl JinjaPreprocessor<'_> {
         let restored = crate::provider_scope::restore(&rendered, protected.regions())
             .map_err(|e| scope_diagnostic(source, &e))?;
 
-        // Resolve readFile markers with auto-indentation
-        let final_output = match resolve_readfile_markers_capped(
-            &restored,
-            &cache.lock().unwrap_or_else(|e| e.into_inner()),
-            limits.output_bytes,
-        ) {
+        // Resolve readFile markers with auto-indentation. With nothing read,
+        // no marker can resolve and the resolver carries every line through
+        // as it is, so its answer would be `restored` itself -- nor could it
+        // stop at the cap when `restored` is inside it. A render without
+        // `readFile()` is the common case, and it skips the scan for a NUL.
+        let files = cache.lock().unwrap_or_else(|e| e.into_inner());
+        let resolved = if files.entries.is_empty() && restored.len() <= limits.output_bytes {
+            Ok(None)
+        } else {
+            resolve_readfile_markers_capped(&restored, &files, limits.output_bytes)
+        };
+        drop(files);
+        let final_output = match resolved {
             Ok(Some(resolved)) => resolved,
-            Ok(None) => restored.into_owned(),
+            // No marker resolved, so the answer is what the restore made --
+            // and when it restored nothing, that is the render's own string,
+            // handed back rather than copied.
+            Ok(None) => match restored {
+                Cow::Owned(restored) => restored,
+                Cow::Borrowed(_) => rendered,
+            },
             Err(len) => return Err(output_too_large(len, &limits)),
         };
         // `readFile()` contents land after the render, so the cap is checked
@@ -3628,6 +3641,132 @@ mod tests {
         let err = render_in(dir.path(), "{% include \"over.txt\" %}").unwrap_err();
         assert!(err.contains(IncludeRefusal::TAG_TOO_LARGE), "{err}");
         assert!(!err.contains("xxxx"), "no contents in the error");
+
+        // Text on both sides of the file, as a value is written: the buffer
+        // grows for the file and must still take what follows it.
+        let source = "a: '{% include \"cap.txt\" %}'\nb: {{ 1 + 1 }}\n";
+        let want = format!("a: '{}'\nb: 2", "x".repeat(MAX_INCLUDE_BYTES as usize));
+        let out = render_in(dir.path(), source).expect("at the cap, inside a value");
+        assert_eq!(out, want);
+        // The output limit at exactly that length passes. A byte under it is
+        // crossed by the expression on line 2; under the end of the file, by
+        // the file, placed at the line that brings it in.
+        let at = |output_bytes| {
+            render_limited(
+                dir.path(),
+                source,
+                JinjaLimits {
+                    output_bytes,
+                    ..JinjaLimits::default()
+                },
+                &[],
+            )
+        };
+        assert_eq!(at(want.len()), Ok(want.clone()));
+        let (kind, line, message) = at(want.len() - 1).unwrap_err();
+        assert_eq!((kind, line), (RenderErrorKind::OutputTooLarge, 2));
+        assert_eq!(message, format!("{OUTPUT_TAG} of {} bytes", want.len() - 1));
+        let inside = "a: '".len() + MAX_INCLUDE_BYTES as usize - 1;
+        let (kind, line, message) = at(inside).unwrap_err();
+        assert_eq!((kind, line), (RenderErrorKind::OutputTooLarge, 1));
+        assert_eq!(message, format!("{OUTPUT_TAG} of {inside} bytes"));
+    }
+
+    /// [`render_in`] under `limits`, with `packages` scoped to their
+    /// provider; a refusal as its kind, line and message.
+    fn render_limited(
+        dir: &std::path::Path,
+        source: &str,
+        limits: JinjaLimits,
+        packages: &[&str],
+    ) -> Result<String, (RenderErrorKind, u32, String)> {
+        let p = dir.to_str().expect("utf-8 path").to_string();
+        let config = HashMap::new();
+        let extra = HashMap::new();
+        let ctx = JinjaContext {
+            project_dir: &p,
+            root_directory: &p,
+            cwd: &p,
+            provider_templated_packages: packages,
+            limits,
+            ..strict_ctx(&config, &extra)
+        };
+        JinjaPreprocessor::new(&ctx)
+            .render(source, "Pulumi.yaml")
+            .map(|r| r.into_owned())
+            .map_err(|e| (e.kind, e.line, e.message))
+    }
+
+    /// A render that read no file hands its output back as it is: a lone NUL
+    /// and text shaped like a `readFile()` marker pass through, and the same
+    /// lines come out the same when a file IS read further down.
+    #[test]
+    fn a_render_without_read_file_passes_marker_shaped_text_through() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("f.txt"), "hello\n").expect("write");
+        let body = "a: '\x00'\n  \x00RF:\x0b\x00\nb: x \x00RF:\x0b\x00 \x00RF:7\x00 y\n\
+                    \x00RF:7\x00\nc: {{ 1 + 1 }}\n";
+        let want = "a: '\x00'\n  \x00RF:\x0b\x00\nb: x \x00RF:\x0b\x00 \x00RF:7\x00 y\n\
+                    \x00RF:7\x00\nc: 2";
+        let none = render_in(dir.path(), body).expect("renders");
+        assert_eq!(none, want);
+        let read = render_in(
+            dir.path(),
+            &format!("{body}d: {{{{ readFile('f.txt') }}}}\n"),
+        )
+        .expect("renders");
+        assert_eq!(read, format!("{want}\nd: hello"));
+        // At an output limit of exactly its length the same render passes.
+        let exact = render_limited(
+            dir.path(),
+            body,
+            JinjaLimits {
+                output_bytes: want.len(),
+                ..JinjaLimits::default()
+            },
+            &[],
+        );
+        assert_eq!(exact.as_deref(), Ok(want));
+    }
+
+    /// A provider-scoped block is put back after the render, so the text
+    /// handed back can be longer than what the engine wrote. With no file
+    /// read, that text is still held to the output limit, and the refusal
+    /// still names the full length.
+    #[test]
+    fn a_restored_block_past_the_output_limit_is_refused_with_no_file_read() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let source = format!(
+            "name: p\nruntime: yaml\nresources:\n  m:\n    type: gcpx:dbt/model:Model\n    \
+             properties:\n      sql: |\n        {{{{ ref('a') }}}} {}\n        {{{{ this }}}}\n\
+             x: {{{{ 1 }}}}\n",
+            "s".repeat(300)
+        );
+        let full = render_limited(dir.path(), &source, JinjaLimits::default(), &["gcpx"])
+            .expect("renders");
+        assert!(full.contains(&"s".repeat(300)), "{full}");
+        let at = |output_bytes| {
+            render_limited(
+                dir.path(),
+                &source,
+                JinjaLimits {
+                    output_bytes,
+                    ..JinjaLimits::default()
+                },
+                &["gcpx"],
+            )
+        };
+        assert_eq!(at(full.len()), Ok(full.clone()));
+        let (kind, line, message) = at(full.len() - 1).unwrap_err();
+        assert_eq!((kind, line), (RenderErrorKind::OutputTooLarge, 0));
+        assert_eq!(
+            message,
+            format!(
+                "{OUTPUT_TAG} of {} bytes ({} bytes written)",
+                full.len() - 1,
+                full.len()
+            )
+        );
     }
 
     #[test]

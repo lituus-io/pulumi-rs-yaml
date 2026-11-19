@@ -559,16 +559,21 @@ pub fn split_statement_spans(script: &str) -> Vec<Range<usize>> {
     // string or a comment is crossed by a search for its terminator, which
     // reads a short span inline and hands a long one to memchr, so neither
     // dense statements nor long literals pay for the other's case.
-    while let Some(off) = bytes[i..].iter().position(|&b| SPLIT_STOP[b as usize]) {
-        i += off;
-        let b = bytes[i];
+    //
+    // One index walks the whole body and every search answers an absolute
+    // offset: ordinary SQL stops every few bytes, and re-slicing the rest
+    // and restarting an iterator at each stop cost more than the bytes
+    // between them (a quarter of the 1 MiB split bench).
+    while let Some(&b) = bytes.get(i) {
+        if !SPLIT_STOP[b as usize] {
+            i += 1;
+            continue;
+        }
         i = match b {
-            b'\'' | b'"' | b'`' => find_byte(b, &bytes[i + 1..]).map_or(n, |k| i + k + 2),
-            b'-' if bytes.get(i + 1) == Some(&b'-') => {
-                find_byte(b'\n', &bytes[i + 2..]).map_or(n, |k| i + 2 + k)
-            }
+            b'\'' | b'"' | b'`' => find_byte(bytes, i + 1, b).map_or(n, |j| j + 1),
+            b'-' if bytes.get(i + 1) == Some(&b'-') => find_byte(bytes, i + 2, b'\n').unwrap_or(n),
             b'/' if bytes.get(i + 1) == Some(&b'*') => {
-                find_comment_close(&bytes[i + 2..]).map_or(n, |k| i + k + 4)
+                find_comment_close(bytes, i + 2).map_or(n, |j| j + 2)
             }
             b';' => {
                 push_trimmed(body, base, start..i, &mut out);
@@ -599,40 +604,68 @@ static SPLIT_STOP: [bool; 256] = {
 /// memchr costs more than the bytes it would skip.
 const INLINE_SCAN: usize = 16;
 
-/// The first `needle` in `hay`. The head is read inline, where most
-/// terminators in ordinary SQL sit; the rest goes to memchr's vector scan.
+/// The offset in `bytes` of the first `needle` at or after `from`. The head
+/// is read inline, where most terminators in ordinary SQL sit; the rest
+/// goes to memchr's vector scan.
 #[inline(always)]
-fn find_byte(needle: u8, hay: &[u8]) -> Option<usize> {
-    let head = hay.len().min(INLINE_SCAN);
-    if let Some(k) = hay[..head].iter().position(|&c| c == needle) {
-        return Some(k);
+fn find_byte(bytes: &[u8], from: usize, needle: u8) -> Option<usize> {
+    let head = bytes.len().min(from + INLINE_SCAN);
+    let mut j = from;
+    while j < head {
+        if bytes[j] == needle {
+            return Some(j);
+        }
+        j += 1;
     }
-    memchr::memchr(needle, &hay[head..]).map(|k| k + head)
+    memchr::memchr(needle, bytes.get(head..)?).map(|k| k + head)
 }
 
-/// The offset of the first `*/` in `hay`.
+/// The offset in `bytes` of the first `*/` at or after `from`.
 #[inline(always)]
-fn find_comment_close(hay: &[u8]) -> Option<usize> {
-    let mut j = 0;
-    while let Some(k) = find_byte(b'*', &hay[j..]) {
-        let p = j + k;
-        if hay.get(p + 1) == Some(&b'/') {
+fn find_comment_close(bytes: &[u8], mut from: usize) -> Option<usize> {
+    while let Some(p) = find_byte(bytes, from, b'*') {
+        if bytes.get(p + 1) == Some(&b'/') {
             return Some(p);
         }
-        j = p + 1;
+        from = p + 1;
     }
     None
 }
 
+/// What `char::is_whitespace` answers for an ASCII byte: tab, line feed,
+/// vertical tab, form feed, carriage return and space. Not
+/// `u8::is_ascii_whitespace`, which leaves out the vertical tab.
+#[inline(always)]
+fn is_ascii_white(b: u8) -> bool {
+    matches!(b, b'\t'..=b'\r' | b' ')
+}
+
 /// Pushes `body[r]`, trimmed, as a range offset by `base` -- unless it is
 /// empty after trimming.
+///
+/// Exactly `str::trim`. Each end is walked over ASCII whitespace byte by
+/// byte; only when the walk stops at a byte of a multi-byte character does
+/// the `str` trim decide, so Unicode whitespace is judged by the same rule
+/// as before while a plain statement pays for no character decoding. Every
+/// position the walk stops at follows an ASCII byte or is an end of `r`, so
+/// it is a `char` boundary.
 fn push_trimmed(body: &str, base: usize, r: Range<usize>, out: &mut Vec<Range<usize>>) {
-    let piece = &body[r.clone()];
-    let lead = piece.len() - piece.trim_start().len();
-    let trimmed_len = piece.trim().len();
-    if trimmed_len > 0 {
-        let s = base + r.start + lead;
-        out.push(s..s + trimmed_len);
+    let bytes = body.as_bytes();
+    let (mut s, mut e) = (r.start, r.end);
+    while s < e && is_ascii_white(bytes[s]) {
+        s += 1;
+    }
+    if s < e && !bytes[s].is_ascii() {
+        s = e - body[s..e].trim_start().len();
+    }
+    while e > s && is_ascii_white(bytes[e - 1]) {
+        e -= 1;
+    }
+    if e > s && !bytes[e - 1].is_ascii() {
+        e = s + body[s..e].trim_end().len();
+    }
+    if s < e {
+        out.push(base + s..base + e);
     }
 }
 
@@ -1353,6 +1386,177 @@ mod tests {
                 assert!(r.start >= prev_end && r.start < r.end && r.end <= script.len());
                 prev_end = r.end;
             }
+        }
+    }
+
+    /// The splitter as it shipped through 0.5.45, kept as a reference for
+    /// the single-index scan and the byte-walking trim that replaced it.
+    /// Unlike the oracle above it is safe on any text, so the comparison
+    /// below is not limited to ASCII.
+    fn split_statement_spans_0545(script: &str) -> Vec<Range<usize>> {
+        fn find_byte(needle: u8, hay: &[u8]) -> Option<usize> {
+            let head = hay.len().min(INLINE_SCAN);
+            if let Some(k) = hay[..head].iter().position(|&c| c == needle) {
+                return Some(k);
+            }
+            memchr::memchr(needle, &hay[head..]).map(|k| k + head)
+        }
+        fn find_comment_close(hay: &[u8]) -> Option<usize> {
+            let mut j = 0;
+            while let Some(k) = find_byte(b'*', &hay[j..]) {
+                let p = j + k;
+                if hay.get(p + 1) == Some(&b'/') {
+                    return Some(p);
+                }
+                j = p + 1;
+            }
+            None
+        }
+        fn push_trimmed(body: &str, base: usize, r: Range<usize>, out: &mut Vec<Range<usize>>) {
+            let piece = &body[r.clone()];
+            let lead = piece.len() - piece.trim_start().len();
+            let trimmed_len = piece.trim().len();
+            if trimmed_len > 0 {
+                let s = base + r.start + lead;
+                out.push(s..s + trimmed_len);
+            }
+        }
+        let body_span = strip_begin_end_span(script);
+        let base = body_span.start;
+        let body = &script[body_span];
+        let bytes = body.as_bytes();
+        let n = bytes.len();
+        let mut out = Vec::new();
+        let mut start = 0usize;
+        let mut i = 0usize;
+        while let Some(off) = bytes[i..].iter().position(|&b| SPLIT_STOP[b as usize]) {
+            i += off;
+            let b = bytes[i];
+            i = match b {
+                b'\'' | b'"' | b'`' => find_byte(b, &bytes[i + 1..]).map_or(n, |k| i + k + 2),
+                b'-' if bytes.get(i + 1) == Some(&b'-') => {
+                    find_byte(b'\n', &bytes[i + 2..]).map_or(n, |k| i + 2 + k)
+                }
+                b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                    find_comment_close(&bytes[i + 2..]).map_or(n, |k| i + k + 4)
+                }
+                b';' => {
+                    push_trimmed(body, base, start..i, &mut out);
+                    start = i + 1;
+                    i + 1
+                }
+                _ => i + 1,
+            };
+        }
+        push_trimmed(body, base, start..n, &mut out);
+        out
+    }
+
+    /// The splitter's answer for `script`, checked against the reference and
+    /// against the documented shape of every range.
+    fn assert_split_matches_reference(script: &str) {
+        let spans = split_statement_spans(script);
+        assert_eq!(
+            spans,
+            split_statement_spans_0545(script),
+            "script {script:?}"
+        );
+        let mut prev_end = 0;
+        for r in &spans {
+            assert!(r.start < r.end, "empty range {r:?} in {script:?}");
+            assert!(r.start >= prev_end, "overlap at {r:?} in {script:?}");
+            assert!(r.end <= script.len(), "{r:?} past the end of {script:?}");
+            assert!(
+                script.is_char_boundary(r.start) && script.is_char_boundary(r.end),
+                "{r:?} inside a character of {script:?}"
+            );
+            let piece = &script[r.clone()];
+            assert_eq!(piece, piece.trim(), "{r:?} untrimmed in {script:?}");
+            prev_end = r.end;
+        }
+    }
+
+    #[test]
+    fn the_split_is_unchanged_on_the_hand_written_edges() {
+        for script in [
+            "",
+            " ",
+            ";",
+            ";;;",
+            " \t\u{b}\u{c}\r\n ; \u{1c}\u{1d}\u{1e}\u{1f} ;",
+            "x;\u{b}SELECT 1\u{c}; \u{1c}y\u{1f} ;z",
+            "\u{85}\u{a0}SELECT 1\u{2003}\u{3000};\u{3000} \u{85}",
+            " \u{3000} x \u{a0} ",
+            "\u{3000}\u{a0}\u{85}",
+            "SELECT 1 --",
+            "SELECT 1 --;",
+            "SELECT 1 -",
+            "SELECT 1 /*",
+            "SELECT 1 /* x *",
+            "SELECT 1 /* x */",
+            "SELECT 1 /**/; SELECT 2 /*/ ; */",
+            "SELECT 1 /* a ** b */ ; SELECT 2",
+            "SELECT 'a",
+            "SELECT \"a",
+            "SELECT `a",
+            "SELECT 'a''b'; SELECT 2",
+            "a;b;c;",
+            "BEGIN\r\n  SELECT 1;\r\n  SELECT 2;\r\nEND;\r\n",
+            "BEGIN SELECT 1; END;",
+            "begin\u{3000}select 1;\u{3000}end",
+            "BEGIN İ END",
+            "BEGIN \u{212A}; \u{212A} END;",
+            "😀;😀 ; 😀\u{85}",
+            "SELECT 'x' -- c\n; /* ; */ SELECT \"y;\" ; `z;`",
+            &format!("SELECT '{}'; SELECT 2", "x".repeat(100)),
+            &format!("/* {} */ SELECT 2 -- {}", "*".repeat(40), "y".repeat(40)),
+        ] {
+            assert_split_matches_reference(script);
+        }
+    }
+
+    #[test]
+    fn the_split_is_unchanged_on_the_fuzz_corpora() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fuzz/corpus");
+        for target in ["fuzz_sql_statements", "fuzz_sql_lineage"] {
+            // The corpora are not packaged with the crate; absent, they are
+            // skipped rather than failed.
+            let Ok(dir) = std::fs::read_dir(root.join(target)) else {
+                continue;
+            };
+            for entry in dir.flatten() {
+                if let Ok(data) = std::fs::read(entry.path()) {
+                    assert_split_matches_reference(&String::from_utf8_lossy(&data));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_split_is_unchanged_on_generated_scripts() {
+        // Weighted to what the scan and the trim decide on: every delimiter,
+        // every whitespace `str::trim` knows and the ASCII separators it does
+        // not, the wrapper's words, and characters whose bytes are not ASCII.
+        const PIECES: &[&str] = &[
+            "'", "'", "\"", "\"", "`", "`", "-", "--", "--", "/", "*", "/*", "/*", "*/", "*/", ";",
+            ";", ";", "\n", "\n", "\r", "\r\n", " ", " ", "\t", "\u{b}", "\u{c}", "\u{1c}",
+            "\u{1d}", "\u{1e}", "\u{1f}", "BEGIN", "begin ", "END", "end;", "x", "ab", "SELECT ",
+            "\u{85}", "\u{a0}", "\u{2003}", "\u{3000}", "İ", "\u{212A}", "😀", "é",
+        ];
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let mut script = String::new();
+        for _ in 0..200_000 {
+            script.clear();
+            for _ in 0..next() % 48 {
+                script.push_str(PIECES[(next() % PIECES.len() as u64) as usize]);
+            }
+            assert_split_matches_reference(&script);
         }
     }
 
