@@ -8,6 +8,29 @@
 # 25% of the new expectation still fails, and the gate refuses an entry once
 # the merge-base has reached `valid_for` -- delete it then.
 #
-# Empty while no release needs one. 0.5.40's entry (the include render
-# handed to the deep-stack worker) retired with 0.5.41: 0.5.40 is the merge
-# base, so its cost is the baseline.
+# 0.5.40's entry (the include render handed to the deep-stack worker) retired
+# with 0.5.41: 0.5.40 is the merge base, so its cost is the baseline.
+
+[[bench]]
+name = "jinja_preprocessor_include_at_cap"
+valid_for = "0.5.45"
+expected_ratio = 1.15
+measured = """
+CI x86_64 Linux, merge-base 0.5.44 -> PR head, three runs of the same commit:
+2.4 -> 2.1 ms (0.88x) on the fastest runner, 2.7 -> 3.4 ms (1.26x) and
+3.4 -> 4.3 ms (1.27x) on the slower ones, each re-measured twice with the
+same result. Not reproduced elsewhere: on a dedicated x86_64 Linux VM (five
+interleaved rounds, then two full passes) 4.55 -> 4.70 ms (1.03x); on macOS
+aarch64 1.93 ms on both. Through the built wheel on that VM the same render
+is 3.43 -> 3.38 ms.
+"""
+reason = """
+0.5.45 changes one source file, checkpoint.rs, and this bench runs none of
+it. The bench binary is one link-time-optimised unit, so code added anywhere
+moves the placement of every other loop: on the dedicated VM 61 benches have
+a median ratio of 0.999, with unrelated ones moving both ways
+(needs_interpolation_pass_plain_4k 0.72x, has_jinja_block_syntax_scan 1.09x)
+and the six checkpoint benches between 1.00x and 1.02x. This bench is the one
+whose shift crosses the threshold, and only on one CI runner type, as in
+0.5.40.
+"""
