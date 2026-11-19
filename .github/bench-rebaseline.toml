@@ -34,3 +34,22 @@ and the six checkpoint benches between 1.00x and 1.02x. This bench is the one
 whose shift crosses the threshold, and only on one CI runner type, as in
 0.5.40.
 """
+
+[[bench]]
+name = "split_statement_spans_1mib"
+valid_for = "0.5.45"
+expected_ratio = 1.15
+measured = """
+CI x86_64 Linux, merge-base 0.5.44 -> PR head, four runs: 0.73 -> 0.92 ms
+(1.26x) and 0.51 -> 0.64 ms (1.27x) on one runner type, each re-measured
+twice with the same result; 0.90 -> 0.93 ms (1.04x) and 1.12 -> 1.19 ms
+(1.06x) on the other. On a dedicated x86_64 Linux VM (five interleaved
+rounds, then two full passes) 1.98 -> 2.08 ms (1.05x); on macOS aarch64
+0.84 ms on both.
+"""
+reason = """
+The same cause as the entry above, on the other CI runner type: the bench
+scans SQL text and runs none of checkpoint.rs, the one source file 0.5.45
+changes. Its scan is a tight byte loop, and where that loop lands in the
+link-time-optimised bench binary moved with the added code.
+"""
