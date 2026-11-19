@@ -14,6 +14,28 @@
 # Restricted format: `[[entry]]` tables, string / boolean values, string arrays.
 
 # ---------------------------------------------------------------------------
+# 0.5.46
+# ---------------------------------------------------------------------------
+
+[[entry]]
+version = "0.5.46"
+heading = "The statement splitter walks one index"
+tests = [
+    "crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::the_split_is_unchanged_on_the_hand_written_edges",
+    "crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::the_split_is_unchanged_on_the_fuzz_corpora",
+    "crates/pulumi-rs-yaml-core/src/sql_lineage/sql.rs::the_split_is_unchanged_on_generated_scripts",
+]
+
+[[entry]]
+version = "0.5.46"
+heading = "A Jinja render hands back its own output"
+tests = [
+    "crates/pulumi-rs-yaml-core/src/jinja/mod.rs::a_render_without_read_file_passes_marker_shaped_text_through",
+    "crates/pulumi-rs-yaml-core/src/jinja/mod.rs::a_restored_block_past_the_output_limit_is_refused_with_no_file_read",
+    "crates/pulumi-rs-yaml-core/src/jinja/mod.rs::a_file_at_the_cap_is_served_and_one_byte_over_is_not",
+]
+
+# ---------------------------------------------------------------------------
 # 0.5.45
 # ---------------------------------------------------------------------------
 

@@ -6,6 +6,61 @@
 Releases before 0.5.25 are described in their release commits and in the
 GitHub releases; this file starts here.
 
+## 0.5.46
+
+The SQL statement splitter and the end of a Jinja render do less work for
+the same answer. Every output is unchanged.
+
+### The statement splitter walks one index
+
+`split_statement_spans` re-sliced the rest of the script and restarted a
+search at every byte it stops on, and ordinary SQL stops every few bytes:
+at quotes, comment openers and semicolons. One index now walks the whole
+body, and the searches for a string's or comment's terminator answer an
+absolute offset. Each range is trimmed by walking ASCII whitespace byte by
+byte; only when an end of the range is a byte of a multi-byte character does
+`str::trim` decide, so Unicode whitespace is judged as before and a plain
+statement decodes no characters.
+
+The ranges are the same. A test keeps the splitter 0.5.45 shipped and
+compares the two on hand-written edges, on both SQL fuzz corpora and on
+200,000 generated scripts weighted to quotes, comments, the `BEGIN`/`END`
+wrapper, every whitespace `str::trim` knows and the ASCII separators it does
+not, and multi-byte characters. Measured on macOS aarch64:
+`split_statement_spans_1mib` about 26% faster,
+`split_statement_spans_1mib_long_literals` about 19% faster.
+
+### A Jinja render hands back its own output
+
+- `render_deep` copied the rendered text into a new string when no
+  `readFile()` marker resolved. When the provider-scope restore changed
+  nothing, the render's own string is now returned as it is.
+- With no file read, no marker can resolve, so the scan for one is skipped
+  when the text is also inside the output limit. Past the limit the scan
+  still runs and the refusal is unchanged.
+- The capped output writer, on a write its buffer cannot take (most often
+  an included file), reserves room for the rest of the template's own text
+  as well, so the next write does not copy everything written so far.
+
+Measured on macOS aarch64, `jinja_preprocessor_include_at_cap` is about 4
+to 6% faster. Text shaped like a `readFile()` marker in a render that read
+no file passes through as before, and the output limit is met and crossed
+at the same byte and the same line.
+
+### Tests
+
+- Unit: the statement splitter against the 0.5.45 splitter on hand-written
+  edges, the fuzz corpora and 200,000 generated scripts; a render without
+  `readFile()` passing marker-shaped text and lone NULs through, the same
+  with a file read further down, and at an output limit of exactly its
+  length; a restored provider-scoped block past the output limit refused
+  with the full length named, with no file read; an included file at the
+  cap inside a value, with text after it, at the output limit and one byte
+  under it, each crossing placed at its line.
+- The two 0.5.45 benchmark re-baselines (`jinja_preprocessor_include_at_cap`
+  and `split_statement_spans_1mib`) are retired: 0.5.45 is the merge base
+  now, and the gate refuses an entry once its release is reached.
+
 ## 0.5.45
 
 The checkpoint index reads a version 4 checkpoint whose features it knows,
