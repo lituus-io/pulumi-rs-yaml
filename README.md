@@ -11,7 +11,7 @@
 [![PyPI](https://img.shields.io/pypi/v/pulumi-rs-yaml?label=PyPI)](https://pypi.org/project/pulumi-rs-yaml/)
 [![Python](https://img.shields.io/badge/python-%E2%89%A53.9-blue)](https://pypi.org/project/pulumi-rs-yaml/)
 [![fuzz targets](https://img.shields.io/badge/fuzz%20targets-29-blue)](fuzz/fuzz_targets)
-[![security tests](https://img.shields.io/badge/security%20tests-240-blue)](crates/pulumi-rs-yaml-core/tests/security_tests.rs)
+[![security tests](https://img.shields.io/badge/security%20tests-241-blue)](crates/pulumi-rs-yaml-core/tests/security_tests.rs)
 [![Jinja conformance](https://img.shields.io/badge/jinja2%20conformance-431%20cases-blue)](tests/jinja_conformance/MATRIX.md)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE)
 
@@ -236,9 +236,15 @@ backend stores, and `deployment.resources`, which is what an export writes.
 has never deployed — as against `"resources"` with no entries, a deployed
 stack that manages nothing.
 
+Versions 3 and 4 are read. Version 4 is the version 3 body plus a top-level
+`features` list, and is read only when every listed feature is one known not
+to change what the index reads — today `hooks`, which adds a
+`resourceHooks` object the index ignores.
+
 The contract is to fail loudly. Anything that cannot be read with certainty
 raises a `ValueError` prefixed `Not a Pulumi checkpoint:` — an unrecognised
-version, a missing deployment, both encodings at once, invalid JSON. The
+version or version 4 feature, a missing deployment, both encodings at once,
+invalid JSON. The
 caller is an ownership gate, where an empty index and an unread document are
 the same value and the second one authorises a delete, so there is no input
 for which this answers with a confident empty result.

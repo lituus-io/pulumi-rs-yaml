@@ -71,7 +71,7 @@ class TestIndexCheckpoint:
         [
             pytest.param(b"{}", id="no version"),
             pytest.param(b"not json", id="not json"),
-            pytest.param(b'{"version": 4, "deployment": {}}', id="version 4"),
+            pytest.param(b'{"version": 5, "deployment": {}}', id="version 5"),
             pytest.param(b'{"version": 3}', id="no deployment"),
             pytest.param(
                 b'{"version": 3, "checkpoint": {}, "deployment": {}}', id="both keys"
@@ -86,6 +86,28 @@ class TestIndexCheckpoint:
     def test_a_non_bytes_argument_is_a_type_error(self, data):
         with pytest.raises(TypeError):
             index_checkpoint(data)
+
+    def test_version_4_with_hooks_reads_as_version_3(self):
+        hooked = dict(_resource(), resourceHooks={"AfterCreate": ["notify"]})
+        body = {"checkpoint": {"latest": {"resources": [hooked]}}}
+        v3 = json.dumps({"version": 3, **body}).encode()
+        v4 = json.dumps({"version": 4, "features": ["hooks"], **body}).encode()
+        assert index_checkpoint(v4) == index_checkpoint(v3)
+        assert index_checkpoint(v4)["entries"] == [(ID, URN)]
+        assert index_checkpoints([v4, v3]) == [index_checkpoint(v3)] * 2
+
+    @pytest.mark.parametrize("features", [["views"], ["hooks", "views"]])
+    def test_version_4_with_an_unknown_feature_raises_naming_it(self, features):
+        doc = json.dumps(
+            {"version": 4, "features": features, "deployment": {"resources": []}}
+        ).encode()
+        with pytest.raises(
+            ValueError,
+            match=r'^Not a Pulumi checkpoint: unsupported checkpoint feature "views"; ',
+        ):
+            index_checkpoint(doc)
+        [slot] = index_checkpoints([doc])
+        assert 'feature "views"' in slot["error"]
 
     def test_an_escaped_id_is_decoded(self):
         doc = (

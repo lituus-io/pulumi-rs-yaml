@@ -1861,11 +1861,51 @@ mod checkpoint_security {
     fn an_unknown_version_is_an_error() {
         // A version that relocates `resources` would otherwise deserialise
         // into a confident "manages nothing".
-        assert!(is_error(br#"{"version":4,"deployment":{"resources":[]}}"#));
+        assert!(is_error(br#"{"version":5,"deployment":{"resources":[]}}"#));
         assert!(is_error(
             br#"{"version":"3","deployment":{"resources":[]}}"#
         ));
         assert!(is_error(br#"{"version":0,"deployment":{"resources":[]}}"#));
+    }
+
+    #[test]
+    fn a_version_4_feature_list_is_read_strictly() {
+        // Version 4 is the version 3 body plus a list of features, and a
+        // feature this reader does not know may change what the body means.
+        // Refusing the document is the only safe answer: reading it anyway
+        // could report "owns nothing" for a stack that owns plenty.
+        let body = format!(r#""deployment":{{"resources":[{{"urn":"{URN}","id":"{ID}"}}]}}"#);
+        for features in [
+            r#"["views"]"#,
+            r#"["hooks","views"]"#,
+            r#"["HOOKS"]"#,
+            r#""hooks""#,
+            r#"[7]"#,
+            r#"{"hooks":true}"#,
+        ] {
+            let doc = format!(r#"{{"version":4,"features":{features},{body}}}"#);
+            assert!(is_error(doc.as_bytes()), "{features} must be refused");
+        }
+
+        // A nesting spiral inside the list returns an error, not a crash.
+        let spiral = format!(r#"{{"version":4,{body},"features":{}"#, "[".repeat(100_000));
+        assert!(is_error(spiral.as_bytes()));
+
+        // A long list of the one readable feature is walked in linear time.
+        let long = format!(
+            r#"{{"version":4,"features":[{}"hooks"],{body}}}"#,
+            r#""hooks","#.repeat(100_000)
+        );
+        let started = Instant::now();
+        let Ok(index) = index_checkpoint(long.as_bytes(), None) else {
+            unreachable!("a list of `hooks` must read")
+        };
+        let elapsed = started.elapsed();
+        assert_eq!(index.entries.len(), 1);
+        assert!(
+            elapsed.as_secs_f64() < 1.0,
+            "100,000 features took {elapsed:?}"
+        );
     }
 
     #[test]

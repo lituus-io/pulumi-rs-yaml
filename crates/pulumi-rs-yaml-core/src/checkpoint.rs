@@ -46,6 +46,19 @@
 //! future version that relocates `resources` would otherwise deserialise
 //! cleanly into "zero resources" — a well-formed lie.
 //!
+//! # Version 4: the same body, plus a list of features
+//!
+//! The writer moves a checkpoint to [`FEATURES_VERSION`] when the stack uses a
+//! feature recorded in a top-level `features` array; the body is the version 3
+//! body. A feature can change what the body means, so version 4 is read only
+//! when every listed feature is in [`READABLE_FEATURES`] — features known not
+//! to touch anything this index reads — and any other one is
+//! [`CheckpointError::UnsupportedFeatures`], naming it. An absent, `null` or
+//! empty list announces nothing this reader does not know, and is read like
+//! version 3. A list that is not an array of strings cannot be vouched for and
+//! is [`CheckpointError::MalformedFeatures`]. A version 3 document's
+//! `features`, if it carries one, means nothing and is not interpreted.
+//!
 //! # What is read
 //!
 //! A resource contributes an entry when it carries a string `id`; a resource
@@ -100,12 +113,27 @@ use std::fmt;
 use std::marker::PhantomData;
 
 use serde::de::value::MapAccessDeserializer;
-use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, Visitor};
+use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_json::value::RawValue;
 
-/// The only checkpoint version this reader understands.
+/// The checkpoint version this reader understands unconditionally.
 pub const SUPPORTED_VERSION: u64 = 3;
+
+/// The version 3 body with a top-level `features` list; read only when every
+/// listed feature is in [`READABLE_FEATURES`].
+pub const FEATURES_VERSION: u64 = 4;
+
+/// The features a version 4 checkpoint may list and still be read.
+///
+/// A feature belongs here only when its presence cannot change any value this
+/// index reads — which resources there are, or their `urn`, `id`, `type` or
+/// `inputs`.
+///
+/// - `hooks`: the stack registers resource hooks. It adds a `resourceHooks`
+///   object (hook names per lifecycle step) to the resources that have them,
+///   and nothing else; this index never reads that key.
+pub const READABLE_FEATURES: &[&str] = &["hooks"];
 
 /// Why a document could not be read as a checkpoint.
 #[derive(Debug, thiserror::Error)]
@@ -114,8 +142,21 @@ pub enum CheckpointError {
     Json(#[from] serde_json::Error),
     #[error("no `version` field")]
     MissingVersion,
-    #[error("unsupported checkpoint version {0}; expected {SUPPORTED_VERSION}")]
+    #[error(
+        "unsupported checkpoint version {0}; expected {SUPPORTED_VERSION} or {FEATURES_VERSION}"
+    )]
     UnsupportedVersion(u64),
+    /// A version 4 checkpoint listing features outside [`READABLE_FEATURES`],
+    /// each named once, in document order.
+    #[error(
+        "unsupported checkpoint feature{} {}; version {FEATURES_VERSION} is read only with: {}",
+        if .0.len() == 1 { "" } else { "s" },
+        quoted(.0),
+        READABLE_FEATURES.join(", ")
+    )]
+    UnsupportedFeatures(Vec<String>),
+    #[error("checkpoint `features` is not a list of strings")]
+    MalformedFeatures,
     #[error("neither `checkpoint` nor `deployment` is present")]
     NoDeployment,
     #[error("both `checkpoint` and `deployment` are present")]
@@ -299,8 +340,10 @@ pub fn index_checkpoint_with_elements<'a>(
     let Some(version) = doc.version else {
         return Err(CheckpointError::MissingVersion);
     };
-    if version != SUPPORTED_VERSION {
-        return Err(CheckpointError::UnsupportedVersion(version));
+    match version {
+        SUPPORTED_VERSION => {}
+        FEATURES_VERSION => check_features(doc.features)?,
+        _ => return Err(CheckpointError::UnsupportedVersion(version)),
     }
 
     let latest = match (doc.checkpoint, doc.deployment) {
@@ -411,6 +454,10 @@ fn sequential<'a>(
 #[derive(Deserialize)]
 struct Document<'a> {
     version: Option<u64>,
+    // Captured, not parsed: JSON puts no order on `version` and `features`,
+    // and the list means something only once the version is known to be 4.
+    #[serde(borrow, default)]
+    features: Option<&'a RawValue>,
     #[serde(borrow)]
     checkpoint: Option<Object<CheckpointBody<'a>>>,
     #[serde(borrow)]
@@ -498,6 +545,68 @@ impl<'de> Visitor<'de> for Projection<'_> {
         }
         Ok(element)
     }
+}
+
+/// Refuse a version 4 `features` list that names anything outside
+/// [`READABLE_FEATURES`], or that is not a list of strings.
+///
+/// The list is walked in place over the slice captured with the document; a
+/// feature name is copied only to report it.
+fn check_features(features: Option<&RawValue>) -> Result<(), CheckpointError> {
+    let Some(features) = features else {
+        return Ok(());
+    };
+    let mut de = serde_json::Deserializer::from_str(features.get());
+    let unsupported = FeatureScan
+        .deserialize(&mut de)
+        .map_err(|_| CheckpointError::MalformedFeatures)?;
+    if unsupported.is_empty() {
+        Ok(())
+    } else {
+        Err(CheckpointError::UnsupportedFeatures(unsupported))
+    }
+}
+
+/// Walks a `features` array, answering the names not in [`READABLE_FEATURES`]
+/// once each, in document order. Anything but an array of strings is an error.
+struct FeatureScan;
+
+impl<'de> DeserializeSeed<'de> for FeatureScan {
+    type Value = Vec<String>;
+
+    fn deserialize<D: Deserializer<'de>>(self, de: D) -> Result<Self::Value, D::Error> {
+        de.deserialize_seq(self)
+    }
+}
+
+impl<'de> Visitor<'de> for FeatureScan {
+    type Value = Vec<String>;
+
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("a JSON array of feature names")
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+        let mut unsupported = Vec::new();
+        while let Some(Borrowed(name)) = seq.next_element::<Borrowed<'de>>()? {
+            if !READABLE_FEATURES.contains(&name.as_ref())
+                && !unsupported.iter().any(|seen: &String| *seen == name)
+            {
+                unsupported.push(name.into_owned());
+            }
+        }
+        Ok(unsupported)
+    }
+}
+
+/// `"a", "b"`: each name quoted and escaped, so a hostile one cannot forge the
+/// rest of the message.
+fn quoted(names: &[String]) -> String {
+    names
+        .iter()
+        .map(|name| format!("{name:?}"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// A `T` that must have been written as a JSON object.
@@ -987,8 +1096,8 @@ mod tests {
         let cases: [(&[u8], &str); 4] = [
             (b"{}", "no `version` field"),
             (
-                br#"{"version":4,"deployment":{}}"#,
-                "unsupported checkpoint version 4; expected 3",
+                br#"{"version":5,"deployment":{}}"#,
+                "unsupported checkpoint version 5; expected 3 or 4",
             ),
             (
                 br#"{"version":3}"#,
@@ -1009,5 +1118,184 @@ mod tests {
             unreachable!("must be an error")
         };
         assert!(err.to_string().starts_with("invalid JSON: "));
+    }
+
+    // ---------------------------------------------------------------
+    // version 4 — the version 3 body plus a `features` list
+    // ---------------------------------------------------------------
+
+    /// Two resources the way a stack registering resource hooks writes them:
+    /// one with hooks on two lifecycle steps, one without.
+    fn hooked_resources() -> String {
+        format!(
+            concat!(
+                r#"{{"urn":"{urn}","id":"{id}","type":"gcp:workflows/workflow:Workflow","#,
+                r#""custom":true,"inputs":{{"name":"w"}},"#,
+                r#""resourceHooks":{{"AfterCreate":["notify"],"BeforeDelete":["drain","notify"]}}}},"#,
+                r#"{{"urn":"{access_urn}","id":"{access_id}","type":"{access_type}","#,
+                r#""inputs":{{"role":"READER","userByEmail":"probe@example.com"}}}}"#,
+            ),
+            urn = URN,
+            id = ID,
+            access_urn = ACCESS_URN,
+            access_id = ACCESS_ID,
+            access_type = ACCESS_TYPE,
+        )
+    }
+
+    fn versioned(version: u64, features: &str, body: &str) -> String {
+        format!(
+            r#"{{"version":{version},{features}"checkpoint":{{"latest":{{"resources":[{body}]}}}}}}"#
+        )
+    }
+
+    fn refusal(doc: &str) -> String {
+        let Err(err) = index_checkpoint(doc.as_bytes(), None) else {
+            unreachable!("{doc} must be refused")
+        };
+        err.to_string()
+    }
+
+    #[test]
+    fn version_4_with_hooks_reads_exactly_as_version_3() {
+        let body = hooked_resources();
+        let v3 = versioned(3, "", &body);
+        let v4 = versioned(4, r#""features":["hooks"],"#, &body);
+        assert_eq!(index(&v4), index(&v3));
+        assert_eq!(index(&v4).entries.len(), 2);
+
+        let spec = access_spec();
+        let (Ok(e4), Ok(e3)) = (
+            index_checkpoint_with_elements(v4.as_bytes(), None, Some(&spec)),
+            index_checkpoint_with_elements(v3.as_bytes(), None, Some(&spec)),
+        ) else {
+            unreachable!("fixtures must read")
+        };
+        assert_eq!(e4, e3, "elements are read the same way");
+        assert!(e4.entries[1].element.is_some());
+
+        // `features` after the body, and the export shape, read the same.
+        let trailing = format!(
+            r#"{{"version":4,"checkpoint":{{"latest":{{"resources":[{body}]}}}},"features":["hooks"]}}"#
+        );
+        assert_eq!(index(&trailing), index(&v3));
+        let export = format!(
+            r#"{{"version":4,"features":["hooks"],"deployment":{{"resources":[{body}]}}}}"#
+        );
+        assert_eq!(index(&export), index(&v3));
+    }
+
+    #[test]
+    fn version_4_ids_are_still_borrowed() {
+        let v4 = versioned(4, r#""features":["hooks"],"#, &hooked_resources());
+        let idx = index(&v4);
+        assert!(idx
+            .entries
+            .iter()
+            .all(|e| matches!((&e.id, &e.urn), (Cow::Borrowed(_), Cow::Borrowed(_)))));
+    }
+
+    #[test]
+    fn version_4_with_an_unknown_feature_is_refused_naming_it() {
+        let doc = versioned(4, r#""features":["views"],"#, &one_resource());
+        assert_eq!(
+            refusal(&doc),
+            r#"unsupported checkpoint feature "views"; version 4 is read only with: hooks"#
+        );
+    }
+
+    #[test]
+    fn one_unknown_feature_beside_hooks_refuses_the_whole_document() {
+        let doc = versioned(4, r#""features":["hooks","views"],"#, &one_resource());
+        assert_eq!(
+            refusal(&doc),
+            r#"unsupported checkpoint feature "views"; version 4 is read only with: hooks"#
+        );
+        // Every unknown feature is named once, in document order, and escaped.
+        let doc = versioned(
+            4,
+            r#""features":["b","hooks","a\"; x","b"],"#,
+            &one_resource(),
+        );
+        assert_eq!(
+            refusal(&doc),
+            r#"unsupported checkpoint features "b", "a\"; x"; version 4 is read only with: hooks"#
+        );
+        // Case and whitespace matter: these are not `hooks`.
+        for name in ["Hooks", " hooks", ""] {
+            let doc = versioned(4, &format!(r#""features":["{name}"],"#), &one_resource());
+            assert!(refusal(&doc).starts_with("unsupported checkpoint feature "));
+        }
+    }
+
+    #[test]
+    fn version_4_listing_no_feature_reads_as_version_3() {
+        // The writer only moves to 4 to list a feature, but a list that is
+        // absent, null or empty announces nothing unknown.
+        let v3 = versioned(3, "", &one_resource());
+        for features in ["", r#""features":null,"#, r#""features":[],"#] {
+            let v4 = versioned(4, features, &one_resource());
+            assert_eq!(index(&v4), index(&v3), "{features}");
+        }
+    }
+
+    #[test]
+    fn a_features_list_that_is_not_strings_is_refused() {
+        for features in [
+            r#""features":"hooks","#,
+            r#""features":7,"#,
+            r#""features":{"hooks":true},"#,
+            r#""features":[1],"#,
+            r#""features":["hooks",null],"#,
+            r#""features":[["hooks"]],"#,
+        ] {
+            let doc = versioned(4, features, &one_resource());
+            assert_eq!(
+                refusal(&doc),
+                "checkpoint `features` is not a list of strings",
+                "{features}"
+            );
+        }
+    }
+
+    #[test]
+    fn version_3_does_not_interpret_features() {
+        // Version 3 has no feature list; a key of that name was ignored
+        // before version 4 was read and still is.
+        let plain = versioned(3, "", &one_resource());
+        for features in [r#""features":["views"],"#, r#""features":7,"#] {
+            let doc = versioned(3, features, &one_resource());
+            assert_eq!(index(&doc), index(&plain), "{features}");
+        }
+    }
+
+    #[test]
+    fn versions_other_than_3_and_4_are_still_refused() {
+        for version in [0, 2, 5, 40] {
+            let doc = versioned(version, r#""features":["hooks"],"#, &one_resource());
+            assert_eq!(
+                refusal(&doc),
+                format!("unsupported checkpoint version {version}; expected 3 or 4")
+            );
+        }
+    }
+
+    #[test]
+    fn batch_reads_version_4_as_one_document_at_a_time_does() {
+        let hooked = versioned(4, r#""features":["hooks"],"#, &hooked_resources());
+        let unknown = versioned(4, r#""features":["views"],"#, &one_resource());
+        let malformed = versioned(4, r#""features":"hooks","#, &one_resource());
+        let v3 = versioned(3, "", &hooked_resources());
+        let docs: Vec<&[u8]> = vec![
+            hooked.as_bytes(),
+            unknown.as_bytes(),
+            malformed.as_bytes(),
+            v3.as_bytes(),
+        ];
+        let one_by_one = comparable(docs.iter().map(|doc| index_checkpoint(doc, None)).collect());
+        assert_eq!(comparable(index_checkpoints(&docs, None, 1)), one_by_one);
+        assert_eq!(comparable(index_checkpoints(&docs, None, 4)), one_by_one);
+        assert!(one_by_one[0].is_ok() && one_by_one[3].is_ok());
+        assert!(one_by_one[1].is_err() && one_by_one[2].is_err());
     }
 }
